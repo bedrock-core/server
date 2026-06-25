@@ -24,28 +24,27 @@
 	"type": "module",
 	"packageManager": "yarn@4.9.3",
 	"workspaces": [
-		"packages/test-addon"
+		"packages/sync",
+		"packages/server-runtime",
+		"packages/test-addon",
+		"packages/test-addon-2"
 	],
 	"scripts": {
 		"regolith-install": "yarn workspaces foreach -i -A --topological --jobs=1 run regolith-install",
 		"build": "yarn workspaces foreach -ptA run build",
 		"prepack": "yarn build",
-		"watch": "concurrently \"nodemon\"",
-		"lint": "eslint .",
-		"test": "yarn workspaces foreach -ptA run test",
-		"coverage": "yarn workspaces foreach -ptA run coverage"
+		"watch": "yarn install && nodemon",
+		"lint": "eslint ."
 	},
 	"devDependencies": {
 		"@stylistic/eslint-plugin": "^5.10.0",
-		"@types/node": "^25.9.2",
-		"@vitest/coverage-v8": "^4.1.8",
-		"concurrently": "^9.2.1",
-		"eslint": "^10.4.1",
-		"globals": "^17.6.0",
+		"@types/node": "^26.0.1",
+		"concurrently": "^10.0.3",
+		"eslint": "^10.5.0",
+		"globals": "^17.7.0",
 		"jiti": "^2.7.0",
 		"nodemon": "^3.1.14",
 		"typescript": "^6.0.3",
-		"typescript-eslint": "^8.61.0",
-		"vitest": "^4.1.8"
+		"typescript-eslint": "^8.62.0"
 	}
 }

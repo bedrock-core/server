@@ -14,6 +14,7 @@ export default defineConfig([
       "dist/**",
       "node_modules/**",
       "packages/test-addon/**",
+      "packages/test-addon-2/**",
       "**/*.*js",
       "**/*.config.ts",
       "**/mocks/**"
