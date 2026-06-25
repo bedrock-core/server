@@ -1,0 +1,43 @@
+{
+	"format_version": 2,
+	"header": {
+		"name": "@bedrock-core/server",
+		"description": "by DrAv0011",
+		"uuid": "79e151e5-b5a9-46ba-8f6b-50dab618cbd2",
+		"pack_scope": "world",
+		"version": [
+			1,
+			0,
+			0
+		],
+		"min_engine_version": [
+			1,
+			26,
+			30
+		]
+	},
+	"modules": [
+		{
+			"type": "resources",
+			"uuid": "b72c5dbb-9bcd-4245-b5f5-ef2753875055",
+			"version": [
+				1,
+				0,
+				0
+			]
+		}
+	],
+	"dependencies": [
+		{
+			"uuid": "53a3007c-d160-46d3-bba1-c05e8bd378d6",
+			"version": [
+				1,
+				0,
+				0
+			]
+		}
+	],
+	"metadata": {
+		"product_type": "addon"
+	}
+}

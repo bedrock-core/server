@@ -1,0 +1,5 @@
+{
+  "commitMessage": {
+    "instruction": "Follow Conventional Commits. Use the package name as the scope — for example, feat(testing): add runner API or fix(db): relation sync. Keep the summary imperative."
+  }
+}

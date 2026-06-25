@@ -1,0 +1,51 @@
+{
+	"name": "@bedrock-core/server",
+	"version": "0.1.0",
+	"description": "Modular TypeScript packages for cross-addon compatible Minecraft Bedrock development",
+	"keywords": [
+		"minecraft",
+		"bedrock",
+		"framework",
+		"typescript",
+		"cross-addon",
+		"modular"
+	],
+	"license": "MIT",
+	"author": "DrAv0011",
+	"contributors": [
+		{
+			"name": "DrAv0011",
+			"email": "contact@drav.dev",
+			"url": "https://drav.dev"
+		}
+	],
+	"repository": "github:bedrock-core/server",
+	"private": true,
+	"type": "module",
+	"packageManager": "yarn@4.9.3",
+	"workspaces": [
+		"packages/test-addon"
+	],
+	"scripts": {
+		"regolith-install": "yarn workspaces foreach -i -A --topological --jobs=1 run regolith-install",
+		"build": "yarn workspaces foreach -ptA run build",
+		"prepack": "yarn build",
+		"watch": "concurrently \"nodemon\"",
+		"lint": "eslint .",
+		"test": "yarn workspaces foreach -ptA run test",
+		"coverage": "yarn workspaces foreach -ptA run coverage"
+	},
+	"devDependencies": {
+		"@stylistic/eslint-plugin": "^5.10.0",
+		"@types/node": "^25.9.2",
+		"@vitest/coverage-v8": "^4.1.8",
+		"concurrently": "^9.2.1",
+		"eslint": "^10.4.1",
+		"globals": "^17.6.0",
+		"jiti": "^2.7.0",
+		"nodemon": "^3.1.14",
+		"typescript": "^6.0.3",
+		"typescript-eslint": "^8.61.0",
+		"vitest": "^4.1.8"
+	}
+}

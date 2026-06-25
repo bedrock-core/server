@@ -1,0 +1,62 @@
+{
+	"format_version": 2,
+	"header": {
+		"name": "@bedrock-core/server",
+		"description": "by DrAv0011",
+		"uuid": "53a3007c-d160-46d3-bba1-c05e8bd378d6",
+		"pack_scope": "world",
+		"version": [
+			1,
+			0,
+			0
+		],
+		"min_engine_version": [
+			1,
+			26,
+			30
+		]
+	},
+	"modules": [
+		{
+			"type": "data",
+			"uuid": "10005ff2-05a5-472e-8f0a-95d3f42eee38",
+			"version": [
+				1,
+				0,
+				0
+			]
+		},
+		{
+			"type": "script",
+			"language": "javascript",
+			"uuid": "12434de1-2661-41cb-b467-434accf35e90",
+			"entry": "scripts/main.js",
+			"version": [
+				1,
+				0,
+				0
+			]
+		}
+	],
+	"dependencies": [
+		{
+			"uuid": "79e151e5-b5a9-46ba-8f6b-50dab618cbd2",
+			"version": [
+				1,
+				0,
+				0
+			]
+		},
+		{
+			"module_name": "@minecraft/server",
+			"version": "2.8.0"
+		},
+		{
+			"module_name": "@minecraft/server-ui",
+			"version": "2.1.0"
+		}
+	],
+	"metadata": {
+		"product_type": "addon"
+	}
+}

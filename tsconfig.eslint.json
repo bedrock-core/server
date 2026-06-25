@@ -1,0 +1,21 @@
+{
+	"extends": "./tsconfig.json",
+	"compilerOptions": {
+		"noEmit": true
+	},
+	"include": [
+		"packages/*/src/**/*.ts",
+		"packages/*/src/**/*.spec.ts",
+		"packages/*/src/**/*.test.ts",
+		"packages/*/*.config.ts",
+		"*.config.ts",
+		"*.config.mjs"
+	],
+	"exclude": [
+		"node_modules",
+		"**/node_modules",
+		"dist",
+		"**/dist",
+		"**/*.snap"
+	]
+}
