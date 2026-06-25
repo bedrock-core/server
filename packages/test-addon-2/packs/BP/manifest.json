@@ -1,9 +1,9 @@
 {
 	"format_version": 2,
 	"header": {
-		"name": "@bedrock-core/server",
-		"description": "by drav0011",
-		"uuid": "53a3007c-d160-46d3-bba1-c05e8bd378d6",
+		"name": "@bedrock-core/server-test-2",
+		"description": "Shop reference addon (cross-addon example with Economy)",
+		"uuid": "2c9add46-ecbf-4dd7-8c7c-71c244e928da",
 		"pack_scope": "world",
 		"version": [
 			1,
@@ -19,7 +19,7 @@
 	"modules": [
 		{
 			"type": "data",
-			"uuid": "10005ff2-05a5-472e-8f0a-95d3f42eee38",
+			"uuid": "556f0e6c-8c8e-40a1-8afc-e750cc0438f8",
 			"version": [
 				1,
 				0,
@@ -29,7 +29,7 @@
 		{
 			"type": "script",
 			"language": "javascript",
-			"uuid": "12434de1-2661-41cb-b467-434accf35e90",
+			"uuid": "8e584cea-7544-483e-a092-625e90c9990c",
 			"entry": "scripts/main.js",
 			"version": [
 				1,
@@ -40,7 +40,7 @@
 	],
 	"dependencies": [
 		{
-			"uuid": "79e151e5-b5a9-46ba-8f6b-50dab618cbd2",
+			"uuid": "b00d863f-bbac-4904-a46e-5417bf53451d",
 			"version": [
 				1,
 				0,
@@ -54,10 +54,6 @@
 		{
 			"module_name": "@minecraft/server-ui",
 			"version": "2.1.0"
-		},
-		{
-			"module_name": "@minecraft/server-gametest",
-			"version": "1.0.0-beta"
 		}
 	],
 	"metadata": {

@@ -1,0 +1,30 @@
+{
+	"name": "@bedrock-core/server-test-addon-2",
+	"version": "1.0.0",
+	"description": "Second test addon (Shop) — cross-addon example with @bedrock-core/server-test-addon",
+	"main": "main.js",
+	"scripts": {
+		"regolith-install": "regolith install-all",
+		"build": "regolith run build",
+		"watch": "regolith watch",
+		"lint": "eslint ."
+	},
+	"dependencies": {
+		"@bedrock-core/server-runtime": "workspace:^",
+		"@bedrock-core/sync": "workspace:^",
+		"@minecraft/server": "2.8.0",
+		"@minecraft/server-ui": "2.1.0",
+		"typescript": "^6.0.3"
+	},
+	"devDependencies": {
+		"@eslint/js": "^10.0.1",
+		"@eslint/json": "^2.0.0",
+		"@stylistic/eslint-plugin": "^5.10.0",
+		"eslint": "^10.5.0",
+		"eslint-plugin-minecraft-linting": "^2.0.12",
+		"globals": "^17.7.0",
+		"typescript": "^6.0.3",
+		"typescript-eslint": "^8.62.0"
+	},
+	"packageManager": "yarn@4.9.4"
+}

@@ -1,9 +1,9 @@
 {
 	"format_version": 2,
 	"header": {
-		"name": "@bedrock-core/server",
-		"description": "by drav0011",
-		"uuid": "79e151e5-b5a9-46ba-8f6b-50dab618cbd2",
+		"name": "@bedrock-core/server-test-2",
+		"description": "Shop reference addon (cross-addon example with Economy)",
+		"uuid": "b00d863f-bbac-4904-a46e-5417bf53451d",
 		"pack_scope": "world",
 		"version": [
 			1,
@@ -19,7 +19,7 @@
 	"modules": [
 		{
 			"type": "resources",
-			"uuid": "b72c5dbb-9bcd-4245-b5f5-ef2753875055",
+			"uuid": "faca2e5f-c820-49dc-9363-f8421412c728",
 			"version": [
 				1,
 				0,
@@ -29,7 +29,7 @@
 	],
 	"dependencies": [
 		{
-			"uuid": "53a3007c-d160-46d3-bba1-c05e8bd378d6",
+			"uuid": "2c9add46-ecbf-4dd7-8c7c-71c244e928da",
 			"version": [
 				1,
 				0,
