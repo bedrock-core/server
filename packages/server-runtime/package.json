@@ -1,0 +1,51 @@
+{
+	"name": "@bedrock-core/server-runtime",
+	"version": "0.1.0",
+	"description": "The bedrock-core server runtime: addon registration and a cross-addon registry, built on @bedrock-core/sync",
+	"keywords": [
+		"minecraft",
+		"bedrock",
+		"cross-addon",
+		"runtime",
+		"registry",
+		"framework"
+	],
+	"license": "MIT",
+	"author": "DrAv0011",
+	"contributors": [
+		{
+			"name": "DrAv0011",
+			"email": "contact@drav.dev",
+			"url": "https://drav.dev"
+		}
+	],
+	"repository": "github:bedrock-core/server",
+	"type": "module",
+	"exports": {
+		".": {
+			"types": "./src/index.ts",
+			"import": "./src/index.ts"
+		}
+	},
+	"files": [
+		"src/**/*"
+	],
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"lint": "eslint ."
+	},
+	"dependencies": {
+		"@bedrock-core/sync": "workspace:^",
+		"@bedrock-oss/add-on-registry": "*"
+	},
+	"devDependencies": {
+		"@minecraft/server": "2.8.0",
+		"@stylistic/eslint-plugin": "^5.10.0",
+		"eslint": "^10.5.0",
+		"typescript": "^6.0.3",
+		"typescript-eslint": "^8.62.0"
+	},
+	"peerDependencies": {
+		"@minecraft/server": ">=2.8.0"
+	}
+}
