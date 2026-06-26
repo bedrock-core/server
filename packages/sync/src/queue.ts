@@ -41,13 +41,15 @@ export class OutboundQueue {
 
   /** Begin the periodic flush loop. Idempotent. */
   start(): void {
-    if (this._handle !== undefined) return;
+    if (this._handle !== undefined) { return; }
+
     this._handle = system.runInterval(() => this.flushPending(), this._flushIntervalTicks);
   }
 
   /** Stop flushing. Any still-pending messages are retained. */
   stop(): void {
-    if (this._handle === undefined) return;
+    if (this._handle === undefined) { return; }
+
     system.clearRun(this._handle);
     this._handle = undefined;
   }
@@ -59,9 +61,12 @@ export class OutboundQueue {
 
   private flushPending(): void {
     const count = Math.min(this._maxFlushPerTick, this._pending.length);
+
     for (let i = 0; i < count; i++) {
       const message = this._pending.shift();
-      if (message === undefined) break;
+
+      if (message === undefined) { break; }
+
       try {
         system.sendScriptEvent(this._channel, message);
       } catch {

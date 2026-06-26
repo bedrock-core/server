@@ -46,6 +46,26 @@ interface SnapshotData {
   entries: SnapshotEntry[];
 }
 
+function isDeltaData(value: unknown): value is DeltaData {
+  if (typeof value !== 'object' || value === null) { return false; }
+
+  if (!('ns' in value && 'key' in value && 'ver' in value)) { return false; }
+
+  const { ns, key, ver } = value;
+
+  return typeof ns === 'string' && typeof key === 'string' && typeof ver === 'number';
+}
+
+function isSnapshotData(value: unknown): value is SnapshotData {
+  if (typeof value !== 'object' || value === null) { return false; }
+
+  if (!('ns' in value && 'entries' in value)) { return false; }
+
+  const { ns, entries } = value;
+
+  return typeof ns === 'string' && Array.isArray(entries);
+}
+
 export interface StateChange {
   ns: string;
   key: string;
@@ -99,7 +119,7 @@ export class State {
   }
 
   stop(): void {
-    for (const dispose of this._disposers.splice(0)) dispose();
+    for (const dispose of this._disposers.splice(0)) { dispose(); }
   }
 
   /** Read a key from the local mirror. Returns `undefined` if absent or deleted. */
@@ -113,9 +133,11 @@ export class State {
   getNamespace(ns: string): Record<string, unknown> {
     const result: Record<string, unknown> = {};
     const map = this._store.get(ns);
-    if (!map) return result;
+
+    if (!map) { return result; }
+
     for (const [key, entry] of map) {
-      if (!entry.del) result[key] = entry.value;
+      if (!entry.del) { result[key] = entry.value; }
     }
 
     return result;
@@ -130,6 +152,7 @@ export class State {
   set(ns: string, key: string, value: unknown): void {
     this.assertWritable(ns);
     const entry: Entry = { value, ver: ++this._clock, src: this._selfId };
+
     this.applyEntry(ns, key, entry);
     this._bus.send({ type: MessageType.StateDelta, data: { ns, key, value, ver: entry.ver } });
   }
@@ -138,6 +161,7 @@ export class State {
   delete(ns: string, key: string): void {
     this.assertWritable(ns);
     const entry: Entry = { ver: ++this._clock, src: this._selfId, del: true };
+
     this.applyEntry(ns, key, entry);
     this._bus.send({ type: MessageType.StateDelta, data: { ns, key, ver: entry.ver, del: true } });
   }
@@ -159,7 +183,8 @@ export class State {
   /** Serialize a namespace (includes tombstones) — used to answer snapshot requests. */
   snapshot(ns: string): SnapshotEntry[] {
     const map = this._store.get(ns);
-    if (!map) return [];
+
+    if (!map) { return []; }
 
     return Array.from(map, ([k, entry]) => ({
       k,
@@ -174,6 +199,7 @@ export class State {
   broadcastOwnedSnapshots(): void {
     for (const ns of this._owned) {
       const entries = this.snapshot(ns);
+
       if (entries.length > 0) {
         this._bus.send({ type: MessageType.StateSnapshot, data: { ns, entries } });
       }
@@ -187,20 +213,22 @@ export class State {
   }
 
   private handleDelta(envelope: Envelope): void {
-    const data = envelope.data as Partial<DeltaData> | undefined;
-    if (!data || typeof data.ns !== 'string' || typeof data.key !== 'string' || typeof data.ver !== 'number') {
-      return;
-    }
-    this._clock = Math.max(this._clock, data.ver);
-    this.applyEntry(data.ns, data.key, { value: data.value, ver: data.ver, src: envelope.src, del: data.del });
+    if (!isDeltaData(envelope.data)) { return; }
+
+    const { ns, key, ver, value, del } = envelope.data;
+
+    this._clock = Math.max(this._clock, ver);
+    this.applyEntry(ns, key, { value, ver, src: envelope.src, del });
   }
 
   private handleStateRequest(envelope: Envelope): void {
-    const data = envelope.data as Partial<SnapshotData> | undefined;
-    const requested = typeof data?.ns === 'string' ? data.ns : undefined;
+    const requested = isSnapshotData(envelope.data) ? envelope.data.ns : undefined;
+
     for (const ns of this._owned) {
-      if (requested !== undefined && requested !== ns) continue;
+      if (requested !== undefined && requested !== ns) { continue; }
+
       const entries = this.snapshot(ns);
+
       if (entries.length > 0) {
         this._bus.send({ dst: envelope.src, type: MessageType.StateSnapshot, data: { ns, entries } });
       }
@@ -208,24 +236,28 @@ export class State {
   }
 
   private handleSnapshot(envelope: Envelope): void {
-    const data = envelope.data as Partial<SnapshotData> | undefined;
-    if (!data || typeof data.ns !== 'string' || !Array.isArray(data.entries)) return;
-    for (const entry of data.entries) {
+    if (!isSnapshotData(envelope.data)) { return; }
+
+    const { ns, entries } = envelope.data;
+
+    for (const entry of entries) {
       this._clock = Math.max(this._clock, entry.ver);
-      this.applyEntry(data.ns, entry.k, { value: entry.v, ver: entry.ver, src: entry.src, del: entry.del });
+      this.applyEntry(ns, entry.k, { value: entry.v, ver: entry.ver, src: entry.src, del: entry.del });
     }
   }
 
   /** Apply an entry under last-write-wins. Returns whether it won. */
   private applyEntry(ns: string, key: string, incoming: Entry): boolean {
     let map = this._store.get(ns);
+
     if (!map) {
       map = new Map();
       this._store.set(ns, map);
     }
 
     const current = map.get(key);
-    if (current && !this.isNewer(incoming, current)) return false;
+
+    if (current && !this.isNewer(incoming, current)) { return false; }
 
     map.set(key, incoming);
     this.emitChange({
@@ -239,12 +271,12 @@ export class State {
   }
 
   private isNewer(incoming: Entry, current: Entry): boolean {
-    if (incoming.ver !== current.ver) return incoming.ver > current.ver;
+    if (incoming.ver !== current.ver) { return incoming.ver > current.ver; }
 
     return incoming.src > current.src;
   }
 
   private emitChange(change: StateChange): void {
-    for (const listener of this._changeListeners) listener(change);
+    for (const listener of this._changeListeners) { listener(change); }
   }
 }

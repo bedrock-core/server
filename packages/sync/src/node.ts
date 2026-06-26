@@ -49,6 +49,7 @@ export class SyncNode {
 
   constructor(options: SyncNodeOptions) {
     const owned = options.ownedNamespaces ?? [options.id];
+
     this.id = options.id;
     this.bus = new Bus(options.id, { maxMessage: options.maxMessage, instanceId: options.instanceId });
     this.discovery = new Discovery(this.bus, {
@@ -62,7 +63,8 @@ export class SyncNode {
 
   /** Start every subsystem. Idempotent. Order matters — see inline notes. */
   start(): void {
-    if (this._started) return;
+    if (this._started) { return; }
+
     this._started = true;
 
     // 1. Transport up first so anything that sends has a queue + subscription.
@@ -75,7 +77,8 @@ export class SyncNode {
   }
 
   stop(): void {
-    if (!this._started) return;
+    if (!this._started) { return; }
+
     this._started = false;
 
     this.state.stop();

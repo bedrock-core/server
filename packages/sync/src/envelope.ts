@@ -41,27 +41,32 @@ export function encodeEnvelope(envelope: Envelope): string {
  * structurally invalid envelope, or a mismatched protocol version — callers ignore those
  * rather than throwing, so one bad sender can never crash a listener.
  */
+function isEnvelope(value: unknown): value is Envelope {
+  if (typeof value !== 'object' || value === null) { return false; }
+
+  if (!('v' in value && 'src' in value && 'iid' in value && 'type' in value && 'mid' in value)) { return false; }
+
+  const { v, src, iid, type, mid } = value;
+  const dst = 'dst' in value ? value.dst : undefined;
+
+  return (
+    v === PROTOCOL_VERSION
+    && typeof src === 'string'
+    && typeof iid === 'string'
+    && typeof type === 'string'
+    && typeof mid === 'string'
+    && (dst === undefined || typeof dst === 'string')
+  );
+}
+
 export function decodeEnvelope(json: string): Envelope | undefined {
   let parsed: unknown;
+
   try {
     parsed = JSON.parse(json);
   } catch {
     return undefined;
   }
 
-  if (typeof parsed !== 'object' || parsed === null) return undefined;
-
-  const candidate = parsed as Partial<Envelope>;
-  if (
-    candidate.v !== PROTOCOL_VERSION ||
-    typeof candidate.src !== 'string' ||
-    typeof candidate.iid !== 'string' ||
-    typeof candidate.type !== 'string' ||
-    typeof candidate.mid !== 'string' ||
-    candidate.dst !== undefined && typeof candidate.dst !== 'string'
-  ) {
-    return undefined;
-  }
-
-  return candidate as Envelope;
+  return isEnvelope(parsed) ? parsed : undefined;
 }

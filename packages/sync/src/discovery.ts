@@ -100,8 +100,9 @@ export class Discovery {
   }
 
   stop(): void {
-    for (const dispose of this._disposers.splice(0)) dispose();
-    for (const handle of this._handles.splice(0)) system.clearRun(handle);
+    for (const dispose of this._disposers.splice(0)) { dispose(); }
+
+    for (const handle of this._handles.splice(0)) { system.clearRun(handle); }
   }
 
   /** Broadcast this node's presence. */
@@ -149,13 +150,14 @@ export class Discovery {
     // An announce carrying our own id (from a different instance — the bus already dropped
     // our own echoes) is a namespace collision, not a peer.
     if (envelope.src === this._bus.selfId) {
-      for (const listener of this._onCollision) listener({ id: envelope.src, instanceId: envelope.iid });
+      for (const listener of this._onCollision) { listener({ id: envelope.src, instanceId: envelope.iid }); }
 
       return;
     }
 
     const data = this.parseAnnounce(envelope.data);
-    if (!data) return;
+
+    if (!data) { return; }
 
     const existing = this._peers.get(envelope.src);
     const peer: PeerInfo = {
@@ -165,10 +167,11 @@ export class Discovery {
       meta: data.meta,
       lastSeen: system.currentTick,
     };
+
     this._peers.set(envelope.src, peer);
 
     if (!existing) {
-      for (const listener of this._onUp) listener(peer);
+      for (const listener of this._onUp) { listener(peer); }
     }
   }
 
@@ -179,19 +182,22 @@ export class Discovery {
 
   private sweep(): void {
     const cutoff = system.currentTick - this._peerTtlTicks;
+
     for (const [id, peer] of this._peers) {
       if (peer.lastSeen < cutoff) {
         this._peers.delete(id);
-        for (const listener of this._onDown) listener(peer);
+
+        for (const listener of this._onDown) { listener(peer); }
       }
     }
   }
 
   private parseAnnounce(data: unknown): AnnounceData | undefined {
-    if (typeof data !== 'object' || data === null) return undefined;
+    if (typeof data !== 'object' || data === null) { return undefined; }
 
     const candidate = data as Partial<AnnounceData>;
-    if (typeof candidate.version !== 'string') return undefined;
+
+    if (typeof candidate.version !== 'string') { return undefined; }
 
     return {
       version: candidate.version,

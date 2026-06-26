@@ -31,6 +31,22 @@ interface Pending {
   timeoutHandle: number;
 }
 
+function isRequestData(value: unknown): value is RequestData {
+  if (typeof value !== 'object' || value === null) { return false; }
+
+  if (!('method' in value)) { return false; }
+
+  return typeof value.method === 'string';
+}
+
+function isResponseData(value: unknown): value is ResponseData {
+  if (typeof value !== 'object' || value === null) { return false; }
+
+  if (!('rid' in value && 'ok' in value)) { return false; }
+
+  return typeof value.rid === 'string' && typeof value.ok === 'boolean';
+}
+
 /** Handles an inbound request. `from` is the requester's addon id. */
 export type RequestHandler = (params: unknown, from: string) => unknown | Promise<unknown>;
 
@@ -72,11 +88,13 @@ export class Rpc {
   }
 
   stop(): void {
-    for (const dispose of this._disposers.splice(0)) dispose();
+    for (const dispose of this._disposers.splice(0)) { dispose(); }
+
     for (const pending of this._pending.values()) {
       system.clearRun(pending.timeoutHandle);
       pending.reject(new Error('RPC stopped'));
     }
+
     this._pending.clear();
   }
 
@@ -94,7 +112,8 @@ export class Rpc {
 
     return new Promise<unknown>((resolve, reject) => {
       const timeoutHandle = system.runTimeout(() => {
-        if (!this._pending.delete(mid)) return;
+        if (!this._pending.delete(mid)) { return; }
+
         reject(new Error(`RPC '${method}' to '${dst}' timed out`));
       }, timeoutTicks);
 
@@ -104,9 +123,10 @@ export class Rpc {
 
   /** Returns a typed Proxy that dispatches every method call to `request(targetId, method, params)`. */
   typed<T>(targetId: string): TypedClient<T> {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion
     return new Proxy({} as TypedClient<T>, {
-      get: (_, method) => {
-        if (typeof method !== 'string') return undefined;
+      get: (_, method): unknown => {
+        if (typeof method !== 'string') { return undefined; }
 
         return (params: unknown) => this.request(targetId, method, params);
       },
@@ -116,10 +136,11 @@ export class Rpc {
   /** Registers a typed handler map. Returns a single Unsubscribe that removes all handlers. */
   serve<T>(handlers: RPCHandlerMap<T>): Unsubscribe {
     const unsubs = Object.entries(handlers).map(
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion
       ([method, handler]) => this.onRequest(method, handler as RequestHandler),
     );
 
-    return () => { for (const u of unsubs) u(); };
+    return () => { for (const u of unsubs) { u(); } };
   }
 
   /** Register the handler for `method`. Returns an unsubscribe function. */
@@ -127,41 +148,43 @@ export class Rpc {
     this._handlers.set(method, handler);
 
     return (): void => {
-      if (this._handlers.get(method) === handler) this._handlers.delete(method);
+      if (this._handlers.get(method) === handler) { this._handlers.delete(method); }
     };
   }
 
   private handleRequest(envelope: Envelope): void {
-    const data = envelope.data as Partial<RequestData> | undefined;
-    if (!data || typeof data.method !== 'string') return;
+    if (!isRequestData(envelope.data)) { return; }
 
-    const handler = this._handlers.get(data.method);
+    const { method, params } = envelope.data;
+    const handler = this._handlers.get(method);
+
     if (!handler) {
-      this.respond(envelope, { rid: envelope.mid, ok: false, err: `unknown method '${data.method}'` });
+      this.respond(envelope, { rid: envelope.mid, ok: false, err: `unknown method '${method}'` });
 
       return;
     }
 
     void Promise.resolve()
-      .then(() => handler(data.params, envelope.src))
+      .then(() => handler(params, envelope.src))
       .then(result => this.respond(envelope, { rid: envelope.mid, ok: true, data: result }))
       .catch((error: unknown) => this.respond(envelope, { rid: envelope.mid, ok: false, err: errorMessage(error) }));
   }
 
   private handleResponse(envelope: Envelope): void {
-    const data = envelope.data as Partial<ResponseData> | undefined;
-    if (!data || typeof data.rid !== 'string') return;
+    if (!isResponseData(envelope.data)) { return; }
 
-    const pending = this._pending.get(data.rid);
-    if (!pending) return;
+    const { rid, ok, data: result, err } = envelope.data;
+    const pending = this._pending.get(rid);
 
-    this._pending.delete(data.rid);
+    if (!pending) { return; }
+
+    this._pending.delete(rid);
     system.clearRun(pending.timeoutHandle);
 
-    if (data.ok) {
-      pending.resolve(data.data);
+    if (ok) {
+      pending.resolve(result);
     } else {
-      pending.reject(new Error(data.err ?? 'RPC error'));
+      pending.reject(new Error(err ?? 'RPC error'));
     }
   }
 

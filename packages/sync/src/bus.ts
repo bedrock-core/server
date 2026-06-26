@@ -70,11 +70,13 @@ export class Bus {
 
   /** Subscribe to the bus channel and start the flush + chunk-eviction loops. */
   start(): void {
-    if (this._unsubscribe) return;
+    if (this._unsubscribe) { return; }
+
     const handler = system.afterEvents.scriptEventReceive.subscribe(
       event => this.handleScriptEvent(event),
       { namespaces: [BUS_NAMESPACE] },
     );
+
     this._unsubscribe = (): void => system.afterEvents.scriptEventReceive.unsubscribe(handler);
     this._queue.start();
     this._evictHandle = system.runInterval(() => this._reassembler.evictExpired(system.currentTick), EVICT_INTERVAL_TICKS);
@@ -85,6 +87,7 @@ export class Bus {
     this._unsubscribe?.();
     this._unsubscribe = undefined;
     this._queue.stop();
+
     if (this._evictHandle !== undefined) {
       system.clearRun(this._evictHandle);
       this._evictHandle = undefined;
@@ -101,11 +104,14 @@ export class Bus {
       type: options.type,
       mid,
     };
-    if (options.dst !== undefined) envelope.dst = options.dst;
-    if (options.data !== undefined) envelope.data = options.data;
+
+    if (options.dst !== undefined) { envelope.dst = options.dst; }
+
+    if (options.data !== undefined) { envelope.data = options.data; }
 
     const frames = splitIntoFrames(encodeEnvelope(envelope), mid, this._maxMessage);
-    for (const frame of frames) this._queue.enqueue(frame);
+
+    for (const frame of frames) { this._queue.enqueue(frame); }
 
     return mid;
   }
@@ -118,15 +124,18 @@ export class Bus {
   /** Register a handler for a message type. Returns an unsubscribe function. */
   on(type: string, handler: EnvelopeHandler): Unsubscribe {
     let set = this._handlers.get(type);
+
     if (!set) {
       set = new Set();
       this._handlers.set(type, set);
     }
+
     set.add(handler);
 
     return (): void => {
       set.delete(handler);
-      if (set.size === 0) this._handlers.delete(type);
+
+      if (set.size === 0) { this._handlers.delete(type); }
     };
   }
 
@@ -135,24 +144,30 @@ export class Bus {
   }
 
   private handleScriptEvent(event: ScriptEventCommandMessageAfterEvent): void {
-    if (event.id !== BUS_CHANNEL) return;
+    if (event.id !== BUS_CHANNEL) { return; }
 
     const frame = decodeFrame(event.message);
-    if (!frame) return;
+
+    if (!frame) { return; }
 
     const payload = this._reassembler.accept(frame, system.currentTick);
-    if (payload === undefined) return;
+
+    if (payload === undefined) { return; }
 
     const envelope = decodeEnvelope(payload);
-    if (!envelope) return;
+
+    if (!envelope) { return; }
 
     // Drop our own echoes (matched by instance id, so a same-src twin is still delivered)
     // and anything addressed to a different node.
-    if (envelope.iid === this._instanceId) return;
-    if (envelope.dst !== undefined && envelope.dst !== this._selfId) return;
+    if (envelope.iid === this._instanceId) { return; }
+
+    if (envelope.dst !== undefined && envelope.dst !== this._selfId) { return; }
 
     const handlers = this._handlers.get(envelope.type);
-    if (!handlers) return;
-    for (const handler of handlers) handler(envelope);
+
+    if (!handlers) { return; }
+
+    for (const handler of handlers) { handler(envelope); }
   }
 }

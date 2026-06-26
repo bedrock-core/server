@@ -29,7 +29,7 @@ export type {
   CollisionListener,
   DiscoveryOptions,
   PeerInfo,
-  PeerListener
+  PeerListener,
 } from './discovery';
 
 export { Rpc } from './rpc';

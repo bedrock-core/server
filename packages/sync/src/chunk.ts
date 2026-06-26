@@ -28,30 +28,34 @@ export function encodeFrame(frame: Frame): string {
   return JSON.stringify(frame);
 }
 
+function isFrame(value: unknown): value is Frame {
+  if (typeof value !== 'object' || value === null) { return false; }
+
+  if (!('c' in value && 's' in value && 't' in value && 'p' in value)) { return false; }
+
+  const { c, s, t, p } = value;
+
+  return (
+    typeof c === 'string'
+    && typeof s === 'number'
+    && typeof t === 'number'
+    && typeof p === 'string'
+    && t >= 1
+    && s >= 0
+    && s < t
+  );
+}
+
 export function decodeFrame(json: string): Frame | undefined {
   let parsed: unknown;
+
   try {
     parsed = JSON.parse(json);
   } catch {
     return undefined;
   }
 
-  if (typeof parsed !== 'object' || parsed === null) return undefined;
-
-  const candidate = parsed as Partial<Frame>;
-  if (
-    typeof candidate.c !== 'string' ||
-    typeof candidate.s !== 'number' ||
-    typeof candidate.t !== 'number' ||
-    typeof candidate.p !== 'string' ||
-    candidate.t < 1 ||
-    candidate.s < 0 ||
-    candidate.s >= candidate.t
-  ) {
-    return undefined;
-  }
-
-  return candidate as Frame;
+  return isFrame(parsed) ? parsed : undefined;
 }
 
 /**
@@ -65,8 +69,10 @@ export function splitIntoFrames(payload: string, cid: string, maxMessage: number
   const total = Math.max(1, Math.ceil(payload.length / partBudget));
 
   const frames: string[] = [];
+
   for (let seq = 0; seq < total; seq++) {
     const part = payload.slice(seq * partBudget, (seq + 1) * partBudget);
+
     frames.push(encodeFrame({ c: cid, s: seq, t: total, p: part }));
   }
 
@@ -90,9 +96,10 @@ export class Reassembler {
    */
   accept(frame: Frame, currentTick: number): string | undefined {
     // Fast path: a single-frame group is the whole payload, no buffering needed.
-    if (frame.t === 1) return frame.p;
+    if (frame.t === 1) { return frame.p; }
 
     let group = this._groups.get(frame.c);
+
     if (!group) {
       group = {
         parts: new Array<string | undefined>(frame.t),
@@ -112,7 +119,7 @@ export class Reassembler {
     group.received++;
     group.expiresAt = currentTick + CHUNK_TTL_TICKS;
 
-    if (group.received < group.total) return undefined;
+    if (group.received < group.total) { return undefined; }
 
     this._groups.delete(frame.c);
 
@@ -122,6 +129,7 @@ export class Reassembler {
   /** Drop groups whose TTL has elapsed. Returns how many were discarded. */
   evictExpired(currentTick: number): number {
     let dropped = 0;
+
     for (const [cid, group] of this._groups) {
       if (group.expiresAt <= currentTick) {
         this._groups.delete(cid);
