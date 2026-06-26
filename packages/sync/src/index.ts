@@ -33,7 +33,7 @@ export type {
 } from './discovery';
 
 export { Rpc } from './rpc';
-export type { RequestHandler, RequestOptions, RpcOptions } from './rpc';
+export type { RequestHandler, RequestOptions, RpcOptions, TypedClient, RPCHandlerMap } from './rpc';
 
 export { State } from './state';
 export type { SnapshotEntry, StateChange, StateChangeListener, StateOptions } from './state';

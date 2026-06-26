@@ -38,6 +38,20 @@ export interface RequestOptions { timeoutTicks?: number }
 
 export interface RpcOptions { defaultTimeoutTicks?: number }
 
+/** A Proxy-backed client whose methods dispatch to `rpc.request(targetId, methodName, params)`. */
+export type TypedClient<T> = {
+  [K in keyof T]: T[K] extends (params: infer P) => infer R
+    ? (params: P) => Promise<Awaited<R>>
+    : never;
+};
+
+/** Handler map for `rpc.serve<T>()` — each key is type-checked against the interface. */
+export type RPCHandlerMap<T> = {
+  [K in keyof T]: T[K] extends (params: infer P) => infer R
+    ? (params: P, from: string) => R | Promise<Awaited<R>>
+    : never;
+};
+
 export class Rpc {
   private readonly _bus: Bus;
   private readonly _defaultTimeoutTicks: number;
@@ -86,6 +100,26 @@ export class Rpc {
 
       this._pending.set(mid, { resolve, reject, timeoutHandle });
     });
+  }
+
+  /** Returns a typed Proxy that dispatches every method call to `request(targetId, method, params)`. */
+  typed<T>(targetId: string): TypedClient<T> {
+    return new Proxy({} as TypedClient<T>, {
+      get: (_, method) => {
+        if (typeof method !== 'string') return undefined;
+
+        return (params: unknown) => this.request(targetId, method, params);
+      },
+    });
+  }
+
+  /** Registers a typed handler map. Returns a single Unsubscribe that removes all handlers. */
+  serve<T>(handlers: RPCHandlerMap<T>): Unsubscribe {
+    const unsubs = Object.entries(handlers).map(
+      ([method, handler]) => this.onRequest(method, handler as RequestHandler),
+    );
+
+    return () => { for (const u of unsubs) u(); };
   }
 
   /** Register the handler for `method`. Returns an unsubscribe function. */

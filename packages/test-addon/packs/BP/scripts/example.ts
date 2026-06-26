@@ -7,14 +7,18 @@ import { system, world } from '@minecraft/server';
 
 const SAVE_KEY = 'bc:economy:state';
 
+/** Published as a types package (e.g. `@drav0011/bc-economy-types`) so consumers can import it. */
+export interface EconomyRPC { getBalance(params: { player: string }): number }
+
 export function setupEconomy(): void {
   // RPC + registry wiring is bus/in-memory only, so it's safe during early script execution.
   // Register the handler now so it's ready the moment a peer asks.
-  core.rpc.onRequest('getBalance', params => {
-    const { player } = params as { player: string };
-    const balance = core.state.get(`balance.${player}`);
+  core.rpc.serve<EconomyRPC>({
+    getBalance: ({ player }) => {
+      const balance = core.state.get(`balance.${player}`);
 
-    return typeof balance === 'number' ? balance : 0;
+      return typeof balance === 'number' ? balance : 0;
+    },
   });
 
   core.registry.onRegister(addon => console.warn(`[economy] saw ${addon.id} (${addon.name})`));

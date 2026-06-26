@@ -4,6 +4,12 @@
  */
 import { core } from '@bedrock-core/server-runtime';
 
+// In a real project this interface lives in the economy addon's published types package
+// (e.g. `@drav0011/bc-economy-types`) and you install it as a devDependency.
+interface EconomyRPC { getBalance(params: { player: string }): number }
+
+
+
 export function setupShop(): void {
   // Optional, togglable feature: only active while the leaderboard addon is present.
   core.feature('leaderboard-sync', {
@@ -12,12 +18,13 @@ export function setupShop(): void {
     onDisable: () => console.warn('[shop] leaderboard offline — score sync disabled'),
   });
 
-  // Once our required dependency (economy) is present, ask it for a balance. 
+  // Once our required dependency (economy) is present, ask it for a balance.
   core.registry.onDependenciesSatisfied(() => {
     const economy = core.registry.get('drav0011:bc_economy');
     if (!economy) return;
     console.warn(`[shop] economy ready: ${economy.id}`);
-    core.rpc.request(economy.id, 'getBalance', { player: 'Steve' })
+    const economyRpc = core.rpc.typed<EconomyRPC>(economy.id);
+    economyRpc.getBalance({ player: 'Steve' })
       .then(balance => console.warn(`[shop] Steve's balance = ${String(balance)}`))
       .catch((error: unknown) => console.warn(`[shop] balance request failed: ${String(error)}`));
   });
