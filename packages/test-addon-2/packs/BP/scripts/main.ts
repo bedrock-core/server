@@ -5,6 +5,7 @@
  */
 import { core } from '@bedrock-core/server-runtime';
 import { setupShop } from './example';
+import { setupRuntimeUI } from './ui';
 
 // register() brings the addon online — no separate start().
 core.register({
@@ -17,3 +18,4 @@ core.register({
   optionalDependencies: ['drav0011:bc_leaderboard'],
 });
 setupShop();
+setupRuntimeUI(core);

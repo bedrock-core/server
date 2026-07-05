@@ -15,6 +15,7 @@ import { addonTransportId, type AddonManifest, manifestToMeta, validateManifest 
 import { FeatureManager, type FeatureSpec } from './features';
 import { Registry } from './registry';
 import { ScopedState } from './scoped-state';
+import { ConfigRegistry } from './config/config-registry';
 import type { Rpc } from '@bedrock-core/sync';
 
 export class Runtime {
@@ -23,6 +24,7 @@ export class Runtime {
   private _features: FeatureManager | undefined;
   private _manifest: AddonManifest | undefined;
   private _state: ScopedState | undefined;
+  private _config: ConfigRegistry | undefined;
 
   /** Whether the addon has been registered (and is therefore live). */
   get registered(): boolean {
@@ -49,6 +51,16 @@ export class Runtime {
     return this.require(this._registry, 'registry');
   }
 
+  /** The feature manager — use `core.feature()` to declare features, `core.features.of()` for cross-addon reads. */
+  get features(): FeatureManager {
+    return this.require(this._features, 'features');
+  }
+
+  /** The config registry — call `core.config.define()` to declare this addon's config. */
+  get config(): ConfigRegistry {
+    return this.require(this._config, 'config');
+  }
+
   /** Replicated state scoped to this addon's namespace — no need to pass the namespace on every call. For cross-namespace reads use `core.node.state`. */
   get state(): ScopedState {
     return this.require(this._state, 'state');
@@ -69,9 +81,10 @@ export class Runtime {
    * or a second registration. No separate start step is needed.
    */
   register(manifest: AddonManifest): void {
-    if (this._manifest) throw new Error('runtime is already registered');
+    if (this._manifest) { throw new Error('runtime is already registered'); }
 
     const validated = validateManifest(manifest);
+
     this._manifest = validated;
 
     const node = new SyncNode({
@@ -81,22 +94,28 @@ export class Runtime {
       ownedNamespaces: [validated.namespace],
     });
     const registry = new Registry(node.discovery, validated);
-    const features = new FeatureManager(registry);
+    const features = new FeatureManager(registry, node.state, addonTransportId(validated));
+    const config = new ConfigRegistry(node, addonTransportId(validated));
+
     this._node = node;
     this._registry = registry;
     this._features = features;
     this._state = new ScopedState(node.state, validated.namespace);
+    this._config = config;
 
     node.start();
     registry.start();
     features.start();
+    config.start();
   }
 
   /** Take the addon offline. Safe to call before registering (no-op). */
   stop(): void {
+    this._config?.stop();
     this._features?.stop();
     this._registry?.stop();
     this._node?.stop();
+    this._config = undefined;
     this._features = undefined;
     this._registry = undefined;
     this._state = undefined;

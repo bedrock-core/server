@@ -43,13 +43,14 @@ export class Registry {
     );
 
     const missing = this.missingDependencies();
+
     if (missing.length > 0) {
       console.warn(`[bedrock-core] '${this._self.id}' missing dependencies: ${missing.join(', ')}`);
     }
   }
 
   stop(): void {
-    for (const dispose of this._disposers.splice(0)) dispose();
+    for (const dispose of this._disposers.splice(0)) { dispose(); }
   }
 
   /** Every registered addon: the local addon plus all live peers. */
@@ -59,7 +60,7 @@ export class Registry {
 
   /** Look up an addon by its transport id (`creator:namespace`, e.g. `drav0011:bc_economy`). */
   get(id: string): RegisteredAddon | undefined {
-    if (id === this._self.id) return this._self;
+    if (id === this._self.id) { return this._self; }
 
     const peer = this._discovery.peers.find(p => p.id === id);
 
@@ -112,7 +113,8 @@ export class Registry {
    */
   onDependenciesSatisfied(listener: () => void): Unsubscribe {
     this._onDepsSatisfied.add(listener);
-    if (this._depsSatisfied) listener();
+
+    if (this._depsSatisfied) { listener(); }
 
     return (): void => {
       this._onDepsSatisfied.delete(listener);
@@ -127,38 +129,49 @@ export class Registry {
 
   private enrich(manifest: AddonManifest): AddonManifest {
     const entry = _bor[manifest.namespace];
-    if (!entry) return manifest;
+
+    if (!entry) { return manifest; }
+
     const patches: Partial<AddonManifest> = {};
-    if (manifest.name === manifest.namespace) patches.name = entry.name;
-    if (!manifest.creatorName) patches.creatorName = entry.creator;
+
+    if (manifest.name === manifest.namespace) { patches.name = entry.name; }
+
+    if (!manifest.creatorName) { patches.creatorName = entry.creator; }
 
     return Object.keys(patches).length ? { ...manifest, ...patches } : manifest;
   }
 
   private handlePeerUp(peer: PeerInfo): void {
     const addon = this.peerToAddon(peer);
-    for (const listener of this._onRegister) listener(addon);
+
+    for (const listener of this._onRegister) { listener(addon); }
+
     this.evaluateDependencies();
   }
 
   private handlePeerDown(peer: PeerInfo): void {
     const addon = this.peerToAddon(peer);
-    for (const listener of this._onUnregister) listener(addon);
+
+    for (const listener of this._onUnregister) { listener(addon); }
+
     this.evaluateDependencies();
   }
 
   private handleCollision(info: CollisionInfo): void {
     console.error(`[bedrock-core] collision: another instance shares identity '${info.id}'`);
-    for (const listener of this._onCollision) listener(info);
+
+    for (const listener of this._onCollision) { listener(info); }
   }
 
   private evaluateDependencies(): void {
     const satisfied = this.missingDependencies().length === 0;
-    if (satisfied === this._depsSatisfied) return;
+
+    if (satisfied === this._depsSatisfied) { return; }
 
     this._depsSatisfied = satisfied;
+
     if (satisfied) {
-      for (const listener of this._onDepsSatisfied) listener();
+      for (const listener of this._onDepsSatisfied) { listener(); }
     } else {
       console.warn(`[bedrock-core] '${this._self.id}' missing dependencies: ${this.missingDependencies().join(', ')}`);
     }

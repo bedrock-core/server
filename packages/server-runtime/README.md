@@ -7,9 +7,6 @@ state), the runtime is the thing you *register into*. An addon declares its iden
 manifest once, and that declaration flows into a **cross-addon registry** — a live directory
 of every bedrock-core addon present in the world.
 
-> Config (schemas, values, a config/guide UI) is **not** here. It will be its own package
-> built on top of this runtime, using `sync` to share config across addons.
-
 ---
 
 ## Register
@@ -83,15 +80,48 @@ A warning is logged while a declared dependency is absent; nothing ever blocks.
 
 ### Optional dependencies → togglable features
 
-Declare a feature that auto-enables when its required namespaces are all present and
-auto-disables when any drops out:
+Declare a feature that auto-enables when its condition is met and auto-disables when it
+isn't. The condition is re-evaluated on every registry or state change:
 
 ```ts
 core.feature('leaderboard-sync', {
-  condition: r => r.has('other_studio:bc_leaderboard'),
+  // ctx.registry — live addon registry
+  // ctx.state    — raw sync state (read any addon's published values)
+  // ctx.feature  — check another addon's published feature state
+  condition: ctx => ctx.registry.has('other_studio:bc_leaderboard'),
   onEnable() { startSyncingScores(); },
   onDisable() { stopSyncingScores(); },
 });
+
+// Condition combining registry presence AND another addon's feature state:
+core.feature('cross-pvp', {
+  condition: ctx =>
+    ctx.registry.has('other_studio:bc_pvp') &&
+    ctx.feature('other_studio:bc_pvp', 'arena-mode'),
+  onEnable() { /* … */ },
+  onDisable() { /* … */ },
+});
+
+// Condition driven by a raw state value:
+core.feature('shop-integration', {
+  condition: ctx => ctx.state.get('other_studio:bc_shop', 'shopOpen') === true,
+  onEnable() { /* … */ },
+  onDisable() { /* … */ },
+});
+```
+
+Each addon's feature states are published to sync state automatically, so other addons can
+observe them. Outside of conditions, use `core.features`:
+
+```ts
+// Check your own features
+core.features.isEnabled('leaderboard-sync');     // boolean
+
+// Typed read of another addon's features
+type ShopFeatures = 'discount-mode' | 'leaderboard-sync';
+const shopFeatures = core.features.of<ShopFeatures>('other_studio:bc_shop');
+shopFeatures.isEnabled('discount-mode');         // type-checked
+shopFeatures.isEnabled('unknown-feature');       // TS error
 ```
 
 ---
@@ -117,6 +147,125 @@ core.node;   // the raw sync node (bus, discovery) for advanced use
 
 See the [`@bedrock-core/sync` README](../sync/README.md) for messaging/state semantics and
 how an addon persists its own state.
+
+---
+
+## Config
+
+An addon declares its config schema once with `core.config.define()`. Values are returned as
+structured nested objects, stored per-key in dynamic properties, and broadcast over `sync`
+state so other addons and UI layers can discover and edit them. Three independent scopes:
+
+| Scope | Shared across… | Access |
+|---|---|---|
+| `server` | whole world | `config.server` |
+| `dimension` | per dimension + global default | `config.dimension` |
+| `player` | per player + global default | `config.player` |
+
+### Schema declaration
+
+```ts
+const config = core.config.define({
+  server: {
+    pricing: {
+      taxRate:    { type: 'number',  default: 0.05, min: 0, max: 1, step: 0.01, label: 'Tax Rate', widget: 'slider' },
+      currency:   { type: 'enum',   default: 'emerald', options: ['emerald', 'gold', 'diamond'] as const, label: 'Currency' },
+      shopEnabled:{ type: 'boolean', default: true, label: 'Shop Enabled', widget: 'toggle' },
+    },
+  },
+  dimension: {
+    miningBonus: { type: 'number', default: 1.0, min: 0, max: 5, label: 'Mining Bonus' },
+  },
+  player: {
+    allowGifts:      { type: 'boolean', default: true,     label: 'Allow Gifts' },
+    displayCurrency: { type: 'enum',    default: 'symbol', options: ['symbol', 'name', 'both'] as const, label: 'Display' },
+  },
+});
+```
+
+Supported entry types: `'boolean'`, `'number'` (`min`, `max`, `step`), `'string'` (`minLength`,
+`maxLength`), `'enum'` (`options: readonly string[]`). All entries support `label`, `description`,
+and an optional `widget` hint for UI auto-rendering (`'toggle' | 'checkbox'` for boolean,
+`'slider' | 'number-input'` for number, `'input' | 'textarea'` for string).
+
+Groups can be nested to any depth. The full schema is published on `sync` state as a flat map so
+a UI addon can enumerate every field without knowing the provider in advance.
+
+### Server scope
+
+```ts
+// Read — returns a fully typed nested object
+const cfg = config.server.get();
+console.warn(cfg.pricing.taxRate);   // number
+
+// Write — deep-merge (patch) or full replace (set)
+config.server.patch({ pricing: { taxRate: 0.1 } });
+config.server.set({ pricing: { taxRate: 0.1, currency: 'gold', shopEnabled: true } });
+
+// Change listeners — root, group, or leaf; listeners bubble up
+config.server.onChange(full => console.warn(full.pricing.taxRate));          // root
+config.server.onChange('pricing', s => console.warn(s.taxRate));             // group
+config.server.onChange('pricing.taxRate', (next, prev) => { /* … */ });      // leaf
+```
+
+### Dimension / player scopes
+
+Both scopes share the same API — the entity (`Dimension` or `Player`) is the first argument.
+A **global default** applies when no per-entity value has been set.
+
+```ts
+// Per-entity read / write
+config.dimension.get(dim)                         // → { miningBonus: number }
+config.dimension.patch(dim, { miningBonus: 2.0 })
+config.dimension.set(dim, { miningBonus: 3.0 })
+
+// Global default (applies to any entity without a per-entity override)
+config.dimension.getDefault()
+config.dimension.patchDefault({ miningBonus: 1.5 })
+config.dimension.setDefault({ miningBonus: 1.5 })
+
+// Change listeners — same depth support, entity-scoped
+config.player.onChange(player, (full) => { /* … */ })
+config.player.onChange(player, 'allowGifts', (next, prev) => { /* … */ })
+```
+
+### Cross-addon access
+
+Read (and write via RPC) another addon's config. Sync until the target addon publishes
+its schema, then typed if you have the `ConfigDefinition` type:
+
+```ts
+// Synchronous snapshot — returns undefined if the addon isn't online yet
+const shopCfg = core.config.of<ShopConfigDef>('vendor:bc_shop');
+shopCfg?.server.get().pricing.taxRate;
+
+// Subscribe — fires immediately if already online, then again on re-publish
+core.config.subscribe<ShopConfigDef>('vendor:bc_shop', shopCfg => {
+  const taxRate = shopCfg.server.get().pricing.taxRate;
+  console.warn(`shop taxRate = ${String(taxRate)}`);
+});
+```
+
+Omit the type parameter for untyped (`unknown`) access. Writes go through RPC — the provider
+validates and persists them; the state broadcast propagates back to all observers.
+
+### Publishing a config type
+
+Export your `ConfigDefinition` type from a shared types package so consumers can get
+fully-typed access:
+
+```ts
+// In your addon (e.g. @drav0011/bc-shop)
+const configDef = { server: { pricing: { taxRate: { type: 'number', default: 0.05, … } } } } as const;
+export type ShopConfigDef = typeof configDef;
+export const config = core.config.define(configDef);
+
+// In a consumer
+import type { ShopConfigDef } from '@drav0011/bc-shop-types';
+core.config.subscribe<ShopConfigDef>('drav0011:bc_shop', shopCfg => {
+  shopCfg.server.get().pricing.taxRate;  // number — fully typed
+});
+```
 
 ---
 

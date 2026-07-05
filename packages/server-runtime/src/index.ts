@@ -34,9 +34,32 @@ export { Registry } from './registry';
 export type { RegisteredAddon, AddonListener, CollisionListener } from './registry';
 
 export { FeatureManager } from './features';
-export type { FeatureSpec } from './features';
+export type { FeatureSpec, FeatureConditionContext, TypedFeatureAccessor } from './features';
 
 export { ScopedState } from './scoped-state';
 
 export { validateManifest } from './manifest';
 export type { AddonManifest, ManifestMeta } from './manifest';
+
+export type { TypedClient, RPCHandlerMap } from '@bedrock-core/sync';
+
+export { ConfigRegistry } from './config/config-registry';
+export type { Config, RemoteConfigAccessor, TypedRemoteConfig } from './config/config-registry';
+export { EntityConfigScope } from './config/scopes';
+export { ServerConfigScope } from './config/scopes';
+export type {
+  ConfigDefinition,
+  ConfigEntry,
+  ConfigValue,
+  BooleanEntry,
+  NumberEntry,
+  StringEntry,
+  EnumEntry,
+  ListEntry,
+  FlatSchema,
+  SerializedEntry,
+  SchemaToValue,
+  DotPath,
+  PathValue,
+  DeepPartial,
+} from './config/schema';

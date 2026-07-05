@@ -31,6 +31,9 @@ export interface AddonManifest {
 
   /** Transport ids that unlock optional, togglable features when present. */
   optionalDependencies?: string[];
+
+  /** Resource-pack texture path for the registry UI icon (e.g. `textures/ui/my_addon_logo`). */
+  icon?: string;
 }
 
 /** The manifest fields carried in the discovery `meta` blob. The node id is the transport id (`creator:namespace`); namespace is also stored here so peers can recover it. */
@@ -42,6 +45,7 @@ export interface ManifestMeta {
   description?: string;
   dependencies?: string[];
   optionalDependencies?: string[];
+  icon?: string;
   // Index signature so a meta blob is assignable to the transport's opaque meta type.
   [key: string]: unknown;
 }
@@ -59,11 +63,13 @@ export function validateManifest(input: AddonManifest): AddonManifest {
   }
 
   const creator = requireString(input.creator, 'creator');
+
   if (!ID_PATTERN.test(creator)) {
     throw new Error(`invalid creator '${creator}': must be lowercase alphanumeric and underscores only (a-z0-9_)`);
   }
 
   const namespace = requireString(input.namespace, 'namespace');
+
   if (!ID_PATTERN.test(namespace)) {
     throw new Error(`invalid namespace '${namespace}': must be lowercase alphanumeric and underscores only (a-z0-9_)`);
   }
@@ -75,9 +81,12 @@ export function validateManifest(input: AddonManifest): AddonManifest {
     version: requireString(input.version, 'version'),
   };
 
-  if (input.creatorName !== undefined) manifest.creatorName = String(input.creatorName);
-  if (input.description !== undefined) manifest.description = String(input.description);
-  if (input.dependencies !== undefined) manifest.dependencies = stringArray(input.dependencies, 'dependencies');
+  if (input.creatorName !== undefined) { manifest.creatorName = String(input.creatorName); }
+
+  if (input.description !== undefined) { manifest.description = String(input.description); }
+
+  if (input.dependencies !== undefined) { manifest.dependencies = stringArray(input.dependencies, 'dependencies'); }
+
   if (input.optionalDependencies !== undefined) {
     manifest.optionalDependencies = stringArray(input.optionalDependencies, 'optionalDependencies');
   }
@@ -93,10 +102,16 @@ export function addonTransportId(manifest: AddonManifest): string {
 /** Extract the discovery `meta` blob from a manifest. */
 export function manifestToMeta(manifest: AddonManifest): ManifestMeta {
   const meta: ManifestMeta = { creator: manifest.creator, namespace: manifest.namespace, name: manifest.name };
-  if (manifest.creatorName !== undefined) meta.creatorName = manifest.creatorName;
-  if (manifest.description !== undefined) meta.description = manifest.description;
-  if (manifest.dependencies !== undefined) meta.dependencies = manifest.dependencies;
-  if (manifest.optionalDependencies !== undefined) meta.optionalDependencies = manifest.optionalDependencies;
+
+  if (manifest.creatorName !== undefined) { meta.creatorName = manifest.creatorName; }
+
+  if (manifest.description !== undefined) { meta.description = manifest.description; }
+
+  if (manifest.dependencies !== undefined) { meta.dependencies = manifest.dependencies; }
+
+  if (manifest.optionalDependencies !== undefined) { meta.optionalDependencies = manifest.optionalDependencies; }
+
+  if (manifest.icon !== undefined) { meta.icon = manifest.icon; }
 
   return meta;
 }
@@ -115,11 +130,16 @@ export function manifestFromPeer(
     version,
   };
 
-  if (typeof meta?.creatorName === 'string') manifest.creatorName = meta.creatorName;
-  if (typeof meta?.description === 'string') manifest.description = meta.description;
+  if (typeof meta?.creatorName === 'string') { manifest.creatorName = meta.creatorName; }
+
+  if (typeof meta?.description === 'string') { manifest.description = meta.description; }
+
+  if (typeof meta?.icon === 'string') { manifest.icon = meta.icon; }
+
   if (Array.isArray(meta?.dependencies)) {
     manifest.dependencies = meta.dependencies.filter((d): d is string => typeof d === 'string');
   }
+
   if (Array.isArray(meta?.optionalDependencies)) {
     manifest.optionalDependencies = meta.optionalDependencies.filter((d): d is string => typeof d === 'string');
   }

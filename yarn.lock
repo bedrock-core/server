@@ -5,6 +5,31 @@ __metadata:
   version: 8
   cacheKey: 10c0
 
+"@bedrock-core/flexbox@npm:^0.8.1, @bedrock-core/flexbox@npm:^0.8.2":
+  version: 0.8.2
+  resolution: "@bedrock-core/flexbox@npm:0.8.2"
+  checksum: 10c0/ad9c31f3421b9dcc2cee6d3affdf215e25ce25dc84157a76fde38a0660f45da5c47b983cb358b04557264326cff63d84811337bad4b151358a4f4fc6d04f2354
+  languageName: node
+  linkType: hard
+
+"@bedrock-core/navigation@npm:^0.8.1":
+  version: 0.8.2
+  resolution: "@bedrock-core/navigation@npm:0.8.2"
+  peerDependencies:
+    "@bedrock-core/ui-runtime": "*"
+  checksum: 10c0/60c0bc50d8fb83aebefb70be2d0cad0f23660a4b5e25e9d73b646c96629b99b9232b5e2424e5c8d8e0abe5638fc0d591c2a5696c259f9f4533e56b7dd87a3562
+  languageName: node
+  linkType: hard
+
+"@bedrock-core/ore-styled@npm:^0.8.1":
+  version: 0.8.2
+  resolution: "@bedrock-core/ore-styled@npm:0.8.2"
+  peerDependencies:
+    "@bedrock-core/ui-runtime": "*"
+  checksum: 10c0/e514974bb48385e6e03874d889135af0616bed96ee98c8ae9853ee39217dc566dd2a8974bf5c64ffcb07dc558157d5e54a273e60734668156488c016814f0163
+  languageName: node
+  linkType: hard
+
 "@bedrock-core/server-runtime@workspace:^, @bedrock-core/server-runtime@workspace:packages/server-runtime":
   version: 0.0.0-use.local
   resolution: "@bedrock-core/server-runtime@workspace:packages/server-runtime"
@@ -27,6 +52,7 @@ __metadata:
   dependencies:
     "@bedrock-core/server-runtime": "workspace:^"
     "@bedrock-core/sync": "workspace:^"
+    "@bedrock-core/ui": "portal:../../../ui"
     "@eslint/js": "npm:^10.0.1"
     "@eslint/json": "npm:^2.0.0"
     "@minecraft/server": "npm:2.8.0"
@@ -93,6 +119,32 @@ __metadata:
   peerDependencies:
     "@minecraft/server": ">=2.8.0"
   languageName: unknown
+  linkType: soft
+
+"@bedrock-core/ui-runtime@npm:^0.8.1":
+  version: 0.8.2
+  resolution: "@bedrock-core/ui-runtime@npm:0.8.2"
+  dependencies:
+    "@bedrock-core/flexbox": "npm:^0.8.2"
+  peerDependencies:
+    "@minecraft/server": "*"
+    "@minecraft/server-ui": "*"
+  checksum: 10c0/e41d45a6d6e38a10e9ee7c9b39d3783741dd467d549fb1213655128f4b24075670b16edae1564a21e3d5b0351d1e0559e351ea6804085e1bb3113722bf7b54a1
+  languageName: node
+  linkType: hard
+
+"@bedrock-core/ui@portal:../../../ui::locator=%40bedrock-core%2Fserver-test-addon-2%40workspace%3Apackages%2Ftest-addon-2":
+  version: 0.0.0-use.local
+  resolution: "@bedrock-core/ui@portal:../../../ui::locator=%40bedrock-core%2Fserver-test-addon-2%40workspace%3Apackages%2Ftest-addon-2"
+  dependencies:
+    "@bedrock-core/flexbox": "npm:^0.8.1"
+    "@bedrock-core/navigation": "npm:^0.8.1"
+    "@bedrock-core/ore-styled": "npm:^0.8.1"
+    "@bedrock-core/ui-runtime": "npm:^0.8.1"
+  peerDependencies:
+    "@minecraft/server": "*"
+    "@minecraft/server-ui": "*"
+  languageName: node
   linkType: soft
 
 "@bedrock-oss/add-on-registry@npm:*":

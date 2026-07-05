@@ -1,11 +1,12 @@
-import stylistic from "@stylistic/eslint-plugin";
-import { defineConfig } from "eslint/config";
-import { dirname } from "path";
-import tseslint from "typescript-eslint";
-import { fileURLToPath } from "url";
+import js from '@eslint/js';
+import json from "@eslint/json";
+import stylistic from '@stylistic/eslint-plugin';
+import { defineConfig } from 'eslint/config';
+import { dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import tseslint from 'typescript-eslint';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig([
   {
@@ -13,360 +14,121 @@ export default defineConfig([
       ".yarn/**",
       "dist/**",
       "node_modules/**",
-      "packages/test-addon/**",
-      "packages/test-addon-2/**",
-      "**/*.*js",
-      "**/*.config.ts",
-      "**/mocks/**"
     ],
   },
 
   {
-    files: ["**/*.ts"],
-    ignores: ["**/*.d.ts"],
-    plugins: { "@stylistic": stylistic, "@typescript-eslint": tseslint.plugin },
+    files: ["**/*.json" ,"**/*.jsonc"],
+    plugins: { json },
+    language: "json/jsonc",
+    extends: ["json/recommended"],
+  },
 
+  // Stylistic configuration factory (only for JS/TS files)
+  {
+    files: ['**/*.js', '**/*.jsx', '**/*.ts', '**/*.tsx'],
+    ...stylistic.configs.customize({
+      indent: 2,
+      quotes: 'single',
+      semi: true,
+      jsx: true,
+      braceStyle: '1tbs',
+    }),
+  },
+
+  // Global padding rules (only for JS/TS files)
+  {
+    files: ['**/*.js', '**/*.jsx', '**/*.ts', '**/*.tsx'],
+    rules: {
+      '@stylistic/padding-line-between-statements': [
+        'error',
+        { blankLine: 'always', prev: ['const', 'let', 'var'], next: '*' },
+        { blankLine: 'any', prev: ['const', 'let', 'var'], next: ['const', 'let', 'var'] },
+        { blankLine: 'any', prev: ['case', 'default'], next: 'break' },
+        { blankLine: 'any', prev: 'case', next: 'case' },
+        { blankLine: 'always', prev: '*', next: 'return' },
+        { blankLine: 'always', prev: 'block', next: '*' },
+        { blankLine: 'always', prev: '*', next: 'block' },
+        { blankLine: 'always', prev: 'block-like', next: '*' },
+        { blankLine: 'always', prev: '*', next: 'block-like' },
+        { blankLine: 'always', prev: ['import'], next: ['const', 'let', 'var'] },
+      ],
+      '@stylistic/max-statements-per-line': ["off"]
+    },
+  },
+
+  // TypeScript files
+  {
+    files: ['**/*.ts', '**/*.tsx'],
+    extends: [
+      js.configs.recommended,
+      ...tseslint.configs.recommended,
+    ],
     languageOptions: {
       parser: tseslint.parser,
       ecmaVersion: "latest",
       sourceType: "module",
       parserOptions: {
-        project: ["tsconfig.eslint.json"],
+        projectService: true,
         tsconfigRootDir: __dirname,
       },
     },
-
     rules: {
-      "no-unused-expressions": "off",
-      "@typescript-eslint/no-unused-expressions": "off",
-      "@typescript-eslint/explicit-member-accessibility": ["error",
+      // TypeScript
+      '@typescript-eslint/no-unsafe-function-type': 'error',
+      '@typescript-eslint/no-explicit-any': 'error',
+      "@typescript-eslint/no-empty-object-type": ["error", {
+        "allowInterfaces": 'always',
+      }],
+      '@typescript-eslint/no-inferrable-types': 'off',
+      '@typescript-eslint/explicit-function-return-type': 'warn',
+      /* Use type predicates or guards instead of as cast. https://www.w3schools.com/typescript/typescript_type_guards.php */
+      '@typescript-eslint/no-unsafe-type-assertion': 'error',
+      '@typescript-eslint/no-unnecessary-type-assertion': 'error',
+      '@typescript-eslint/member-ordering': [
+        'error',
         {
-          accessibility: "no-public",
-        }
+          default: ['public-static-field', 'static-field', 'instance-field', 'public-instance-method', 'public-static-field'],
+        },
       ],
-
-      "@typescript-eslint/no-restricted-types": [
+      '@typescript-eslint/naming-convention': [
+        'error',
+        {
+          selector: 'memberLike',
+          modifiers: ['private'],
+          format: ['camelCase'],
+          leadingUnderscore: 'require',
+        },
+      ],
+       "@typescript-eslint/no-unused-vars": [
         "error",
         {
-          "types": {
-            "Object": {
-              "message": "Avoid using the `Object` type. Did you mean `object`?"
-            },
-            "Function": {
-              "message": "Avoid using the `Function` type. Prefer a specific function type, like `() => void`."
-            },
-            "Boolean": {
-              "message": "Avoid using the `Boolean` type. Did you mean `boolean`?"
-            },
-            "Number": {
-              "message": "Avoid using the `Number` type. Did you mean `number`?"
-            },
-            "String": {
-              "message": "Avoid using the `String` type. Did you mean `string`?"
-            },
-            "Symbol": {
-              "message": "Avoid using the `Symbol` type. Did you mean `symbol`?"
-            }
-          }
+          "args": "all",
+          "argsIgnorePattern": "^_",
+          "caughtErrors": "all",
+          "caughtErrorsIgnorePattern": "^_",
+          "destructuredArrayIgnorePattern": "^_",
+          "varsIgnorePattern": "^_",
+          "ignoreRestSiblings": true
         }
       ],
-      "@typescript-eslint/no-wrapper-object-types": "error",
-      "@typescript-eslint/no-unsafe-function-type": "error",
-      "@typescript-eslint/no-empty-object-type": ["error",
-        {
-          allowInterfaces: 'always'
-        }
-      ],
-      "@typescript-eslint/ban-ts-comment": ["error",
-        {
-          'ts-expect-error': 'allow-with-description'
-        }
-      ],
-
-      "@typescript-eslint/consistent-type-assertions": "error",
-      "@typescript-eslint/dot-notation": "error",
-
-      "@typescript-eslint/member-ordering": ["error",
-        {
-          default: [
-            "private-field",
-            "protected-field",
-            "public-field",
-            "constructor",
-            "public-method",
-            "protected-method",
-            "private-method",
-          ],
-        }
-      ],
-
-      "@typescript-eslint/naming-convention": ["error",
-        {
-          selector: "default",
-          format: ["camelCase"],
-        },
-        {
-          selector: "default",
-          modifiers: ["unused"],
-
-          filter: {
-            regex: "^(_|_.*_?)$",
-            match: true,
-          },
-
-          format: null,
-        },
-        {
-          selector: "variable",
-          format: ["camelCase"],
-        },
-        {
-          selector: "variable",
-          modifiers: ["const"],
-          format: ["camelCase", "UPPER_CASE", "PascalCase"],
-        },
-        {
-          selector: "variable",
-          modifiers: ["const", "unused"],
-          format: ["camelCase", "UPPER_CASE", "PascalCase"],
-          leadingUnderscore: "allow"
-        },
-        {
-          selector: ["enum", "enumMember", "function"],
-          format: ["camelCase", "UPPER_CASE", "PascalCase"],
-        },
-        {
-          selector: ["property", "parameterProperty", "accessor"],
-          modifiers: ["private"],
-          format: ["camelCase"],
-          leadingUnderscore: "require",
-        },
-        {
-          selector: ["property", "parameterProperty", "accessor"],
-          modifiers: ["private", "readonly"],
-          format: ["UPPER_CASE", "camelCase"],
-          leadingUnderscore: "allow",
-        },
-        {
-          selector: ["property"],
-          modifiers: ["readonly"],
-          format: ["camelCase", "UPPER_CASE"],
-        },
-        {
-          selector: ["objectLiteralProperty", "typeProperty"],
-          format: ["camelCase", "snake_case", "UPPER_CASE", "PascalCase"],
-          leadingUnderscore: "allowDouble",
-        },
-        {
-          selector: "typeLike",
-          format: ["PascalCase"],
-        }
-      ],
-
-      "@typescript-eslint/explicit-function-return-type": ["error",
-        {
-          allowExpressions: true,
-        }
-      ],
-
-      "@typescript-eslint/no-unnecessary-type-assertion": "error",
-      "@typescript-eslint/default-param-last": "warn",
-      "@typescript-eslint/no-explicit-any": "warn",
-      "@typescript-eslint/no-unnecessary-boolean-literal-compare": "warn",
-      "@typescript-eslint/prefer-enum-initializers": "warn",
-
-      "@typescript-eslint/unbound-method": ["error",
-        {
-          ignoreStatic: true,
-        }
-      ],
-
-      eqeqeq: ["error", "always",
-        {
-          null: "ignore",
-        }
-      ],
-
-      "object-shorthand": "error",
-
-      "@typescript-eslint/no-unused-vars": ["error", {
-        varsIgnorePattern: "^_",
-        argsIgnorePattern: "^_",
-        caughtErrorsIgnorePattern: "^_",
-      }],
-
-      "arrow-body-style": "warn",
-      curly: ["warn", "multi-line", "consistent"],
-      "@typescript-eslint/array-type": "warn",
-      "@typescript-eslint/prefer-optional-chain": "warn",
-      "@typescript-eslint/prefer-reduce-type-parameter": "warn",
-      "@stylistic/array-bracket-newline": "off",
-      "@stylistic/array-bracket-spacing": ["warn"],
-      "@stylistic/array-element-newline": "off",
-      "@stylistic/arrow-parens": ["warn", "as-needed"],
-      "@stylistic/arrow-spacing": ["warn"],
-      "@stylistic/block-spacing": ["warn", "always"],
-
-      "@stylistic/brace-style": ["warn", "1tbs",
-        {
-          allowSingleLine: true,
-        }
-      ],
-
-      "@stylistic/comma-dangle": ["warn",
-        {
-          arrays: "always-multiline",
-          objects: "always-multiline",
-          imports: "never",
-          exports: "never",
-          functions: "always-multiline",
-          enums: "never",
-          generics: "never",
-          tuples: "always-multiline",
-        }
-      ],
-
-      "@stylistic/comma-spacing": ["warn",
-        {
-          before: false,
-          after: true,
-        }
-      ],
-
-      "@stylistic/computed-property-spacing": ["warn"],
-      "@stylistic/dot-location": ["warn", "property"],
-      "@stylistic/eol-last": ["warn"],
-      // "@stylistic/func-call-spacing": ["warn", "never"],
-      "@stylistic/function-call-argument-newline": ["warn", "consistent"],
-      "@stylistic/function-paren-newline": ["warn", "consistent"],
-      "@stylistic/generator-star-spacing": "off",
-      "@stylistic/implicit-arrow-linebreak": ["warn", "beside"],
-      "@stylistic/indent": ["warn", 2],
-      "@stylistic/jsx-quotes": "off",
-
-      "@stylistic/key-spacing": ["warn",
-        {
-          beforeColon: false,
-          afterColon: true,
-          mode: "strict",
-        }
-      ],
-
-      "@stylistic/keyword-spacing": ["warn"],
-
-      "@stylistic/lines-around-comment": ["warn",
-        {
-          afterBlockComment: false,
-          beforeLineComment: false,
-          afterLineComment: false,
-          allowBlockStart: true,
-          allowClassStart: true,
-          allowObjectStart: true,
-          allowArrayStart: true,
-        }
-      ],
-
-      "@stylistic/lines-between-class-members": ["warn", "always",
-        {
-          exceptAfterSingleLine: true,
-          exceptAfterOverload: false,
-        }
-      ],
-
-      "@stylistic/max-len": "off",
-      "@stylistic/max-statements-per-line": "off",
-      "@stylistic/multiline-ternary": "off",
-      "@stylistic/new-parens": ["warn"],
-      "@stylistic/newline-per-chained-call": "off",
-      "@stylistic/no-confusing-arrow": "off",
-      "@stylistic/no-extra-parens": ["warn"],
-      "@stylistic/no-extra-semi": ["warn"],
-      "@stylistic/no-floating-decimal": ["warn"],
-      "@stylistic/no-mixed-operators": "off",
-      "@stylistic/no-mixed-spaces-and-tabs": ["warn"],
-      "@stylistic/no-multi-spaces": ["warn"],
-
-      "@stylistic/no-multiple-empty-lines": ["warn",
-        {
-          max: 1,
-        }
-      ],
-
-      "@stylistic/no-tabs": ["off"],
-      "@stylistic/no-trailing-spaces": ["warn"],
-      "@stylistic/no-whitespace-before-property": ["warn"],
-      "@stylistic/nonblock-statement-body-position": "off",
-
-      "@stylistic/object-curly-newline": ["warn",
-        {
-          multiline: true,
-        }
-      ],
-
-      "@stylistic/object-curly-spacing": ["warn", "always"],
-      "@stylistic/object-property-newline": "off",
-      "@stylistic/one-var-declaration-per-line": "off",
-      "@stylistic/operator-linebreak": "off",
-      "@stylistic/padded-blocks": ["warn", "never"],
-
-      "@stylistic/padding-line-between-statements": ["warn",
-        {
-          blankLine: "always",
-          prev: "*",
-          next: "return",
-        }
-      ],
-
-      "@stylistic/quote-props": ["warn", "as-needed"],
-
-      "@stylistic/quotes": ["warn", "single",
-        {
-          avoidEscape: true,
-          allowTemplateLiterals: 'always',
-        }
-      ],
-
-      "@stylistic/rest-spread-spacing": ["warn", "never"],
-      "@stylistic/semi": ["warn", "always"],
-      "@stylistic/semi-spacing": ["warn"],
-      "@stylistic/semi-style": ["warn", "last"],
-      "@stylistic/space-before-blocks": ["warn"],
-      "@stylistic/space-before-function-paren": ["warn", {
-        "anonymous": "never",
-        "named": "never",
-        "asyncArrow": "never",
-        "catch": "always"
-      }],
-      "@stylistic/space-in-parens": ["warn", "never"],
-      "@stylistic/space-infix-ops": "warn",
-      "@stylistic/space-unary-ops": "off",
-      "@stylistic/spaced-comment": ["warn", "always"],
-      "@stylistic/switch-colon-spacing": ["warn"],
-      "@stylistic/template-curly-spacing": ["warn"],
-      "@stylistic/template-tag-spacing": "off",
-      "@stylistic/wrap-iife": "off",
-      "@stylistic/wrap-regex": "off",
-      "@stylistic/yield-star-spacing": "off",
-      "@stylistic/member-delimiter-style": ["warn"],
-      "@stylistic/type-annotation-spacing": "warn",
-      "@stylistic/jsx-child-element-spacing": "off",
-      "@stylistic/jsx-closing-bracket-location": "off",
-      "@stylistic/jsx-closing-tag-location": "off",
-      "@stylistic/jsx-curly-brace-presence": "off",
-      "@stylistic/jsx-curly-newline": "off",
-      "@stylistic/jsx-curly-spacing": "off",
-      "@stylistic/jsx-equals-spacing": "off",
-      "@stylistic/jsx-first-prop-new-line": "off",
-      "@stylistic/jsx-indent": "off",
-      "@stylistic/jsx-indent-props": "off",
-      "@stylistic/jsx-max-props-per-line": "off",
-      "@stylistic/jsx-newline": "off",
-      "@stylistic/jsx-one-expression-per-line": "off",
-      "@stylistic/jsx-props-no-multi-spaces": "off",
-      "@stylistic/jsx-self-closing-comp": "off",
-      "@stylistic/jsx-sort-props": "off",
-      "@stylistic/jsx-tag-spacing": "off",
-      "@stylistic/jsx-wrap-multilines": "off",
+      // @stylistic
+      '@stylistic/jsx-curly-brace-presence': ["warn", "always"],
+      // eslint
+      'arrow-body-style': ['error', 'as-needed'],
+      'curly': 'warn',
+      'no-console': ['warn', { allow: ['info', 'warn', 'error'] }],
+      'prefer-const': 'warn',
     },
-  }
+  },
+
+  // Generator filter files
+  {
+    files: ['**/*.ts', '**/*.tsx'],
+    ignores: ['packs/BP/scripts/**/*.ts'],
+    rules: {
+      '@typescript-eslint/naming-convention': 'off',
+    },
+  },
 ]);
+

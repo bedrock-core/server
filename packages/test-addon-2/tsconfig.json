@@ -1,32 +1,31 @@
 {
 	"compilerOptions": {
-		"target": "ES2023",
+		"target": "esnext",
 		"module": "esnext",
-		"declaration": true,
-		"declarationMap": false,
-		"sourceMap": true,
-		"inlineSources": true,
-		"rootDir": "packs/BP/scripts",
-		"stripInternal": true,
-		"strict": true,
 		"moduleResolution": "bundler",
+		"resolveJsonModule": true,
+		"allowJs": false,
+		"checkJs": false,
+		"noEmit": true,
+		"declaration": true,
+		"declarationMap": true,
+		"sourceMap": true,
+		"strict": true,
+		"noUnusedLocals": true,
+		"noUnusedParameters": true,
+		"noImplicitReturns": true,
+		"noFallthroughCasesInSwitch": true,
+		"skipLibCheck": true,
 		"esModuleInterop": true,
 		"forceConsistentCasingInFileNames": true,
-		"skipLibCheck": true,
-		"allowSyntheticDefaultImports": true,
-		"noImplicitAny": true,
-		"removeComments": true,
-		"preserveConstEnums": true,
-		"noImplicitReturns": true,
-		"allowJs": true,
-		"resolveJsonModule": true
+		"jsx": "react-jsx",
+		"jsxImportSource": "@bedrock-core/ui",
 	},
-	// Single entry point for the compilation
 	"files": [
 		"packs/BP/scripts/main.ts"
 	],
 	"include": [
-		"packs/BP/scripts/**/*",
+		"packs/BP/scripts/**/*"
 	],
 	"exclude": [
 		"node_modules",

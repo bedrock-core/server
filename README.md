@@ -70,9 +70,28 @@ core.registry.all();                               // every registered addon (se
 core.registry.onRegister(addon => /* … */ {});
 core.registry.onDependenciesSatisfied(() => /* … */ {});
 core.registry.onNamespaceCollision(info => /* … */ {});
-core.feature('lb-sync', { condition: r => r.has('other_studio:bc_leaderboard'), onEnable() {}, onDisable() {} });
-core.rpc.onRequest('buy', params => purchase(params));
+core.feature('lb-sync', { condition: ctx => ctx.registry.has('other_studio:bc_leaderboard'), onEnable() {}, onDisable() {} });
+core.features.of<'arena-mode' | 'pvp'>('other_studio:bc_pvp').isEnabled('arena-mode'); // typed cross-addon read
+core.rpc.serve<MyRPC>({ buy: ({ item }) => purchase(item) });    // typed provider
+core.rpc.typed<TheirRPC>('other_studio:bc_economy').getBalance({ player: 'Steve' }); // typed consumer
 core.state.set('open', true);                      // scoped to your namespace automatically
+
+// Config — define schema, get/patch/set as typed nested objects, subscribe to changes
+const config = core.config.define({
+  server:    { pricing: { taxRate: { type: 'number', default: 0.05, min: 0, max: 1, label: 'Tax Rate' } } },
+  dimension: { miningBonus: { type: 'number', default: 1.0, min: 0, max: 5, label: 'Mining Bonus' } },
+  player:    { allowGifts: { type: 'boolean', default: true, label: 'Allow Gifts' } },
+});
+config.server.get().pricing.taxRate;               // number — fully typed
+config.server.patch({ pricing: { taxRate: 0.1 } });
+config.server.onChange('pricing.taxRate', (next, prev) => { /* … */ });
+config.dimension.patch(dim, { miningBonus: 2.0 }); // per-entity override
+config.dimension.patchDefault({ miningBonus: 1.5 });
+
+// Cross-addon config read (typed if you have the ConfigDefinition type)
+core.config.subscribe<ShopConfigDef>('other_studio:bc_shop', cfg => {
+  cfg.server.get().pricing.taxRate;                // number
+});
 ```
 
 ### `@bedrock-core/server-test-addon` + `@bedrock-core/server-test-addon-2`
