@@ -10,11 +10,12 @@ export type AppRoutes = {
     entityId?: string;
     breadcrumb: string;
   };
-  ConfigForm: {
-    title: string;
-    list: string[];
-    schema: { itemType?: string; options?: readonly string[]; maxItems?: number };
-    onDone: (updated: string[]) => void;
+  ConfigList: {
+    addonId: string;
+    scope: ConfigScope;
+    entityId?: string;
+    fieldKey: string;
+    breadcrumb: string;
   };
 };
 

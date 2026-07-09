@@ -12,8 +12,10 @@ core.register({
   creator: 'drav0011',
   namespace: 'bc_shop',
   name: 'Shop',
+  creatorName: 'DrAv0011',
   version: '1.0.0',
   description: 'Sells items for currency',
+  icon: 'textures/ui/bc_shop/icon',
   dependencies: ['drav0011:bc_economy'],
   optionalDependencies: ['drav0011:bc_leaderboard'],
 });

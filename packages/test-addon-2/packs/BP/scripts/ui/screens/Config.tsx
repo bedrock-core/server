@@ -1,5 +1,5 @@
-import { Fragment, Panel, Scroll, Text, useContext, useState, type JSX } from '@bedrock-core/ui-runtime';
-import { Button, Card, Divider, Dropdown, Input, Slider, Toggle, theme } from '@bedrock-core/ore-styled';
+import { Fragment, Panel, Text, useContext, type FormValues, type JSX } from '@bedrock-core/ui-runtime';
+import { Button, Card, Form, theme } from '@bedrock-core/ore-styled';
 import { CoreContext } from '../CoreContext';
 import {
   buildNestedPatch,
@@ -9,216 +9,186 @@ import {
   groupByTopLevel,
   patchScope,
   resolveInitialValue,
+  splitScalarsAndLists,
   type EntrySchema,
 } from '../configUtils';
 import type { AppScreen } from '../routes';
 
 const { spacing, fontColor } = theme.tokens;
 
+/** Without a widget hint, a number field this wide falls back to a text input. */
 const NUMBER_INLINE_MAX_RANGE = 100;
 
+/**
+ * Scope editor: ONE native modal form (`<Form>`) holding every scalar field of the
+ * scope. Nothing is staged — the modal is atomic, so all values arrive together in
+ * `onSubmit`, where they are converted per the schema and patched in one call.
+ * List fields have no native modal control; they are edited on their own screen
+ * (`ConfigList`), reachable from `ConfigScope`.
+ */
 export function Config({ navigation, route }: AppScreen<'Config'>): JSX.Element {
   const core = useContext(CoreContext)!;
   const { addonId, scope, entityId, breadcrumb } = route.params;
   const accessor = core.config.of(addonId)!;
-  const schema = filterScope(getScopedSchema(accessor), scope);
+  const { scalars, lists } = splitScalarsAndLists(filterScope(getScopedSchema(accessor), scope));
   const currentValues = getScopeValues(accessor, scope, entityId);
 
-  const [staged, setStaged] = useState<Record<string, unknown>>(() => {
-    const init: Record<string, unknown> = {};
-    for (const [key, entry] of Object.entries(schema)) {
-      init[key] = resolveInitialValue(key, entry, currentValues);
+  if (Object.keys(scalars).length === 0) {
+    return (
+      <Card flexDirection={'column'} padding={12} gap={spacing.sm}>
+        <Text font={'minecraftTen'} scale={1.5}>{breadcrumb}</Text>
+        <Text>{`${fontColor.muted}This scope only has list settings - pick one from the previous screen.`}</Text>
+        <Button onPress={(): void => navigation.goBack()}>{'Back'}</Button>
+      </Card>
+    );
+  }
+
+  function handleSubmit(values: FormValues): void {
+    const flat: Record<string, unknown> = {};
+
+    for (const [key, entry] of Object.entries(scalars)) {
+      const converted = convertValue(entry, values[key]);
+
+      if (converted !== undefined) { flat[key] = converted; }
     }
 
-    return init;
-  });
-
-  const [listStaged, setListStaged] = useState<Record<string, string[]>>(() => {
-    const init: Record<string, string[]> = {};
-    for (const [key, entry] of Object.entries(schema)) {
-      if (entry.type === 'list') {
-        const val = resolveInitialValue(key, entry, currentValues);
-        init[key] = Array.isArray(val) ? (val as string[]) : [];
-      }
-    }
-
-    return init;
-  });
-
-  function handleSave(): void {
-    const combined: Record<string, unknown> = { ...staged };
-    for (const [k, arr] of Object.entries(listStaged)) {
-      combined[k] = JSON.stringify(arr);
-    }
-    patchScope(accessor, scope, entityId, buildNestedPatch(combined));
+    patchScope(accessor, scope, entityId, buildNestedPatch(flat));
     navigation.goBack();
   }
 
-  const groups = groupByTopLevel(schema);
+  const groups = groupByTopLevel(scalars);
 
   return (
-    <Card flexDirection={'column'} padding={12} gap={spacing.sm}>
-      <Text font={'minecraftTen'} scale={1.5}>{breadcrumb}</Text>
-      <Divider />
-      <Scroll>
-        <Panel flexDirection={'column'} gap={spacing.sm}>
-          {[...groups.entries()].map(([groupName, entries]) => (
-            <Fragment>
-              {groupName !== '' ? (
-                <Text font={'minecraftTen'}>{`${fontColor.muted}${groupName.charAt(0).toUpperCase()}${groupName.slice(1)}`}</Text>
-              ) : null}
-              <Panel flexDirection={'column'} gap={spacing.xs}>
-                {entries.map(([subKey, entry]) => {
-                  const fullKey = groupName ? `${groupName}.${subKey}` : subKey;
-
-                  return (
-                    <Fragment>
-                      {renderField(fullKey, entry, staged, setStaged, listStaged, setListStaged, navigation, route.params)}
-                    </Fragment>
-                  );
-                })}
-              </Panel>
-              <Divider variant={'light'} />
-            </Fragment>
-          ))}
-        </Panel>
-      </Scroll>
-      <Panel flexDirection={'row'} gap={spacing.xs}>
-        <Button flexGrow={1} onPress={handleSave}>{'Save'}</Button>
-        <Button flexGrow={1} variant={'secondary'} onPress={(): void => navigation.goBack()}>{'Cancel'}</Button>
+    <Form onSubmit={handleSubmit} onCancel={(): void => navigation.goBack()}>
+      <Panel flexDirection={'column'} gap={2} padding={spacing.sm}>
+        <Text font={'minecraftTen'} scale={1.5}>{breadcrumb}</Text>
       </Panel>
-    </Card>
+      <Fragment>
+        {[...groups.entries()].map(([groupName, entries]) => (
+          <Panel flexDirection={'column'} gap={spacing.xs} padding={spacing.sm}>
+            {groupName !== ''
+              ? (
+                  <Text font={'minecraftTen'}>{`${fontColor.muted}${groupName.charAt(0).toUpperCase()}${groupName.slice(1)}`}</Text>
+                )
+              : null}
+            <Fragment>
+              {entries.map(([subKey, entry]) => {
+                const fullKey = groupName ? `${groupName}.${subKey}` : subKey;
+
+                return (
+                  <Fragment>
+                    {renderField(fullKey, entry, resolveInitialValue(fullKey, entry, currentValues))}
+                    {entry.description ? <Text>{`${fontColor.muted}${entry.description}`}</Text> : null}
+                  </Fragment>
+                );
+              })}
+            </Fragment>
+          </Panel>
+        ))}
+      </Fragment>
+      {Object.keys(lists).length > 0
+        ? (
+            <Panel padding={spacing.sm}>
+              <Text>{`${fontColor.muted}List settings are edited from the previous screen.`}</Text>
+            </Panel>
+          )
+        : null}
+      <Panel flexDirection={'row'} gap={spacing.xs} padding={spacing.sm}>
+        <Form.Button type={'submit'} label={'Save'} flex={2} />
+        <Form.Button type={'exit'} label={'Cancel'} variant={'danger'} flex={1} />
+      </Panel>
+    </Form>
   );
 }
 
-type SetStaged = (fn: (prev: Record<string, unknown>) => Record<string, unknown>) => void;
-type SetListStaged = (fn: (prev: Record<string, string[]>) => Record<string, string[]>) => void;
-
-function renderField(
-  fullKey: string,
-  entry: EntrySchema,
-  staged: Record<string, unknown>,
-  setStaged: SetStaged,
-  listStaged: Record<string, string[]>,
-  setListStaged: SetListStaged,
-  navigation: AppScreen<'Config'>['navigation'],
-  routeParams: AppScreen<'Config'>['route']['params'],
-): JSX.Element {
-  const currentVal = staged[fullKey] ?? entry.default;
-  const label = entry.label;
-  const desc = entry.description ? `\n${fontColor.muted}${entry.description}` : '';
+/**
+ * One scalar schema entry as its native modal field. The schema's `widget` hint
+ * picks the control; without one, the entry type's default applies (number falls
+ * back to a text input when the range is too wide for a usable slider).
+ */
+function renderField(fullKey: string, entry: EntrySchema, current: unknown): JSX.Element {
+  const { label } = entry;
 
   if (entry.type === 'boolean') {
-    return (
-      <Panel flexDirection={'row'} alignItems={'center'} gap={spacing.xs}>
-        <Text flexGrow={1}>{`${label}${desc}`}</Text>
-        <Toggle
-          on={Boolean(currentVal)}
-          onChange={(on): void => { setStaged(prev => ({ ...prev, [fullKey]: on })); }}
-        />
-      </Panel>
-    );
+    const on = Boolean(current);
+
+    return entry.widget === 'checkbox'
+      ? <Form.Checkbox label={label} name={fullKey} defaultValue={on} />
+      : <Form.Toggle label={label} name={fullKey} defaultValue={on} />;
   }
 
   if (entry.type === 'number') {
     const min = entry.min ?? 0;
     const max = entry.max ?? 100;
-    const numVal = typeof currentVal === 'number' ? currentVal : Number(currentVal ?? 0);
+    const numVal = typeof current === 'number' ? current : Number(current ?? 0);
+    const asInput = entry.widget === 'number-input'
+      || (entry.widget === undefined && (max - min) > NUMBER_INLINE_MAX_RANGE);
 
-    if ((max - min) <= NUMBER_INLINE_MAX_RANGE) {
+    if (asInput) {
       return (
-        <Panel flexDirection={'column'} gap={4}>
-          <Text>{`${label}${desc}`}</Text>
-          <Slider
-            min={min}
-            max={max}
-            step={entry.step}
-            value={numVal}
-            onChange={(n): void => { setStaged(prev => ({ ...prev, [fullKey]: n })); }}
-            title={label}
-            submitLabel={'Set'}
-          />
-        </Panel>
+        <Form.Input
+          label={`${label} ${fontColor.muted}(${String(min)} to ${String(max)})`}
+          name={fullKey}
+          defaultValue={String(numVal)}
+          placeholder={`${fontColor.muted}Enter number`}
+        />
       );
     }
 
-    return (
-      <Panel flexDirection={'column'} gap={4}>
-        <Text>{`${label}${desc}`}</Text>
-        <Input
-          value={String(numVal)}
-          onChange={(s): void => {
-            const n = Number(s);
-            if (Number.isFinite(n)) setStaged(prev => ({ ...prev, [fullKey]: n }));
-          }}
-          placeholder={'Enter number'}
-          label={label}
-          title={label}
-          submitLabel={'Set'}
-        />
-      </Panel>
-    );
-  }
-
-  if (entry.type === 'string') {
-    return (
-      <Panel flexDirection={'column'} gap={4}>
-        <Text>{`${label}${desc}`}</Text>
-        <Input
-          value={typeof currentVal === 'string' ? currentVal : ''}
-          onChange={(s): void => { setStaged(prev => ({ ...prev, [fullKey]: s })); }}
-          placeholder={`Enter ${label.toLowerCase()}`}
-          label={label}
-          title={label}
-          submitLabel={'Set'}
-        />
-      </Panel>
-    );
+    return <Form.Slider label={label} name={fullKey} min={min} max={max} step={entry.step} defaultValue={numVal} />;
   }
 
   if (entry.type === 'enum' && entry.options) {
     const options = [...entry.options];
-    const currentStr = typeof currentVal === 'string' ? currentVal : options[0] ?? '';
+    const currentStr = typeof current === 'string' && options.includes(current) ? current : options[0] ?? '';
 
-    return (
-      <Panel flexDirection={'column'} gap={4}>
-        <Text>{`${label}${desc}`}</Text>
-        <Dropdown
-          options={options}
-          value={currentStr}
-          onChange={(v): void => { setStaged(prev => ({ ...prev, [fullKey]: v })); }}
-          label={label}
-          title={label}
-          submitLabel={'Select'}
-        />
-      </Panel>
-    );
+    if (entry.widget === 'radio') {
+      return <Form.Radio label={label} name={fullKey} options={options.map(o => ({ value: o, label: o }))} defaultValue={currentStr} />;
+    }
+
+    if (entry.widget === 'toggle-buttons') {
+      return <Form.ToggleButton label={label} name={fullKey} options={options.map(o => ({ value: o, label: o }))} defaultValue={currentStr} />;
+    }
+
+    return <Form.Dropdown label={label} name={fullKey} options={options} defaultValue={currentStr} />;
   }
 
-  if (entry.type === 'list') {
-    const currentList = listStaged[fullKey] ?? [];
+  // string (and any unknown future type, best-effort)
+  return (
+    <Form.Input
+      label={label}
+      name={fullKey}
+      defaultValue={typeof current === 'string' ? current : ''}
+      placeholder={`${fontColor.muted}Enter ${label.toLowerCase()}`}
+    />
+  );
+}
 
-    return (
-      <Panel flexDirection={'row'} alignItems={'center'} gap={spacing.xs}>
-        <Text flexGrow={1}>{`${label}  (${String(currentList.length)} items)${desc}`}</Text>
-        <Button
-          onPress={(): void => {
-            navigation.navigate('ConfigForm', {
-              title: label,
-              list: [...currentList],
-              schema: { itemType: entry.itemType, options: entry.options, maxItems: entry.maxItems },
-              onDone: (updated): void => {
-                setListStaged(prev => ({ ...prev, [fullKey]: updated }));
-                navigation.navigate('Config', routeParams);
-              },
-            });
-          }}
-        >
-          {'Edit list'}
-        </Button>
-      </Panel>
-    );
+/**
+ * Convert a submitted modal value back to the schema's value type. Enum controls
+ * (dropdown / radio / toggle-buttons) report the selected INDEX, not the option
+ * string; number inputs report text. Returns undefined to skip the key (invalid
+ * or missing value).
+ */
+function convertValue(entry: EntrySchema, raw: string | number | boolean | undefined): unknown {
+  if (raw === undefined) { return undefined; }
+
+  if (entry.type === 'boolean') { return Boolean(raw); }
+
+  if (entry.type === 'number') {
+    const n = typeof raw === 'number' ? raw : Number(raw);
+
+    if (!Number.isFinite(n)) { return undefined; }
+
+    const min = entry.min ?? Number.NEGATIVE_INFINITY;
+    const max = entry.max ?? Number.POSITIVE_INFINITY;
+
+    return Math.min(max, Math.max(min, n));
   }
 
-  return <Fragment />;
+  if (entry.type === 'enum') {
+    return typeof raw === 'number' ? entry.options?.[raw] : undefined;
+  }
+
+  return String(raw);
 }

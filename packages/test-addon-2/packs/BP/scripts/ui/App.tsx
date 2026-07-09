@@ -6,7 +6,7 @@ import type { AppRoutes, ConfigScope } from './routes';
 import { List } from './screens/List';
 import { ConfigScope as ConfigScopeScreen } from './screens/ConfigScope';
 import { Config } from './screens/Config';
-import { ConfigForm } from './screens/ConfigForm';
+import { ConfigList } from './screens/ConfigList';
 
 const Stack = createStackNavigator<AppRoutes>({
   initialRouteName: 'List',
@@ -14,7 +14,7 @@ const Stack = createStackNavigator<AppRoutes>({
     List,
     ConfigScope: ConfigScopeScreen,
     Config,
-    ConfigForm,
+    ConfigList,
   },
 });
 

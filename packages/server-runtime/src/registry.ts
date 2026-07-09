@@ -27,11 +27,13 @@ export class Registry {
   private readonly _onDepsSatisfied = new Set<() => void>();
   private readonly _disposers: Unsubscribe[] = [];
   private _depsSatisfied: boolean;
+  private _missingSinceLastCheck: string[];
 
   constructor(discovery: Discovery, self: AddonManifest) {
     this._discovery = discovery;
     this._self = { ...this.enrich(self), id: addonTransportId(self), self: true };
-    this._depsSatisfied = this.missingDependencies().length === 0;
+    this._missingSinceLastCheck = this.missingDependencies();
+    this._depsSatisfied = this._missingSinceLastCheck.length === 0;
   }
 
   /** Bridge discovery events into registry events and do an initial dependency check. */
@@ -164,16 +166,21 @@ export class Registry {
   }
 
   private evaluateDependencies(): void {
-    const satisfied = this.missingDependencies().length === 0;
+    const missing = this.missingDependencies();
+    const satisfied = missing.length === 0;
 
     if (satisfied === this._depsSatisfied) { return; }
 
     this._depsSatisfied = satisfied;
 
     if (satisfied) {
+      console.info(`[bedrock-core] '${this._self.id}' dependencies resolved: ${this._missingSinceLastCheck.join(', ')}`);
+
       for (const listener of this._onDepsSatisfied) { listener(); }
     } else {
-      console.warn(`[bedrock-core] '${this._self.id}' missing dependencies: ${this.missingDependencies().join(', ')}`);
+      console.info(`[bedrock-core] '${this._self.id}' missing dependencies: ${missing.join(', ')}`);
     }
+
+    this._missingSinceLastCheck = missing;
   }
 }

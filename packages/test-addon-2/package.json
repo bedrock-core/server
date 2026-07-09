@@ -12,7 +12,7 @@
 	"dependencies": {
 		"@bedrock-core/server-runtime": "workspace:^",
 		"@bedrock-core/sync": "workspace:^",
-		"@bedrock-core/ui": "portal:../../../ui",
+		"@bedrock-core/ui": "^0.9.1",
 		"@minecraft/server": "2.8.0",
 		"@minecraft/server-ui": "2.1.0",
 		"typescript": "^6.0.3"

@@ -34,6 +34,9 @@ export interface AddonManifest {
 
   /** Resource-pack texture path for the registry UI icon (e.g. `textures/ui/my_addon_logo`). */
   icon?: string;
+
+  /** Resource-pack texture path for the registry UI thumbnail banner, 16:9 (e.g. `textures/ui/my_addon_thumbnail`). */
+  thumbnail?: string;
 }
 
 /** The manifest fields carried in the discovery `meta` blob. The node id is the transport id (`creator:namespace`); namespace is also stored here so peers can recover it. */
@@ -46,6 +49,7 @@ export interface ManifestMeta {
   dependencies?: string[];
   optionalDependencies?: string[];
   icon?: string;
+  thumbnail?: string;
   // Index signature so a meta blob is assignable to the transport's opaque meta type.
   [key: string]: unknown;
 }
@@ -91,6 +95,10 @@ export function validateManifest(input: AddonManifest): AddonManifest {
     manifest.optionalDependencies = stringArray(input.optionalDependencies, 'optionalDependencies');
   }
 
+  if (input.icon !== undefined) { manifest.icon = String(input.icon); }
+
+  manifest.thumbnail = input.thumbnail ?? '';
+
   return manifest;
 }
 
@@ -112,6 +120,8 @@ export function manifestToMeta(manifest: AddonManifest): ManifestMeta {
   if (manifest.optionalDependencies !== undefined) { meta.optionalDependencies = manifest.optionalDependencies; }
 
   if (manifest.icon !== undefined) { meta.icon = manifest.icon; }
+
+  if (manifest.thumbnail !== undefined) { meta.thumbnail = manifest.thumbnail; }
 
   return meta;
 }
@@ -135,6 +145,8 @@ export function manifestFromPeer(
   if (typeof meta?.description === 'string') { manifest.description = meta.description; }
 
   if (typeof meta?.icon === 'string') { manifest.icon = meta.icon; }
+
+  if (typeof meta?.thumbnail === 'string') { manifest.thumbnail = meta.thumbnail; }
 
   if (Array.isArray(meta?.dependencies)) {
     manifest.dependencies = meta.dependencies.filter((d): d is string => typeof d === 'string');

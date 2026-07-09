@@ -11,6 +11,7 @@ export type EntrySchema = {
   options?: readonly string[];
   maxItems?: number;
   itemType?: string;
+  widget?: string;
 };
 export type FlatSchemaLike = Record<string, EntrySchema>;
 
@@ -36,6 +37,11 @@ export function getScopedSchema(accessor: RemoteConfigAccessor): FlatSchemaLike 
   return accessor.scopedSchema;
 }
 
+/** Narrow an unknown to a plain record without an unsafe assertion. */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
 /** Read current values for a scope + entityId from a remote accessor. */
 export function getScopeValues(
   accessor: RemoteConfigAccessor,
@@ -52,7 +58,7 @@ export function getScopeValues(
     raw = entityId ? accessor.player.get(entityId) : accessor.player.getDefault();
   }
 
-  return (raw as Record<string, unknown> | undefined) ?? {};
+  return isRecord(raw) ? raw : {};
 }
 
 /** Patch a scope with staged values. */
@@ -69,6 +75,22 @@ export function patchScope(
   } else {
     if (entityId) { void accessor.player.patch(entityId, patch); } else { void accessor.player.patchDefault(patch); }
   }
+}
+
+/**
+ * Split a scoped flat schema into scalar entries (editable in one native modal
+ * form) and list entries (each edited on its own screen — a list has no native
+ * modal control).
+ */
+export function splitScalarsAndLists(schema: FlatSchemaLike): { scalars: FlatSchemaLike; lists: FlatSchemaLike } {
+  const scalars: FlatSchemaLike = {};
+  const lists: FlatSchemaLike = {};
+
+  for (const [key, entry] of Object.entries(schema)) {
+    if (entry.type === 'list') { lists[key] = entry; } else { scalars[key] = entry; }
+  }
+
+  return { scalars, lists };
 }
 
 /** Group flat schema entries by their first dot-segment. */
@@ -95,9 +117,9 @@ export function getNestedValue(obj: unknown, path: string): unknown {
   let cur = obj;
 
   for (const part of parts) {
-    if (cur === null || typeof cur !== 'object') { return undefined; }
+    if (!isRecord(cur)) { return undefined; }
 
-    cur = (cur as Record<string, unknown>)[part];
+    cur = cur[part];
   }
 
   return cur;
@@ -113,12 +135,11 @@ export function buildNestedPatch(flat: Record<string, unknown>): Record<string, 
 
     for (let i = 0; i < parts.length - 1; i++) {
       const key = parts[i];
+      const existing = cur[key];
+      const next = isRecord(existing) ? existing : {};
 
-      if (!(key in cur) || typeof cur[key] !== 'object' || cur[key] === null) {
-        cur[key] = {};
-      }
-
-      cur = cur[key] as Record<string, unknown>;
+      cur[key] = next;
+      cur = next;
     }
 
     cur[parts[parts.length - 1]] = value;
@@ -138,7 +159,11 @@ export function resolveInitialValue(
   if (val !== undefined) { return val; }
 
   if (entry.type === 'list' && typeof entry.default === 'string') {
-    try { return JSON.parse(entry.default) as unknown[]; } catch { return []; }
+    try {
+      const parsed: unknown = JSON.parse(entry.default);
+
+      return Array.isArray(parsed) ? parsed : [];
+    } catch { return []; }
   }
 
   return entry.default;

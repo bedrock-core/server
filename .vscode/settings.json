@@ -11,7 +11,17 @@
 		"editor.insertSpaces": true,
 		"editor.tabSize": 2
 	},
+	"[typescriptreact]": {
+		"editor.defaultFormatter": "dbaeumer.vscode-eslint",
+		"editor.insertSpaces": true,
+		"editor.tabSize": 2
+	},
 	"[javascript]": {
+		"editor.defaultFormatter": "dbaeumer.vscode-eslint",
+		"editor.insertSpaces": true,
+		"editor.tabSize": 2
+	},
+	"[javascriptreact]": {
 		"editor.defaultFormatter": "dbaeumer.vscode-eslint",
 		"editor.insertSpaces": true,
 		"editor.tabSize": 2
@@ -31,6 +41,8 @@
 	"eslint.validate": [
 		"javascript",
 		"typescript",
+		"javascriptreact",
+		"typescriptreact",
 		"json",
 		"jsonc"
 	],
@@ -38,5 +50,10 @@
 		"*.json": "jsonc"
 	},
 	"eslint.enable": true,
-	"eslint.format.enable": true
+	"eslint.format.enable": true,
+	"github.copilot.chat.commitMessageGeneration.instructions": [
+		{
+			"file": ".github/copilot-commit-instructions.md"
+		}
+	]
 }

@@ -8,7 +8,7 @@ import { spawn } from 'child_process';
 //
 // The second regolith watch is staggered so the two initial builds don't hit the com.mojang
 // export at the same instant. Tune with WATCH_STAGGER_MS.
-const STAGGER_MS = Number(process.env.WATCH_STAGGER_MS ?? 500);
+const STAGGER_MS = Number(process.env.WATCH_STAGGER_MS ?? 1000);
 
 const ADDONS = [
   '@bedrock-core/server-test-addon',
@@ -22,6 +22,7 @@ let stopping = false;
 function killAll() {
   stopping = true;
   for (const timer of timers.splice(0)) clearTimeout(timer);
+
   for (const child of children.splice(0)) {
     try {
       child.kill();

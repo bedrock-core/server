@@ -29,27 +29,7 @@ const configDef = {
 export type ShopConfigDef = typeof configDef;
 
 export function setupShop(): void {
-  const config = core.config.define(configDef);
-
-  // Optional, togglable feature: only active while the leaderboard addon is present.
-  core.feature('leaderboard-sync', {
-    condition: ctx => ctx.registry.has('drav0011:bc_leaderboard'),
-    onEnable: () => console.warn('[shop] leaderboard online — score sync enabled'),
-    onDisable: () => console.warn('[shop] leaderboard offline — score sync disabled'),
-  });
-
-  // Log current server config after tick 1 (values loaded from dynamic properties).
-  core.registry.onDependenciesSatisfied(() => {
-    const cfg = config.server.get();
-
-    console.warn(`[shop] taxRate = ${String(cfg.pricing.taxRate)}`);
-    console.warn(`[shop] currency = ${String(cfg.pricing.currency)}`);
-  });
-
-  // React to server-scope config changes (e.g. written by the UI addon via RPC).
-  config.server.onChange('pricing.taxRate', (next, prev) => {
-    console.warn(`[shop] taxRate changed: ${String(prev)} → ${String(next)}`);
-  });
+  core.config.define(configDef);
 
   // Once our required dependency (economy) is present, ask it for a balance.
   core.registry.onDependenciesSatisfied(() => {
@@ -59,13 +39,9 @@ export function setupShop(): void {
       return;
     }
 
-    console.warn(`[shop] economy ready: ${economy.id}`);
     const economyRpc = core.rpc.typed<EconomyRPC>(economy.id);
 
     economyRpc.getBalance({ player: 'Steve' })
-      .then(balance => console.warn(`[shop] Steve's balance = ${String(balance)}`))
       .catch((error: unknown) => console.warn(`[shop] balance request failed: ${String(error)}`));
   });
-
-  console.warn(`[shop] ready as ${core.id}`);
 }

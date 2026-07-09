@@ -210,7 +210,7 @@ export class EntityConfigScope<S extends Record<string, unknown>, E extends { id
       if (!node || isEntry(node)) { return undefined; }
 
       prefix = prefix ? `${prefix}.${parts[i]}` : parts[i];
-      subtree = node as Record<string, SchemaNode>;
+      subtree = node;
     }
 
     const last = parts[parts.length - 1];
@@ -222,7 +222,7 @@ export class EntityConfigScope<S extends Record<string, unknown>, E extends { id
 
     if (isEntry(node)) { return this.resolveLeaf(nodePath, entityValues, entityDefaults); }
 
-    return this.buildTree(node as Record<string, SchemaNode>, nodePath, entityValues, entityDefaults);
+    return this.buildTree(node, nodePath, entityValues, entityDefaults);
   }
 
   private buildTree(
@@ -240,7 +240,7 @@ export class EntityConfigScope<S extends Record<string, unknown>, E extends { id
         result[key] = this.resolveLeaf(path, entityValues, entityDefaults);
       } else {
         result[key] = this.buildTree(
-          node as Record<string, SchemaNode>, path, entityValues, entityDefaults,
+          node, path, entityValues, entityDefaults,
         );
       }
     }

@@ -5,28 +5,28 @@ __metadata:
   version: 8
   cacheKey: 10c0
 
-"@bedrock-core/flexbox@npm:^0.8.1, @bedrock-core/flexbox@npm:^0.8.2":
-  version: 0.8.2
-  resolution: "@bedrock-core/flexbox@npm:0.8.2"
-  checksum: 10c0/ad9c31f3421b9dcc2cee6d3affdf215e25ce25dc84157a76fde38a0660f45da5c47b983cb358b04557264326cff63d84811337bad4b151358a4f4fc6d04f2354
+"@bedrock-core/flexbox@npm:^0.9.1":
+  version: 0.9.1
+  resolution: "@bedrock-core/flexbox@npm:0.9.1"
+  checksum: 10c0/2757db350ec0dfb4a110f69d1898ec5d88e22cd1dc5a417aaa715b2f810b823bf7afdd5ce75b8578286e4bb32166b2b0fcc4f6989b9e4569ca3afa2aa72fda24
   languageName: node
   linkType: hard
 
-"@bedrock-core/navigation@npm:^0.8.1":
-  version: 0.8.2
-  resolution: "@bedrock-core/navigation@npm:0.8.2"
+"@bedrock-core/navigation@npm:^0.9.1":
+  version: 0.9.1
+  resolution: "@bedrock-core/navigation@npm:0.9.1"
   peerDependencies:
     "@bedrock-core/ui-runtime": "*"
-  checksum: 10c0/60c0bc50d8fb83aebefb70be2d0cad0f23660a4b5e25e9d73b646c96629b99b9232b5e2424e5c8d8e0abe5638fc0d591c2a5696c259f9f4533e56b7dd87a3562
+  checksum: 10c0/44dd9906dd6477921830954472a94bfea09d51f32603a938e931dabaf7b5ff51e6b5430c54722a16ff43c0afad2539c53ed3e947a136e786a9c68fab95cc6ddf
   languageName: node
   linkType: hard
 
-"@bedrock-core/ore-styled@npm:^0.8.1":
-  version: 0.8.2
-  resolution: "@bedrock-core/ore-styled@npm:0.8.2"
+"@bedrock-core/ore-styled@npm:^0.9.1":
+  version: 0.9.1
+  resolution: "@bedrock-core/ore-styled@npm:0.9.1"
   peerDependencies:
     "@bedrock-core/ui-runtime": "*"
-  checksum: 10c0/e514974bb48385e6e03874d889135af0616bed96ee98c8ae9853ee39217dc566dd2a8974bf5c64ffcb07dc558157d5e54a273e60734668156488c016814f0163
+  checksum: 10c0/62c1007c112946fe655272564814ce49cde490b1a658cb5b91f88434b92d94bc3bb1b2348e6dc1ed9d66785802bd8d6b087de993879bedfe53c2ccf1bc0776ba
   languageName: node
   linkType: hard
 
@@ -52,7 +52,7 @@ __metadata:
   dependencies:
     "@bedrock-core/server-runtime": "workspace:^"
     "@bedrock-core/sync": "workspace:^"
-    "@bedrock-core/ui": "portal:../../../ui"
+    "@bedrock-core/ui": "npm:^0.9.1"
     "@eslint/js": "npm:^10.0.1"
     "@eslint/json": "npm:^2.0.0"
     "@minecraft/server": "npm:2.8.0"
@@ -121,31 +121,32 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@bedrock-core/ui-runtime@npm:^0.8.1":
-  version: 0.8.2
-  resolution: "@bedrock-core/ui-runtime@npm:0.8.2"
+"@bedrock-core/ui-runtime@npm:^0.9.1":
+  version: 0.9.1
+  resolution: "@bedrock-core/ui-runtime@npm:0.9.1"
   dependencies:
-    "@bedrock-core/flexbox": "npm:^0.8.2"
+    "@bedrock-core/flexbox": "npm:^0.9.1"
   peerDependencies:
     "@minecraft/server": "*"
     "@minecraft/server-ui": "*"
-  checksum: 10c0/e41d45a6d6e38a10e9ee7c9b39d3783741dd467d549fb1213655128f4b24075670b16edae1564a21e3d5b0351d1e0559e351ea6804085e1bb3113722bf7b54a1
+  checksum: 10c0/dd3b5edcb33ca53e5c2729c16d629e261e02a6098a25537cb94b2a40228bfaeae27e6c28f53a8899d7693c502b71c7b112a2c53e6a2fc8559cf97ab0ad92e477
   languageName: node
   linkType: hard
 
-"@bedrock-core/ui@portal:../../../ui::locator=%40bedrock-core%2Fserver-test-addon-2%40workspace%3Apackages%2Ftest-addon-2":
-  version: 0.0.0-use.local
-  resolution: "@bedrock-core/ui@portal:../../../ui::locator=%40bedrock-core%2Fserver-test-addon-2%40workspace%3Apackages%2Ftest-addon-2"
+"@bedrock-core/ui@npm:^0.9.1":
+  version: 0.9.1
+  resolution: "@bedrock-core/ui@npm:0.9.1"
   dependencies:
-    "@bedrock-core/flexbox": "npm:^0.8.1"
-    "@bedrock-core/navigation": "npm:^0.8.1"
-    "@bedrock-core/ore-styled": "npm:^0.8.1"
-    "@bedrock-core/ui-runtime": "npm:^0.8.1"
+    "@bedrock-core/flexbox": "npm:^0.9.1"
+    "@bedrock-core/navigation": "npm:^0.9.1"
+    "@bedrock-core/ore-styled": "npm:^0.9.1"
+    "@bedrock-core/ui-runtime": "npm:^0.9.1"
   peerDependencies:
     "@minecraft/server": "*"
     "@minecraft/server-ui": "*"
+  checksum: 10c0/375e9b684abff7e7b6d8826054dc61ae72c392d9a204cb4dfd45902a2ed04d94ac7bb91aa2687cd91d06e222e6e478d64db2f06ea01208baa87aa581041e0077
   languageName: node
-  linkType: soft
+  linkType: hard
 
 "@bedrock-oss/add-on-registry@npm:*":
   version: 1.0.26
