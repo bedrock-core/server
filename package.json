@@ -29,6 +29,13 @@
 		"packages/test-addon",
 		"packages/test-addon-2"
 	],
+	"resolutions": {
+		"@bedrock-core/ui": "portal:../ui",
+		"@bedrock-core/ui-runtime": "portal:../ui/packages/ui-runtime",
+		"@bedrock-core/flexbox": "portal:../ui/packages/flexbox",
+		"@bedrock-core/navigation": "portal:../ui/packages/navigation",
+		"@bedrock-core/ore-styled": "portal:../ui/packages/ore-styled"
+	},
 	"scripts": {
 		"regolith-install": "yarn workspaces foreach -i -A --topological --jobs=1 run regolith-install",
 		"build": "yarn workspaces foreach -ptA run build",

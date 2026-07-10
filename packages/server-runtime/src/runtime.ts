@@ -16,6 +16,7 @@ import { FeatureManager, type FeatureSpec } from './features';
 import { Registry } from './registry';
 import { ScopedState } from './scoped-state';
 import { ConfigRegistry } from './config/config-registry';
+import { TranslationsRegistry } from './translations';
 import type { Rpc } from '@bedrock-core/sync';
 
 export class Runtime {
@@ -25,6 +26,7 @@ export class Runtime {
   private _manifest: AddonManifest | undefined;
   private _state: ScopedState | undefined;
   private _config: ConfigRegistry | undefined;
+  private _translations: TranslationsRegistry | undefined;
 
   /** Whether the addon has been registered (and is therefore live). */
   get registered(): boolean {
@@ -61,6 +63,11 @@ export class Runtime {
     return this.require(this._config, 'config');
   }
 
+  /** Cross-addon translation keys — call `core.translations.provide()` to publish this addon's keys, `all()` for the merged map. */
+  get translations(): TranslationsRegistry {
+    return this.require(this._translations, 'translations');
+  }
+
   /** Replicated state scoped to this addon's namespace — no need to pass the namespace on every call. For cross-namespace reads use `core.node.state`. */
   get state(): ScopedState {
     return this.require(this._state, 'state');
@@ -91,30 +98,37 @@ export class Runtime {
       id: addonTransportId(validated),
       version: validated.version,
       meta: manifestToMeta(validated),
-      ownedNamespaces: [validated.namespace],
+      // Own the transport-id namespace too: config and translations publish under it, and
+      // only owned namespaces are answered in sync's late-join snapshot exchange.
+      ownedNamespaces: [validated.namespace, addonTransportId(validated)],
     });
     const registry = new Registry(node.discovery, validated);
     const features = new FeatureManager(registry, node.state, addonTransportId(validated));
     const config = new ConfigRegistry(node, addonTransportId(validated));
+    const translations = new TranslationsRegistry(node.state, addonTransportId(validated));
 
     this._node = node;
     this._registry = registry;
     this._features = features;
     this._state = new ScopedState(node.state, validated.namespace);
     this._config = config;
+    this._translations = translations;
 
     node.start();
     registry.start();
     features.start();
     config.start();
+    translations.start();
   }
 
   /** Take the addon offline. Safe to call before registering (no-op). */
   stop(): void {
+    this._translations?.stop();
     this._config?.stop();
     this._features?.stop();
     this._registry?.stop();
     this._node?.stop();
+    this._translations = undefined;
     this._config = undefined;
     this._features = undefined;
     this._registry = undefined;

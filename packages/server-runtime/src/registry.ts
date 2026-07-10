@@ -47,7 +47,7 @@ export class Registry {
     const missing = this.missingDependencies();
 
     if (missing.length > 0) {
-      console.warn(`[bedrock-core] '${this._self.id}' missing dependencies: ${missing.join(', ')}`);
+      console.info(`[bedrock-core] '${this._self.id}' missing dependencies: ${missing.join(', ')}`);
     }
   }
 

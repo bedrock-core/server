@@ -13,17 +13,28 @@ export interface AddonManifest {
   /** Creator/vendor id, lowercase alphanumeric + underscores (e.g. `chillcraft_studios`). */
   creator: string;
 
-  /** Creator display name, free text (e.g. `Chillcraft Studios`). Optional. */
+  /**
+   * Creator display name. Assumed to be a Minecraft translation key (e.g.
+   * `chillcraft.cc_mechs.creator`) shipped in this addon's RP .lang — registry UIs render
+   * it per player language. Plain text also works: Bedrock falls back to the literal
+   * string when no .lang entry matches. Optional.
+   */
   creatorName?: string;
 
   /** Addon id, lowercase alphanumeric + underscores (e.g. `bc_economy`). Combined with `creator` to form the unique transport identity. */
   namespace: string;
 
-  /** Human-readable display label (free text, e.g. `My Economy`). Not part of identity. */
+  /**
+   * Human-readable display label. Assumed to be a translation key (see `creatorName`
+   * for the contract, e.g. `chillcraft.cc_mechs.name`); plain text falls back to the
+   * literal. Not part of identity.
+   */
   name: string;
 
   /** Addon version (free-form, e.g. semver). */
   version: string;
+
+  /** Assumed to be a translation key (see `creatorName` for the contract). */
   description?: string;
 
   /** Transport ids (`creator:namespace`, e.g. `drav0011:bc_economy`) this addon needs present (soft — warns, never blocks). */

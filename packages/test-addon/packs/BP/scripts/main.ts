@@ -4,15 +4,23 @@
  * balances over RPC, shares + persists its own state, and ships GameTests.
  */
 import { core } from '@bedrock-core/server-runtime';
+import translationKeys from '@bedrock-core/generated/translation-keys';
 import { setupEconomy } from './example';
 import './tests';
 
-// register() brings the addon online — no separate start().
+// register() brings the addon online — no separate start(). Display fields are
+// translation keys shipped in this addon's RP (texts/en_US.lang); UIs localize
+// them per player language, and Bedrock falls back to the literal string when
+// no .lang entry matches.
 core.register({
   creator: 'drav0011',
   namespace: 'bc_economy',
-  name: 'Economy',
+  name: 'drav0011.bc_economy.name',
+  creatorName: 'drav0011.bc_economy.creator',
   version: '1.0.0',
-  description: 'Provides player balances to other addons',
+  description: 'drav0011.bc_economy.description',
 });
+// Publish this addon's translation keys so other addons' UIs (e.g. the Shop config
+// screen listing every registered addon) can resolve and measure our keys.
+core.translations.provide(translationKeys);
 setupEconomy();

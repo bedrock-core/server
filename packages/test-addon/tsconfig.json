@@ -19,7 +19,12 @@
 		"preserveConstEnums": true,
 		"noImplicitReturns": true,
 		"allowJs": true,
-		"resolveJsonModule": true
+		"resolveJsonModule": true,
+		"paths": {
+			"@bedrock-core/generated/translation-keys": [
+				"./packs/data/translation-keys/translationKeys.generated.json"
+			]
+		}
 	},
 	// Single entry point for the compilation
 	"files": [

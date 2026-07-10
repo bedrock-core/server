@@ -1,4 +1,4 @@
-import { type JSX } from '@bedrock-core/ui-runtime';
+import { TranslationKeysContext, type JSX } from '@bedrock-core/ui-runtime';
 import { createStackNavigator, NavigationContainer, type NavigationState } from '@bedrock-core/navigation';
 import type { Runtime } from '@bedrock-core/server-runtime';
 import { CoreContext } from './CoreContext';
@@ -51,9 +51,13 @@ function buildInitialState(addonId: string, scope?: ConfigScope, entityId?: stri
 export function App({ core, addonId, scope, entityId }: AppProps): JSX.Element {
   return (
     <CoreContext value={core}>
-      <NavigationContainer initialState={addonId ? buildInitialState(addonId, scope, entityId) : undefined}>
-        <Stack.Navigator />
-      </NavigationContainer>
+      {/* Merged map: local vanilla + own keys, overlaid with every peer addon's published
+          keys (core.translations) — so cross-addon registry fields measure correctly. */}
+      <TranslationKeysContext value={core.translations.all()}>
+        <NavigationContainer initialState={addonId ? buildInitialState(addonId, scope, entityId) : undefined}>
+          <Stack.Navigator />
+        </NavigationContainer>
+      </TranslationKeysContext>
     </CoreContext>
   );
 }

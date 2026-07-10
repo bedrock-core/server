@@ -43,6 +43,9 @@ export type { AddonManifest, ManifestMeta } from './manifest';
 
 export type { TypedClient, RPCHandlerMap } from '@bedrock-core/sync';
 
+export { TranslationsRegistry, TRANSLATIONS_STATE_KEY } from './translations';
+export type { TranslationsChangeListener } from './translations';
+
 export { ConfigRegistry } from './config/config-registry';
 export type { Config, RemoteConfigAccessor, TypedRemoteConfig } from './config/config-registry';
 export { EntityConfigScope } from './config/scopes';

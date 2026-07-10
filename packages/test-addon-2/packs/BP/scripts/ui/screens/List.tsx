@@ -10,19 +10,14 @@ const HEADER_BG = 'textures/ui/ore-styled/header/background';
 const ICON_CLOSE = 'textures/ui/ore-styled/button/close/background';
 const ICON_CLOSE_HOVER = 'textures/ui/ore-styled/button/close/background_hover';
 const ICON_CLOSE_PRESSED = 'textures/ui/ore-styled/button/close/background_pressed';
-const ICON_MISSING = 'textures/ui/bc_shop/missing_icon';
+// const ICON_MISSING = 'textures/ui/bc_shop/missing_icon';
+const ICON_MISSING = 'pack_icon';
 const ICON_CONFIG = 'textures/ui/config/config';
 const ICON_GUIDE = 'textures/ui/config/guide';
 
-// There's no aspect-ratio layout primitive, so the 16:9 height is derived from the
-// right panel's actual resolved pixel width instead of guessed: the canonical modal
-// viewport is 320px wide (see @bedrock-core/ui-runtime layout tests), the left list
-// panel takes 33%, and the vertical Divider is 2px — the remainder is this panel's width.
-const VIEWPORT_WIDTH = 320;
-const LEFT_PANEL_WIDTH = VIEWPORT_WIDTH * 0.33;
-const DIVIDER_WIDTH = 2;
-const DETAILS_PANEL_WIDTH = VIEWPORT_WIDTH - LEFT_PANEL_WIDTH - DIVIDER_WIDTH;
-const THUMBNAIL_HEIGHT = DETAILS_PANEL_WIDTH * 6 / 16;
+// Thumbnail banner proportions (width / height) — the layout engine derives the
+// height from the panel's resolved width via `aspectRatio`.
+const THUMBNAIL_RATIO = 16 / 6;
 
 export function List({ navigation }: AppScreen<'List'>): JSX.Element {
   const core = useContext(CoreContext)!;
@@ -56,7 +51,7 @@ export function List({ navigation }: AppScreen<'List'>): JSX.Element {
                       <Panel flexDirection={'row'} alignItems={'center'} gap={spacing.sm}>
                         <Image width={20} height={20} texture={addon.icon ?? ICON_MISSING} />
                         <Panel flexDirection={'column'}>
-                          <Text font={'mojangles'} scale={1}>{`§f${addon.name}`}</Text>
+                          <Text font={'mojangles'} scale={1} localizationKey={addon.name} />
                           <Text font={'mojangles'} scale={1}>{`§7${addon.version}`}</Text>
                         </Panel>
                       </Panel>
@@ -77,13 +72,13 @@ export function List({ navigation }: AppScreen<'List'>): JSX.Element {
 function AddonDetails({ addon, navigation }: { addon: RegisteredAddon; navigation: AppScreen<'List'>['navigation'] }): JSX.Element {
   return (
     <Panel flexGrow={1}>
-      <Panel position={'absolute'} left={0} right={1} top={0} height={THUMBNAIL_HEIGHT} background={addon.thumbnail} />
+      <Panel position={'absolute'} left={0} right={1} top={0} aspectRatio={THUMBNAIL_RATIO} background={addon.thumbnail} />
       <Panel flexDirection={'column'} flexGrow={1} gap={spacing.md} padding={spacing.md}>
         <Panel justifyContent={'center'} alignItems={'center'}>
           <Image width={40} height={40} texture={addon.icon ?? ICON_MISSING} />
         </Panel>
         <Panel flexDirection={'column'}>
-          <Text font={'mojangles'} scale={2} shadow={true}>{`§f${addon.name}`}</Text>
+          <Text font={'mojangles'} scale={2} shadow={true} localizationKey={addon.name} />
           <Text font={'mojangles'} scale={1}>{`§7Version: ${addon.version}`}</Text>
         </Panel>
         <Panel flexDirection={'row'} gap={spacing.sm}>
@@ -100,12 +95,14 @@ function AddonDetails({ addon, navigation }: { addon: RegisteredAddon; navigatio
             </Panel>
           </OreButton>
         </Panel>
-        <Card>
-          <Text font={'mojangles'} scale={1} wordBreak={'break-word'}>{`§7${addon.description ?? ''}`}</Text>
+        <Card variant={'dark'}>
+          {/* Registry fields are translation keys — color/style codes live in the
+              owning addon's .lang values (a key can't carry a § prefix). */}
+          <Text font={'mojangles'} scale={1} wordBreak={'break-word'} maxLines={5} localizationKey={addon.description ?? ''} />
         </Card>
         <Panel flexDirection={'row'} gap={0}>
           <Text shadow={true}>{'§7Author(s): '}</Text>
-          <Text font={'mojangles'} scale={1}>{`§f${addon.creatorName ?? addon.creator}`}</Text>
+          <Text font={'mojangles'} scale={1} localizationKey={addon.creatorName ?? addon.creator} />
         </Panel>
       </Panel>
     </Panel>
