@@ -26,6 +26,7 @@
 	"workspaces": [
 		"packages/sync",
 		"packages/server-runtime",
+		"packages/config-ui",
 		"packages/test-addon",
 		"packages/test-addon-2"
 	],

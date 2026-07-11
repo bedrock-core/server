@@ -30,6 +30,9 @@
  */
 export { Runtime, core } from './runtime';
 
+/** The framework version — keep in sync with package.json. Displayed by config-ui's synthetic bedrock-core list entry. */
+export const RUNTIME_VERSION = '0.1.0';
+
 export { Registry } from './registry';
 export type { RegisteredAddon, AddonListener, CollisionListener } from './registry';
 

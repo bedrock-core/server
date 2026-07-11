@@ -1,4 +1,4 @@
-import type { State, StateChangeListener, Unsubscribe } from '@bedrock-core/sync';
+import type { State, StateChangeListener, StateKey, Unsubscribe } from '@bedrock-core/sync';
 
 /**
  * A thin wrapper around {@link State} that pre-fills the namespace with the addon's own id,
@@ -14,10 +14,12 @@ export class ScopedState {
     this._ns = ns;
   }
 
+  set<T = unknown>(key: StateKey<T>, value: NoInfer<T>): void;
   set(key: string, value: unknown): void {
     this._state.set(this._ns, key, value);
   }
 
+  get<T = unknown>(key: StateKey<T>): NoInfer<T> | undefined;
   get(key: string): unknown | undefined {
     return this._state.get(this._ns, key);
   }

@@ -31,10 +31,14 @@
  * pvp.isEnabled('arena-mode');    // type-checked
  * ```
  */
-import type { State, Unsubscribe } from '@bedrock-core/sync';
+import { stateKey } from '@bedrock-core/sync';
+import type { State, StateKey, Unsubscribe } from '@bedrock-core/sync';
 import type { Registry } from './registry';
 
 export const FEATURE_STATE_PREFIX = 'bc-feature/';
+
+/** Published enabled-flag for one feature of one addon. */
+const featureStateKey = (featureId: string): StateKey<boolean> => stateKey(`${FEATURE_STATE_PREFIX}${featureId}`);
 
 // ─── Public types ─────────────────────────────────────────────────────────────
 
@@ -105,7 +109,7 @@ export class FeatureManager {
    * Reads are synchronous from the in-memory state mirror.
    */
   of<T extends string = string>(addonId: string): TypedFeatureAccessor<T> {
-    return { isEnabled: (id: T) => this._state.get(addonId, `${FEATURE_STATE_PREFIX}${id}`) === true };
+    return { isEnabled: (id: T) => this._state.get(addonId, featureStateKey(id)) === true };
   }
 
   private evaluateAll(): void {
@@ -120,7 +124,7 @@ export class FeatureManager {
     const ctx: FeatureConditionContext = {
       registry: this._registry,
       state: this._state,
-      feature: (addonId, featureId) => this._state.get(addonId, `${FEATURE_STATE_PREFIX}${featureId}`) === true,
+      feature: (addonId, featureId) => this._state.get(addonId, featureStateKey(featureId)) === true,
     };
 
     const available = feature.spec.condition(ctx);
@@ -128,7 +132,7 @@ export class FeatureManager {
     if (available === feature.enabled) { return; }
 
     feature.enabled = available;
-    this._state.set(this._addonId, `${FEATURE_STATE_PREFIX}${id}`, available);
+    this._state.set(this._addonId, featureStateKey(id), available);
 
     if (available) {
       feature.spec.onEnable();

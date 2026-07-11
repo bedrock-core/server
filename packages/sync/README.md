@@ -117,6 +117,18 @@ sync.state.onChange(({ ns, key, value, deleted }) => { /* … */ });
 sync.state.delete('mycoolitems', 'spawnRate');
 ```
 
+**Typed keys.** Plain string keys read as `unknown`. Declare a key with `stateKey<T>()` and
+`get` infers the value type while `set` type-checks it (a compile-time assertion only — peers
+are not validated):
+
+```ts
+import { stateKey } from '@bedrock-core/sync';
+
+const SPAWN_RATE = stateKey<number>('spawnRate');
+sync.state.set('mycoolitems', SPAWN_RATE, 5);                 // value must be number
+const rate = sync.state.get('mycoolitems', SPAWN_RATE);       // number | undefined
+```
+
 **Writes are open** — any node may write any namespace (shared-mutable). Conflicts resolve
 last-write-wins on a Lamport clock. A node answers late-join snapshot requests for its
 `ownedNamespaces` (default `[id]`).

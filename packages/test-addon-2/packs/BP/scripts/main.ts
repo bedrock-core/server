@@ -4,9 +4,9 @@
  * over RPC, and lights up an optional feature when a `leaderboard` addon is present.
  */
 import { core } from '@bedrock-core/server-runtime';
+import { setupConfigUI } from '@bedrock-core/config-ui';
 import translationKeys from '@bedrock-core/generated/translation-keys';
 import { setupShop } from './example';
-import { setupRuntimeUI } from './ui';
 
 // register() brings the addon online — no separate start(). Display fields are
 // translation keys shipped in this addon's RP (texts/en_US.lang); UIs localize
@@ -28,4 +28,4 @@ core.register({
 // addon's published map for UI layout lookups.
 core.translations.provide(translationKeys);
 setupShop();
-setupRuntimeUI(core);
+setupConfigUI(core);

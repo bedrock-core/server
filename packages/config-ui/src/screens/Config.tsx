@@ -1,5 +1,6 @@
-import { Fragment, Panel, Text, useContext, type FormValues, type JSX } from '@bedrock-core/ui-runtime';
 import { Button, Card, Form, theme } from '@bedrock-core/ore-styled';
+import { Runtime } from '@bedrock-core/server-runtime';
+import { Fragment, Panel, Text, useContext, type FormValues, type JSX } from '@bedrock-core/ui-runtime';
 import { CoreContext } from '../CoreContext';
 import {
   buildNestedPatch,
@@ -27,7 +28,7 @@ const NUMBER_INLINE_MAX_RANGE = 100;
  * (`ConfigList`), reachable from `ConfigScope`.
  */
 export function Config({ navigation, route }: AppScreen<'Config'>): JSX.Element {
-  const core = useContext(CoreContext)!;
+  const core = useContext<Runtime>(CoreContext);
   const { addonId, scope, entityId, breadcrumb } = route.params;
   const accessor = core.config.of(addonId)!;
   const { scalars, lists } = splitScalarsAndLists(filterScope(getScopedSchema(accessor), scope));

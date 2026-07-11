@@ -13,7 +13,8 @@ import { BUS_CHANNEL, BUS_NAMESPACE, MAX_MESSAGE, PROTOCOL_VERSION } from './con
 import { type Envelope, decodeEnvelope, encodeEnvelope } from './envelope';
 import { OutboundQueue } from './queue';
 
-export type Unsubscribe = () => void;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type Unsubscribe = (...args: any[]) => void;
 
 const EVICT_INTERVAL_TICKS = 20;
 

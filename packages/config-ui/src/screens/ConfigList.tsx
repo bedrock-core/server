@@ -1,5 +1,6 @@
-import { Fragment, Panel, Text, useContext, type FormValues, type JSX } from '@bedrock-core/ui-runtime';
 import { Button, Card, Form, theme } from '@bedrock-core/ore-styled';
+import { Runtime } from '@bedrock-core/server-runtime';
+import { Fragment, Panel, Text, useContext, type FormValues, type JSX } from '@bedrock-core/ui-runtime';
 import { CoreContext } from '../CoreContext';
 import { buildNestedPatch, filterScope, getScopedSchema, getScopeValues, patchScope, resolveInitialValue } from '../configUtils';
 import type { AppScreen } from '../routes';
@@ -17,7 +18,7 @@ const ADD_NONE = '- none -';
  * screen to add more than one item.
  */
 export function ConfigList({ navigation, route }: AppScreen<'ConfigList'>): JSX.Element {
-  const core = useContext(CoreContext)!;
+  const core = useContext<Runtime>(CoreContext);
   const { addonId, scope, entityId, fieldKey, breadcrumb } = route.params;
   const accessor = core.config.of(addonId)!;
   const entry = filterScope(getScopedSchema(accessor), scope)[fieldKey];

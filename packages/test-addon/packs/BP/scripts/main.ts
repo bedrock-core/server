@@ -4,6 +4,7 @@
  * balances over RPC, shares + persists its own state, and ships GameTests.
  */
 import { core } from '@bedrock-core/server-runtime';
+import { setupConfigUI } from '@bedrock-core/config-ui';
 import translationKeys from '@bedrock-core/generated/translation-keys';
 import { setupEconomy } from './example';
 import './tests';
@@ -24,3 +25,6 @@ core.register({
 // screen listing every registered addon) can resolve and measure our keys.
 core.translations.provide(translationKeys);
 setupEconomy();
+// Mount the shared config UI — registration is first-wins across addons, so with
+// several bedrock-core addons installed exactly one realm serves it for all.
+setupConfigUI(core);

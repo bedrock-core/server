@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": "./src",
+    "jsx": "react-jsx",
+    "jsxImportSource": "@bedrock-core/ui"
+  },
+  "include": [
+    "src/**/*",
+    "../../types/globals.d.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
+}

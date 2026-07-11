@@ -26,10 +26,11 @@
  *
  * Late joiners are covered by sync's state snapshot exchange.
  */
+import { stateKey } from '@bedrock-core/sync';
 import type { State, Unsubscribe } from '@bedrock-core/sync';
 
 /** State key each addon publishes its map under (namespace = the addon's transport id). */
-export const TRANSLATIONS_STATE_KEY = 'bc-i18n/keys';
+export const TRANSLATIONS_STATE_KEY = stateKey<Record<string, string>>('bc-i18n/keys');
 
 export type TranslationsChangeListener = () => void;
 

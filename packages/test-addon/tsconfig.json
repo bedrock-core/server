@@ -20,6 +20,8 @@
 		"noImplicitReturns": true,
 		"allowJs": true,
 		"resolveJsonModule": true,
+		"jsx": "react-jsx",
+		"jsxImportSource": "@bedrock-core/ui",
 		"paths": {
 			"@bedrock-core/generated/translation-keys": [
 				"./packs/data/translation-keys/translationKeys.generated.json"

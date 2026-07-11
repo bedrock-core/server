@@ -1,5 +1,6 @@
-import { Fragment, Panel, Text, useContext, type JSX } from '@bedrock-core/ui-runtime';
 import { Button, Card, Divider, theme } from '@bedrock-core/ore-styled';
+import { Runtime } from '@bedrock-core/server-runtime';
+import { Fragment, Panel, Text, useContext, type JSX } from '@bedrock-core/ui-runtime';
 import { CoreContext } from '../CoreContext';
 import { filterScope, getScopedSchema, splitScalarsAndLists, type ConfigScope as Scope } from '../configUtils';
 import type { AppScreen } from '../routes';
@@ -18,7 +19,7 @@ const SCOPES: { scope: Scope; label: string; hint: string }[] = [
  * gets its own entry here instead, opening the `ConfigList` editor.
  */
 export function ConfigScope({ navigation, route }: AppScreen<'ConfigScope'>): JSX.Element {
-  const core = useContext(CoreContext)!;
+  const core = useContext<Runtime>(CoreContext);
   const { addonId } = route.params;
   const accessor = core.config.of(addonId);
 

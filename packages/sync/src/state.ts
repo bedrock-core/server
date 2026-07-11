@@ -17,6 +17,20 @@ import type { Bus } from './bus';
 import type { Envelope } from './envelope';
 import type { Unsubscribe } from './bus';
 
+declare const stateValueBrand: unique symbol;
+
+/**
+ * A state key that carries the type of the value stored under it. Purely a compile-time
+ * assertion — like any state read, the actual value comes from whichever peer wrote it
+ * last and is not validated at runtime. Create with {@link stateKey}.
+ */
+export type StateKey<T> = string & { readonly [stateValueBrand]?: T };
+
+/** Brand a key string with its value type, for typed `state.get`/`state.set` calls. */
+export function stateKey<T>(key: string): StateKey<T> {
+  return key;
+}
+
 interface Entry {
   value?: unknown;
   ver: number;
@@ -123,6 +137,7 @@ export class State {
   }
 
   /** Read a key from the local mirror. Returns `undefined` if absent or deleted. */
+  get<T = unknown>(ns: string, key: StateKey<T>): NoInfer<T> | undefined;
   get(ns: string, key: string): unknown | undefined {
     const entry = this._store.get(ns)?.get(key);
 
@@ -149,6 +164,7 @@ export class State {
   }
 
   /** Write a key. Broadcasts a delta. Throws if `strictOwnership` is enabled and `ns` is not owned. */
+  set<T = unknown>(ns: string, key: StateKey<T>, value: NoInfer<T>): void;
   set(ns: string, key: string, value: unknown): void {
     this.assertWritable(ns);
     const entry: Entry = { value, ver: ++this._clock, src: this._selfId };

@@ -1,6 +1,6 @@
-import { Button as OreButton, Card, Divider, theme } from '@bedrock-core/ore-styled';
+import { Card, Divider, Button as OreButton, theme } from '@bedrock-core/ore-styled';
+import { RUNTIME_VERSION, type Runtime } from '@bedrock-core/server-runtime';
 import { Button, Image, Panel, Scroll, Text, useContext, useExit, useState, type JSX } from '@bedrock-core/ui-runtime';
-import type { RegisteredAddon } from '@bedrock-core/server-runtime';
 import { CoreContext } from '../CoreContext';
 import type { AppScreen } from '../routes';
 
@@ -10,7 +10,6 @@ const HEADER_BG = 'textures/ui/ore-styled/header/background';
 const ICON_CLOSE = 'textures/ui/ore-styled/button/close/background';
 const ICON_CLOSE_HOVER = 'textures/ui/ore-styled/button/close/background_hover';
 const ICON_CLOSE_PRESSED = 'textures/ui/ore-styled/button/close/background_pressed';
-// const ICON_MISSING = 'textures/ui/bc_shop/missing_icon';
 const ICON_MISSING = 'pack_icon';
 const ICON_CONFIG = 'textures/ui/config/config';
 const ICON_GUIDE = 'textures/ui/config/guide';
@@ -19,9 +18,34 @@ const ICON_GUIDE = 'textures/ui/config/guide';
 // height from the panel's resolved width via `aspectRatio`.
 const THUMBNAIL_RATIO = 16 / 6;
 
+/** The registry fields the list renders — `RegisteredAddon` satisfies it structurally. */
+interface DisplayAddon {
+  id: string;
+  name: string;
+  version: string;
+  creator: string;
+  creatorName?: string;
+  description?: string;
+  icon?: string;
+  thumbnail?: string;
+}
+
+// Synthetic row for the framework itself, pinned at the bottom of the list. It is not
+// in the registry (nothing registers it); name/description are plain text — Text
+// measures unmatched keys literally, and the description must stay under the 80-byte
+// serialization cap since the literal travels as the localization key.
+const FRAMEWORK_ADDON: DisplayAddon = {
+  id: 'bedrock_core:runtime',
+  name: '@bedrock-core',
+  version: RUNTIME_VERSION,
+  creator: 'DrAv0011',
+  description: 'The framework that powers every addon above.',
+  icon: 'textures/ui/bedrock_core/icon',
+};
+
 export function List({ navigation }: AppScreen<'List'>): JSX.Element {
-  const core = useContext(CoreContext)!;
-  const addons = core.registry.all().filter(a => core.config.of(a.id) !== undefined);
+  const core = useContext<Runtime>(CoreContext);
+  const addons: DisplayAddon[] = [...core.registry.all(), FRAMEWORK_ADDON];
   const [selectedId, setSelectedId] = useState<string | undefined>(addons[0]?.id);
   const selected = addons.find(a => a.id === selectedId);
 
@@ -36,43 +60,45 @@ export function List({ navigation }: AppScreen<'List'>): JSX.Element {
         <Button width={15} height={15} background={ICON_CLOSE} backgroundHover={ICON_CLOSE_HOVER} backgroundPressed={ICON_CLOSE_PRESSED} onPress={exit} />
       </Panel>
       <Panel flexDirection={'row'} flexGrow={1}>
-        <Panel width={'33%'} padding={spacing.sm}>
+        <Panel width={'40%'} padding={spacing.sm}>
           <Scroll>
             <Panel flexDirection={'column'}>
-              {addons.length === 0
-                ? <Text>{'No addons with config registered.'}</Text>
-                : addons.map(addon => (
-                    <Button
-                      padding={spacing.sm}
-                      width={'100%'}
-                      justifyContent={'flex-start'}
-                      onPress={(): void => setSelectedId(addon.id)}
-                    >
-                      <Panel flexDirection={'row'} alignItems={'center'} gap={spacing.sm}>
-                        <Image width={20} height={20} texture={addon.icon ?? ICON_MISSING} />
-                        <Panel flexDirection={'column'}>
-                          <Text font={'mojangles'} scale={1} localizationKey={addon.name} />
-                          <Text font={'mojangles'} scale={1}>{`§7${addon.version}`}</Text>
-                        </Panel>
-                      </Panel>
-                    </Button>
-                  ))}
+              {addons.map(addon => (
+                <Button
+                  padding={spacing.sm}
+                  width={'100%'}
+                  justifyContent={'flex-start'}
+                  onPress={(): void => setSelectedId(addon.id)}
+                >
+                  <Panel flexDirection={'row'} alignItems={'center'} gap={spacing.sm}>
+                    <Image width={20} height={20} texture={addon.icon ?? ICON_MISSING} />
+                    <Panel flexDirection={'column'}>
+                      <Text font={'mojangles'} scale={1} localizationKey={addon.name} />
+                      <Text font={'mojangles'} scale={1}>{`§7${addon.version}`}</Text>
+                    </Panel>
+                  </Panel>
+                </Button>
+              ))}
             </Panel>
           </Scroll>
         </Panel>
         <Divider orientation={'vertical'} marginBottom={1} />
         <Panel flexGrow={1}>
-          {selected ? <AddonDetails addon={selected} navigation={navigation} /> : null}
+          {selected ? <AddonDetails core={core} addon={selected} navigation={navigation} /> : null}
         </Panel>
       </Panel>
     </Card>
   );
 }
 
-function AddonDetails({ addon, navigation }: { addon: RegisteredAddon; navigation: AppScreen<'List'>['navigation'] }): JSX.Element {
+function AddonDetails({ core, addon, navigation }: { core: Runtime; addon: DisplayAddon; navigation: AppScreen<'List'>['navigation'] }): JSX.Element {
+  const hasConfig = core.config.of(addon.id) !== undefined;
+
   return (
     <Panel flexGrow={1}>
-      <Panel position={'absolute'} left={0} right={1} top={0} aspectRatio={THUMBNAIL_RATIO} background={addon.thumbnail} />
+      {addon.thumbnail
+        ? <Panel position={'absolute'} left={0} right={1} top={0} aspectRatio={THUMBNAIL_RATIO} background={addon.thumbnail} />
+        : null}
       <Panel flexDirection={'column'} flexGrow={1} gap={spacing.md} padding={spacing.md}>
         <Panel justifyContent={'center'} alignItems={'center'}>
           <Image width={40} height={40} texture={addon.icon ?? ICON_MISSING} />
@@ -82,10 +108,16 @@ function AddonDetails({ addon, navigation }: { addon: RegisteredAddon; navigatio
           <Text font={'mojangles'} scale={1}>{`§7Version: ${addon.version}`}</Text>
         </Panel>
         <Panel flexDirection={'row'} gap={spacing.sm}>
-          <OreButton variant={'secondary'} paddingTop={2} paddingLeft={4} onPress={(): void => navigation.navigate('ConfigScope', { addonId: addon.id })}>
+          <OreButton
+            variant={'secondary'}
+            paddingTop={2}
+            paddingLeft={4}
+            enabled={hasConfig}
+            onPress={(): void => navigation.navigate('ConfigScope', { addonId: addon.id })}
+          >
             <Panel flexDirection={'row'} alignItems={'center'} gap={spacing.sm}>
               <Image width={12} height={12} texture={ICON_CONFIG} />
-              <Text font={'mojangles'} scale={1}>{'§0Config'}</Text>
+              <Text font={'mojangles'} scale={1}>{hasConfig ? '§0Config' : '§8Config'}</Text>
             </Panel>
           </OreButton>
           <OreButton variant={'secondary'} paddingTop={2} paddingLeft={4} enabled={false}>
@@ -98,7 +130,7 @@ function AddonDetails({ addon, navigation }: { addon: RegisteredAddon; navigatio
         <Card variant={'dark'}>
           {/* Registry fields are translation keys — color/style codes live in the
               owning addon's .lang values (a key can't carry a § prefix). */}
-          <Text font={'mojangles'} scale={1} wordBreak={'break-word'} maxLines={5} localizationKey={addon.description ?? ''} />
+          <Text font={'mojangles'} scale={1} wordBreak={'break-word'} localizationKey={addon.description ?? ''} />
         </Card>
         <Panel flexDirection={'row'} gap={0}>
           <Text shadow={true}>{'§7Author(s): '}</Text>
