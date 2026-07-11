@@ -4,6 +4,11 @@ import type { ConfigScope, EntrySchema } from './configUtils';
 export type AppRoutes = {
   List: undefined;
   ConfigScope: { addonId: string };
+  EntityList: {
+    addonId: string;
+    scope: 'dimension' | 'player';
+    breadcrumb: string;
+  };
   Config: {
     addonId: string;
     scope: ConfigScope;

@@ -130,7 +130,7 @@ function AddonDetails({ core, addon, navigation }: { core: Runtime; addon: Displ
         <Card variant={'dark'}>
           {/* Registry fields are translation keys — color/style codes live in the
               owning addon's .lang values (a key can't carry a § prefix). */}
-          <Text font={'mojangles'} scale={1} wordBreak={'break-word'} localizationKey={addon.description ?? ''} />
+          <Text font={'mojangles'} scale={1} maxLines={4} wordBreak={'break-word'} localizationKey={addon.description ?? ''} />
         </Card>
         <Panel flexDirection={'row'} gap={0}>
           <Text shadow={true}>{'§7Author(s): '}</Text>

@@ -53,9 +53,9 @@ export function getScopeValues(
   if (scope === 'server') {
     raw = accessor.server.get();
   } else if (scope === 'dimension') {
-    raw = entityId ? accessor.dimension.get(entityId) : accessor.dimension.getDefault();
+    raw = entityId ? accessor.dimension.get(entityId) : undefined;
   } else {
-    raw = entityId ? accessor.player.get(entityId) : accessor.player.getDefault();
+    raw = entityId ? accessor.player.get(entityId) : undefined;
   }
 
   return isRecord(raw) ? raw : {};
@@ -70,11 +70,19 @@ export function patchScope(
 ): void {
   if (scope === 'server') {
     void accessor.server.patch(patch);
-  } else if (scope === 'dimension') {
-    if (entityId) { void accessor.dimension.patch(entityId, patch); } else { void accessor.dimension.patchDefault(patch); }
-  } else {
-    if (entityId) { void accessor.player.patch(entityId, patch); } else { void accessor.player.patchDefault(patch); }
+  } else if (scope === 'dimension' && entityId) {
+    void accessor.dimension.patch(entityId, patch);
+  } else if (scope === 'player' && entityId) {
+    void accessor.player.patch(entityId, patch);
   }
+}
+
+/** List the selectable entities for a 'dimension' or 'player' scope. */
+export function getRoster(
+  accessor: RemoteConfigAccessor,
+  scope: 'dimension' | 'player',
+): { id: string; name: string }[] {
+  return scope === 'dimension' ? accessor.dimensionRoster : accessor.playerRoster;
 }
 
 /**

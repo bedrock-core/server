@@ -4,9 +4,7 @@
  * Key scheme:
  *   server scope:       world.getDynamicProperty('bc-cfg:s:<addonId>:<key>')
  *   dimension scope:    world.getDynamicProperty('bc-cfg:d:<addonId>:<dimId>:<key>')
- *   dimension defaults: world.getDynamicProperty('bc-cfg:dd:<addonId>:<key>')
  *   player scope:       player.getDynamicProperty('bc-cfg:p:<addonId>:<key>')
- *   player defaults:    world.getDynamicProperty('bc-cfg:pd:<addonId>:<key>')
  *
  * All config values are stored as primitives (boolean | number | string).
  * All functions that touch DPs must only be called from tick 1 onward.
@@ -25,16 +23,8 @@ export function dimensionDpKey(addonId: string, dimId: string, key: string): str
   return `bc-cfg:d:${addonId}:${dimId}:${key}`;
 }
 
-export function dimensionDefaultDpKey(addonId: string, key: string): string {
-  return `bc-cfg:dd:${addonId}:${key}`;
-}
-
 export function playerDpKey(addonId: string, key: string): string {
   return `bc-cfg:p:${addonId}:${key}`;
-}
-
-export function playerDefaultDpKey(addonId: string, key: string): string {
-  return `bc-cfg:pd:${addonId}:${key}`;
 }
 
 // ─── Load helpers ──────────────────────────────────────────────────────────────
@@ -68,19 +58,6 @@ export function loadDimensionValues(
   return values;
 }
 
-/** Returns only keys that have a stored dimension default. */
-export function loadDimensionDefaults(addonId: string, schema: FlatSchema): Map<string, ConfigValue> {
-  const defaults = new Map<string, ConfigValue>();
-
-  for (const [key, entry] of Object.entries(schema)) {
-    const raw = toPrimitive(world.getDynamicProperty(dimensionDefaultDpKey(addonId, key)));
-
-    if (raw !== undefined) { defaults.set(key, coerce(raw, entry)); }
-  }
-
-  return defaults;
-}
-
 /** Returns only keys that have a stored DP value on the player entity. */
 export function loadPlayerValues(
   player: Player,
@@ -96,19 +73,6 @@ export function loadPlayerValues(
   }
 
   return values;
-}
-
-/** Returns only keys that have a stored player default. */
-export function loadPlayerDefaults(addonId: string, schema: FlatSchema): Map<string, ConfigValue> {
-  const defaults = new Map<string, ConfigValue>();
-
-  for (const [key, entry] of Object.entries(schema)) {
-    const raw = toPrimitive(world.getDynamicProperty(playerDefaultDpKey(addonId, key)));
-
-    if (raw !== undefined) { defaults.set(key, coerce(raw, entry)); }
-  }
-
-  return defaults;
 }
 
 // ─── Save helpers ──────────────────────────────────────────────────────────────
@@ -133,14 +97,6 @@ export function savePlayerValue(
   value: ConfigValue,
 ): void {
   player.setDynamicProperty(playerDpKey(addonId, key), value);
-}
-
-export function savePlayerDefault(addonId: string, key: string, value: ConfigValue): void {
-  world.setDynamicProperty(playerDefaultDpKey(addonId, key), value);
-}
-
-export function saveDimensionDefault(addonId: string, key: string, value: ConfigValue): void {
-  world.setDynamicProperty(dimensionDefaultDpKey(addonId, key), value);
 }
 
 /**

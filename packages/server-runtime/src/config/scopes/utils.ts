@@ -1,8 +1,22 @@
 import type { ConfigValue, FlatSchema } from '../schema';
 
+/** Non-null object viewed as a string-indexed record (arrays included, as before). */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function isConfigValue(value: unknown): value is ConfigValue {
+  return typeof value === 'boolean' || typeof value === 'number' || typeof value === 'string';
+}
+
+function isUnknownArray(value: unknown): value is unknown[] {
+  return Array.isArray(value);
+}
+
 /**
  * Flatten a nested plain object to dot-path → primitive pairs.
- * Arrays and null are treated as leaf values (not descended into).
+ * Arrays are leaf values (stored as JSON strings); leaves that are not valid
+ * config values (null, undefined, functions, …) are skipped.
  */
 export function flattenObject(
   obj: Record<string, unknown>,
@@ -15,12 +29,12 @@ export function flattenObject(
 
     if (Array.isArray(val)) {
       result.set(path, JSON.stringify(val));
-    } else if (val !== null && typeof val === 'object') {
-      for (const [k, v] of flattenObject(val as Record<string, unknown>, path)) {
+    } else if (isRecord(val)) {
+      for (const [k, v] of flattenObject(val, path)) {
         result.set(k, v);
       }
-    } else if (val !== undefined) {
-      result.set(path, val as ConfigValue);
+    } else if (isConfigValue(val)) {
+      result.set(path, val);
     }
   }
 
@@ -50,6 +64,20 @@ function pathDepth(path: string): number {
 }
 
 /**
+ * Parse a list value back from its stored JSON-string form.
+ * Malformed JSON or a non-array payload yields `[]`.
+ */
+export function parseListValue(raw: string): unknown[] {
+  try {
+    const parsed: unknown = JSON.parse(raw);
+
+    return isUnknownArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
  * Reconstruct a nested object from a flat dot-path → value record.
  * Pass a FlatSchema so list entries (stored as JSON strings) are parsed back to arrays.
  */
@@ -61,15 +89,22 @@ export function buildNestedObject(flat: Record<string, ConfigValue>, schema?: Fl
     let obj = result;
 
     for (let i = 0; i < parts.length - 1; i++) {
-      if (typeof obj[parts[i]] !== 'object' || obj[parts[i]] === null) { obj[parts[i]] = {}; }
+      const existing = obj[parts[i]];
 
-      obj = obj[parts[i]] as Record<string, unknown>;
+      if (isRecord(existing)) {
+        obj = existing;
+      } else {
+        const child: Record<string, unknown> = {};
+
+        obj[parts[i]] = child;
+        obj = child;
+      }
     }
 
     const leaf = parts[parts.length - 1];
 
     if (schema?.[path]?.type === 'list' && typeof value === 'string') {
-      try { obj[leaf] = JSON.parse(value) as unknown[]; } catch { obj[leaf] = []; }
+      obj[leaf] = parseListValue(value);
     } else {
       obj[leaf] = value;
     }

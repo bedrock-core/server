@@ -10,7 +10,7 @@ import type {
 } from '../schema';
 import { isEntry } from '../schema';
 import { ChangeEmitter, type ChangeListener } from './change-emitter';
-import { flattenObject, collectAffectedPaths } from './utils';
+import { flattenObject, collectAffectedPaths, parseListValue } from './utils';
 
 export class ServerConfigScope<S extends Record<string, unknown>> {
   private readonly tree: Record<string, SchemaNode>;
@@ -36,6 +36,9 @@ export class ServerConfigScope<S extends Record<string, unknown>> {
 
   /** Return the full current config as a typed nested object. */
   get(): SchemaToValue<S> {
+    // The tree walk reconstructs exactly the shape SchemaToValue<S> describes; TS cannot
+    // verify an object assembled key-by-key at runtime, so this assertion is inherent.
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion
     return this.buildTree(this.tree, '', this.values) as SchemaToValue<S>;
   }
 
@@ -51,12 +54,14 @@ export class ServerConfigScope<S extends Record<string, unknown>> {
 
   onChange(listener: ChangeListener<SchemaToValue<S>>): Unsubscribe;
   onChange<P extends DotPath<S>>(path: P, listener: ChangeListener<PathValue<S, P>>): Unsubscribe;
-  onChange(pathOrListener: unknown, listener?: unknown): Unsubscribe {
+  onChange(pathOrListener: string | ChangeListener<unknown>, listener?: ChangeListener<unknown>): Unsubscribe {
     if (typeof pathOrListener === 'function') {
-      return this.emitter.on('', pathOrListener as ChangeListener<unknown>);
+      return this.emitter.on('', pathOrListener);
     }
 
-    return this.emitter.on(pathOrListener as string, listener as ChangeListener<unknown>);
+    if (!listener) { throw new Error('onChange(path, listener): listener is required'); }
+
+    return this.emitter.on(pathOrListener, listener);
   }
 
   /** @internal Load initial values from persistence. Does not emit. */
@@ -108,7 +113,7 @@ export class ServerConfigScope<S extends Record<string, unknown>> {
       if (!node || isEntry(node)) { return undefined; }
 
       prefix = prefix ? `${prefix}.${parts[i]}` : parts[i];
-      subtree = node as Record<string, SchemaNode>;
+      subtree = node;
     }
 
     const last = parts[parts.length - 1];
@@ -120,7 +125,7 @@ export class ServerConfigScope<S extends Record<string, unknown>> {
 
     if (isEntry(node)) { return this.resolveLeaf(nodePath, values); }
 
-    return this.buildTree(node as Record<string, SchemaNode>, nodePath, values);
+    return this.buildTree(node, nodePath, values);
   }
 
   private buildTree(
@@ -136,7 +141,7 @@ export class ServerConfigScope<S extends Record<string, unknown>> {
       if (isEntry(node)) {
         result[key] = this.resolveLeaf(path, values);
       } else {
-        result[key] = this.buildTree(node as Record<string, SchemaNode>, path, values);
+        result[key] = this.buildTree(node, path, values);
       }
     }
 
@@ -147,7 +152,7 @@ export class ServerConfigScope<S extends Record<string, unknown>> {
     const raw = values.get(path) ?? this.flatSchema[path]?.default;
 
     if (this.flatSchema[path]?.type === 'list' && typeof raw === 'string') {
-      try { return JSON.parse(raw) as unknown[]; } catch { return []; }
+      return parseListValue(raw);
     }
 
     return raw;

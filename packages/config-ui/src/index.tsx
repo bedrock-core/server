@@ -25,6 +25,6 @@ export type { AppRoutes, AppScreen, ConfigScope, EntrySchema } from './routes';
 
 export function setupConfigUI(core: Runtime): void {
   registerRuntimeCommands((player, addonId, scope, entityId) => {
-    render(<App core={core} addonId={addonId} scope={scope} entityId={entityId} />, player);
+    render(<App core={core} player={player} addonId={addonId} scope={scope} entityId={entityId} />, player);
   });
 }

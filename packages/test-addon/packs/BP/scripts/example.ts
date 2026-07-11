@@ -1,8 +1,8 @@
 /**
  * Economy addon — exercises every config feature:
  *   server scope   : get / patch / set / onChange at root, group and leaf
- *   dimension scope: per-dim get/patch/set, defaults, onChange
- *   player scope   : per-player get/patch, defaults, onChange on join
+ *   dimension scope: per-dim get/patch/set, onChange
+ *   player scope   : per-player get/patch, onChange on join
  *   cross-addon    : subscribe to Shop's config (test-addon-2)
  *   types          : export EconomyConfigDef so consumers can type cross-addon reads
  */
@@ -102,20 +102,10 @@ export function setupEconomy(): void {
       display: { prefix: '', suffix: ' em', showInChat: true },
     });
 
-    // Dimension scope: defaults + per-dimension overrides
+    // Dimension scope: per-dimension override (unset keys fall back to the schema default)
     const nether = world.getDimension('nether');
 
-    // Global default — applies to all dimensions without a per-dim override
-    config.dimension.patchDefault({ taxRate: 0.10 });
-
-    // Per-dimension override
     config.dimension.patch(nether, { taxRate: 0.25, tradingEnabled: false });
-
-    // setDefault — full replace of the dimension default
-    config.dimension.setDefault({ taxRate: 0.05, tradingEnabled: true });
-
-    // Player scope: set defaults (per-player values are loaded on join)
-    config.player.patchDefault({ notify: { onTransaction: true, onLogin: false } });
   });
 
   // ─── Player lifecycle: per-player config on join ──────────────────────────
@@ -123,7 +113,7 @@ export function setupEconomy(): void {
   world.afterEvents.playerSpawn.subscribe(({ player, initialSpawn }) => {
     if (!initialSpawn) { return; }
 
-    // Read effective config: per-player override → default → schema default
+    // Read effective config: per-player override → schema default
     const playerCfg = config.player.get(player);
 
     // Per-player patch

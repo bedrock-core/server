@@ -1,5 +1,5 @@
 {
   "watch": ["packages/sync/src", "packages/server-runtime/src", "packages/config-ui/src", "types"],
-  "ext": "ts,js,json",
+  "ext": "ts,tsx,js,json",
   "exec": "node nodemon-execution.js"
 }

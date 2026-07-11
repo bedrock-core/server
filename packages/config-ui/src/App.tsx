@@ -1,10 +1,13 @@
 import { TranslationKeysContext, type JSX } from '@bedrock-core/ui-runtime';
 import { createStackNavigator, NavigationContainer, type NavigationState } from '@bedrock-core/navigation';
 import type { Runtime } from '@bedrock-core/server-runtime';
+import type { Player } from '@minecraft/server';
 import { CoreContext } from './CoreContext';
+import { PlayerContext } from './PlayerContext';
 import type { AppRoutes, ConfigScope } from './routes';
 import { List } from './screens/List';
 import { ConfigScope as ConfigScopeScreen } from './screens/ConfigScope';
+import { EntityList } from './screens/EntityList';
 import { Config } from './screens/Config';
 import { ConfigList } from './screens/ConfigList';
 
@@ -13,6 +16,7 @@ const Stack = createStackNavigator<AppRoutes>({
   screens: {
     List,
     ConfigScope: ConfigScopeScreen,
+    EntityList,
     Config,
     ConfigList,
   },
@@ -20,6 +24,7 @@ const Stack = createStackNavigator<AppRoutes>({
 
 export interface AppProps {
   core: Runtime;
+  player: Player;
   addonId?: string;
   scope?: ConfigScope;
   entityId?: string;
@@ -48,16 +53,18 @@ function buildInitialState(addonId: string, scope?: ConfigScope, entityId?: stri
   };
 }
 
-export function App({ core, addonId, scope, entityId }: AppProps): JSX.Element {
+export function App({ core, player, addonId, scope, entityId }: AppProps): JSX.Element {
   return (
     <CoreContext value={core}>
-      {/* Merged map: local vanilla + own keys, overlaid with every peer addon's published
-          keys (core.translations) — so cross-addon registry fields measure correctly. */}
-      <TranslationKeysContext value={core.translations.all()}>
-        <NavigationContainer initialState={addonId ? buildInitialState(addonId, scope, entityId) : undefined}>
-          <Stack.Navigator />
-        </NavigationContainer>
-      </TranslationKeysContext>
+      <PlayerContext value={player}>
+        {/* Merged map: local vanilla + own keys, overlaid with every peer addon's published
+            keys (core.translations) — so cross-addon registry fields measure correctly. */}
+        <TranslationKeysContext value={core.translations.all()}>
+          <NavigationContainer initialState={addonId ? buildInitialState(addonId, scope, entityId) : undefined}>
+            <Stack.Navigator />
+          </NavigationContainer>
+        </TranslationKeysContext>
+      </PlayerContext>
     </CoreContext>
   );
 }

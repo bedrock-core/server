@@ -35,7 +35,7 @@
 	},
 	"dependencies": {
 		"@bedrock-core/server-runtime": "workspace:^",
-		"@bedrock-core/ui": "^0.9.1"
+		"@bedrock-core/ui": "^0.9.2"
 	},
 	"devDependencies": {
 		"@minecraft/server": "2.8.0",

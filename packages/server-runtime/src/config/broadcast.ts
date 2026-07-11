@@ -6,9 +6,9 @@
  *   'bc-config/schema'              → FlatSchema (all scopes combined)
  *   'bc-config/server'              → Record<string, ConfigValue>
  *   'bc-config/dim/<dimId>'         → Record<string, ConfigValue> (effective values)
- *   'bc-config/dim'                 → Record<string, ConfigValue>
+ *   'bc-config/dims'                → RosterEntry[] (known dimension ids, for UI pickers)
  *   'bc-config/player/<playerId>'   → Record<string, ConfigValue> (effective, online only)
- *   'bc-config/player'              → Record<string, ConfigValue>
+ *   'bc-config/players'             → RosterEntry[] (online players, for UI pickers)
  */
 import { stateKey } from '@bedrock-core/sync';
 import type { State, StateKey } from '@bedrock-core/sync';
@@ -16,11 +16,17 @@ import type { FlatSchema, ConfigValue } from './schema';
 
 type Flat = Record<string, ConfigValue>;
 
+/** One selectable entity for a UI picker list. */
+export interface RosterEntry {
+  id: string;
+  name: string;
+}
+
 export const BC_CONFIG_SCHEMA = stateKey<FlatSchema>('bc-config/schema');
 export const BC_CONFIG_SCOPED_SCHEMA = stateKey<FlatSchema>('bc-config/schema-s');
 export const BC_CONFIG_SERVER = stateKey<Flat>('bc-config/server');
-export const BC_CONFIG_DIM_DEFAULTS = stateKey<Flat>('bc-config/dim');
-export const BC_CONFIG_PLAYER_DEFAULTS = stateKey<Flat>('bc-config/player');
+export const BC_CONFIG_DIMENSIONS = stateKey<RosterEntry[]>('bc-config/dims');
+export const BC_CONFIG_PLAYERS = stateKey<RosterEntry[]>('bc-config/players');
 
 /** Effective per-dimension values for one dimension. */
 export const dimValuesKey = (dimId: string): StateKey<Flat> => stateKey(`bc-config/dim/${dimId}`);
@@ -67,14 +73,6 @@ export function broadcastDimensionValues(
   state.set(addonId, dimValuesKey(dimId), Object.fromEntries(values));
 }
 
-export function broadcastDimensionDefaults(
-  state: State,
-  addonId: string,
-  defaults: Map<string, ConfigValue>,
-): void {
-  state.set(addonId, BC_CONFIG_DIM_DEFAULTS, Object.fromEntries(defaults));
-}
-
 export function broadcastPlayerValues(
   state: State,
   addonId: string,
@@ -84,10 +82,10 @@ export function broadcastPlayerValues(
   state.set(addonId, playerValuesKey(playerId), Object.fromEntries(values));
 }
 
-export function broadcastPlayerDefaults(
-  state: State,
-  addonId: string,
-  defaults: Map<string, ConfigValue>,
-): void {
-  state.set(addonId, BC_CONFIG_PLAYER_DEFAULTS, Object.fromEntries(defaults));
+export function broadcastDimensionRoster(state: State, addonId: string, dims: RosterEntry[]): void {
+  state.set(addonId, BC_CONFIG_DIMENSIONS, dims);
+}
+
+export function broadcastPlayerRoster(state: State, addonId: string, players: RosterEntry[]): void {
+  state.set(addonId, BC_CONFIG_PLAYERS, players);
 }

@@ -10,47 +10,39 @@ import type {
 } from '../schema';
 import { isEntry } from '../schema';
 import { ChangeEmitter, type ChangeListener } from './change-emitter';
-import { flattenObject, collectAffectedPaths } from './utils';
+import { flattenObject, collectAffectedPaths, parseListValue } from './utils';
 
 /**
  * Generic per-entity config scope — works for any entity with an `id` string
  * (`Dimension`, `Player`, etc.).
  *
- * Value resolution: per-entity stored value → entity-type default → schema default.
+ * Value resolution: per-entity stored value → schema default.
  */
 export class EntityConfigScope<S extends Record<string, unknown>, E extends { id: string }> {
   private readonly tree: Record<string, SchemaNode>;
   private readonly flatSchema: FlatSchema;
-  private readonly defaults: Map<string, ConfigValue>;
   private readonly values: Map<string, Map<string, ConfigValue>>;
   private readonly emitters = new Map<string, ChangeEmitter>();
   private readonly onWrite: (entityId: string, key: string, value: ConfigValue) => void;
-  private readonly onWriteDefault: (key: string, value: ConfigValue) => void;
 
   readonly schema: FlatSchema;
 
   constructor(
     tree: Record<string, SchemaNode>,
     flatSchema: FlatSchema,
-    defaults: Map<string, ConfigValue>,
     values: Map<string, Map<string, ConfigValue>>,
     onWrite: (entityId: string, key: string, value: ConfigValue) => void,
-    onWriteDefault: (key: string, value: ConfigValue) => void,
   ) {
     this.tree = tree;
     this.flatSchema = flatSchema;
-    this.defaults = defaults;
     this.values = values;
     this.onWrite = onWrite;
-    this.onWriteDefault = onWriteDefault;
     this.schema = flatSchema;
   }
 
   /** Return the full current config for an entity as a typed nested object. */
   get(entity: E): SchemaToValue<S> {
-    return this.buildTree(
-      this.tree, '', this.values.get(entity.id) ?? new Map(), this.defaults,
-    ) as SchemaToValue<S>;
+    return this.typedValue(this.values.get(entity.id) ?? new Map());
   }
 
   /** Deep-merge a partial update for a specific entity. */
@@ -63,31 +55,18 @@ export class EntityConfigScope<S extends Record<string, unknown>, E extends { id
     this.applyForEntity(entity.id, flattenObject(value));
   }
 
-  /** Return the current entity-type defaults as a typed nested object. */
-  getDefault(): SchemaToValue<S> {
-    return this.buildTree(this.tree, '', new Map(), this.defaults) as SchemaToValue<S>;
-  }
-
-  /** Deep-merge a partial update to the entity-type defaults. */
-  patchDefault(partial: DeepPartial<SchemaToValue<S>>): void {
-    this.applyDefault(flattenObject(partial));
-  }
-
-  /** Replace the full entity-type defaults. */
-  setDefault(value: SchemaToValue<S>): void {
-    this.applyDefault(flattenObject(value));
-  }
-
   onChange(entity: E, listener: ChangeListener<SchemaToValue<S>>): Unsubscribe;
   onChange<P extends DotPath<S>>(entity: E, path: P, listener: ChangeListener<PathValue<S, P>>): Unsubscribe;
-  onChange(entity: E, pathOrListener: unknown, listener?: unknown): Unsubscribe {
+  onChange(entity: E, pathOrListener: string | ChangeListener<unknown>, listener?: ChangeListener<unknown>): Unsubscribe {
     const emitter = this.emitterFor(entity.id);
 
     if (typeof pathOrListener === 'function') {
-      return emitter.on('', pathOrListener as ChangeListener<unknown>);
+      return emitter.on('', pathOrListener);
     }
 
-    return emitter.on(pathOrListener as string, listener as ChangeListener<unknown>);
+    if (!listener) { throw new Error('onChange(entity, path, listener): listener is required'); }
+
+    return emitter.on(pathOrListener, listener);
   }
 
   /** @internal Load initial entity values on join. Does not emit. */
@@ -102,11 +81,6 @@ export class EntityConfigScope<S extends Record<string, unknown>, E extends { id
     this.emitters.delete(entityId);
   }
 
-  /** @internal Merge defaults loaded from DPs at tick 1. Does not emit. */
-  applyDefaults(loadedDefaults: Map<string, ConfigValue>): void {
-    for (const [key, value] of loadedDefaults) { this.defaults.set(key, value); }
-  }
-
   /** @internal Apply a remote patch for an entity from RPC (fires change events). */
   applyRemotePatch(entityId: string, flat: Record<string, ConfigValue>): void {
     this.applyForEntity(entityId, new Map(Object.entries(flat)));
@@ -118,7 +92,7 @@ export class EntityConfigScope<S extends Record<string, unknown>, E extends { id
     const result: Record<string, ConfigValue> = {};
 
     for (const key of Object.keys(this.flatSchema)) {
-      result[key] = entityMap?.get(key) ?? this.defaults.get(key) ?? this.flatSchema[key]?.default;
+      result[key] = entityMap?.get(key) ?? this.flatSchema[key]?.default;
     }
 
     return result;
@@ -145,61 +119,20 @@ export class EntityConfigScope<S extends Record<string, unknown>, E extends { id
     for (const path of collectAffectedPaths(changes)) {
       if (!emitter.has(path)) { continue; }
 
-      const newVal = this.valueAt(path, entityMap, this.defaults);
-      const prevVal = this.valueAt(path, prev, this.defaults);
+      const newVal = this.valueAt(path, entityMap);
+      const prevVal = this.valueAt(path, prev);
 
       emitter.emit(path, newVal, prevVal);
     }
   }
 
-  private applyDefault(changes: Map<string, ConfigValue>): void {
-    if (!changes.size) { return; }
+  private valueAt(path: string, entityValues: Map<string, ConfigValue>): unknown {
+    if (path === '') { return this.buildTree(this.tree, '', entityValues); }
 
-    const prevDefaults = new Map(this.defaults);
-
-    for (const [key, value] of changes) {
-      this.defaults.set(key, value);
-      this.onWriteDefault(key, value);
-    }
-
-    for (const [entityId, emitter] of this.emitters) {
-      if (!emitter.hasAny()) { continue; }
-
-      const entityMap = this.values.get(entityId) ?? new Map<string, ConfigValue>();
-      const effectiveChanges = new Map<string, ConfigValue>();
-
-      for (const [key, value] of changes) {
-        if (!entityMap.has(key)) { effectiveChanges.set(key, value); }
-      }
-
-      if (!effectiveChanges.size) { continue; }
-
-      for (const path of collectAffectedPaths(effectiveChanges)) {
-        if (!emitter.has(path)) { continue; }
-
-        const newVal = this.valueAt(path, entityMap, this.defaults);
-        const prevVal = this.valueAt(path, entityMap, prevDefaults);
-
-        emitter.emit(path, newVal, prevVal);
-      }
-    }
+    return this.reconstruct(path, entityValues);
   }
 
-  private valueAt(
-    path: string,
-    entityValues: Map<string, ConfigValue>,
-    entityDefaults: Map<string, ConfigValue>,
-  ): unknown {
-    if (path === '') { return this.buildTree(this.tree, '', entityValues, entityDefaults); }
-
-    return this.reconstruct(path, entityValues, entityDefaults);
-  }
-
-  private reconstruct(
-    path: string,
-    entityValues: Map<string, ConfigValue>,
-    entityDefaults: Map<string, ConfigValue>,
-  ): unknown {
+  private reconstruct(path: string, entityValues: Map<string, ConfigValue>): unknown {
     const parts = path.split('.');
     let subtree: Record<string, SchemaNode> = this.tree;
     let prefix = '';
@@ -220,16 +153,15 @@ export class EntityConfigScope<S extends Record<string, unknown>, E extends { id
 
     const nodePath = prefix ? `${prefix}.${last}` : last;
 
-    if (isEntry(node)) { return this.resolveLeaf(nodePath, entityValues, entityDefaults); }
+    if (isEntry(node)) { return this.resolveLeaf(nodePath, entityValues); }
 
-    return this.buildTree(node, nodePath, entityValues, entityDefaults);
+    return this.buildTree(node, nodePath, entityValues);
   }
 
   private buildTree(
     subtree: Record<string, SchemaNode>,
     prefix: string,
     entityValues: Map<string, ConfigValue>,
-    entityDefaults: Map<string, ConfigValue>,
   ): Record<string, unknown> {
     const result: Record<string, unknown> = {};
 
@@ -237,10 +169,10 @@ export class EntityConfigScope<S extends Record<string, unknown>, E extends { id
       const path = prefix ? `${prefix}.${key}` : key;
 
       if (isEntry(node)) {
-        result[key] = this.resolveLeaf(path, entityValues, entityDefaults);
+        result[key] = this.resolveLeaf(path, entityValues);
       } else {
         result[key] = this.buildTree(
-          node, path, entityValues, entityDefaults,
+          node, path, entityValues,
         );
       }
     }
@@ -248,18 +180,21 @@ export class EntityConfigScope<S extends Record<string, unknown>, E extends { id
     return result;
   }
 
-  private resolveLeaf(
-    path: string,
-    entityValues: Map<string, ConfigValue>,
-    entityDefaults: Map<string, ConfigValue>,
-  ): unknown {
-    const raw = entityValues.get(path) ?? entityDefaults.get(path) ?? this.flatSchema[path]?.default;
+  private resolveLeaf(path: string, entityValues: Map<string, ConfigValue>): unknown {
+    const raw = entityValues.get(path) ?? this.flatSchema[path]?.default;
 
     if (this.flatSchema[path]?.type === 'list' && typeof raw === 'string') {
-      try { return JSON.parse(raw) as unknown[]; } catch { return []; }
+      return parseListValue(raw);
     }
 
     return raw;
+  }
+
+  private typedValue(entityValues: Map<string, ConfigValue>): SchemaToValue<S> {
+    // The tree walk reconstructs exactly the shape SchemaToValue<S> describes; TS cannot
+    // verify an object assembled key-by-key at runtime, so this assertion is inherent.
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion
+    return this.buildTree(this.tree, '', entityValues) as SchemaToValue<S>;
   }
 
   private emitterFor(entityId: string): ChangeEmitter {
