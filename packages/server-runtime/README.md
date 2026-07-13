@@ -155,8 +155,11 @@ how an addon persists its own state.
 ## Config
 
 An addon declares its config schema once with `core.config.define()`. Values are returned as
-structured nested objects, stored per-key in dynamic properties, and broadcast over `sync`
-state so other addons and UI layers can discover and edit them. Three independent scopes:
+structured nested objects and stored per-key in dynamic properties. Discovery is push, values
+are pull: only the (small, static) schema is broadcast over `sync` state — its presence is the
+"this addon has config" signal and lets a UI build forms without a round trip — while values
+are fetched on demand via RPC, so config causes zero steady-state traffic. Three independent
+scopes:
 
 | Scope | Shared across… | Access |
 |---|---|---|
@@ -242,23 +245,25 @@ config.player.onChange(player, 'allowGifts', (next, prev) => { /* … */ })
 
 ### Cross-addon access
 
-Read (and write via RPC) another addon's config. Sync until the target addon publishes
-its schema, then typed if you have the `ConfigDefinition` type:
+Read and write another addon's config over RPC — typed if you have its `ConfigDefinition`
+type. `of()` answers synchronously (from the published schema) whether the addon has config;
+value reads are async:
 
 ```ts
-// Synchronous snapshot — returns undefined if the addon isn't online yet
+// undefined until the addon publishes its schema
 const shopCfg = core.config.of<ShopConfigDef>('vendor:bc_shop');
-shopCfg?.server.get().pricing.taxRate;
+(await shopCfg?.server.get())?.pricing.taxRate;
 
 // Subscribe — fires immediately if already online, then again on re-publish
-core.config.subscribe<ShopConfigDef>('vendor:bc_shop', shopCfg => {
-  const taxRate = shopCfg.server.get().pricing.taxRate;
-  console.warn(`shop taxRate = ${String(taxRate)}`);
+core.config.subscribe<ShopConfigDef>('vendor:bc_shop', async (shopCfg) => {
+  const cfg = await shopCfg.server.get();
+  console.warn(`shop taxRate = ${String(cfg?.pricing.taxRate)}`);
 });
 ```
 
-Omit the type parameter for untyped (`unknown`) access. Writes go through RPC — the provider
-validates and persists them; the state broadcast propagates back to all observers.
+Omit the type parameter for untyped (`unknown`) access. The provider validates and persists
+writes; every `patch`/`set` resolves with the updated effective values, so callers get
+read-after-write in one round trip.
 
 ### Publishing a config type
 
@@ -273,8 +278,8 @@ export const config = core.config.define(configDef);
 
 // In a consumer
 import type { ShopConfigDef } from '@drav0011/bc-shop-types';
-core.config.subscribe<ShopConfigDef>('drav0011:bc_shop', shopCfg => {
-  shopCfg.server.get().pricing.taxRate;  // number — fully typed
+core.config.subscribe<ShopConfigDef>('drav0011:bc_shop', async (shopCfg) => {
+  (await shopCfg.server.get())?.pricing.taxRate;  // number — fully typed
 });
 ```
 

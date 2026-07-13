@@ -93,6 +93,11 @@ export class ServerConfigScope<S extends Record<string, unknown>> {
     }
   }
 
+  /** @internal All effective flat values (used for RPC responses). */
+  getFlat(): Record<string, ConfigValue> {
+    return Object.fromEntries(this._values);
+  }
+
   /** @internal Apply a remote merge-patch from RPC (fires change events). */
   applyRemotePatch(flat: Record<string, ConfigValue>): void {
     this.applyAndEmit(new Map(Object.entries(flat)));
