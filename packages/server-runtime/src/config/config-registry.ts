@@ -3,6 +3,10 @@
  *
  * Accessible as `core.config` after `core.register()`.
  *
+ * Write semantics (all scopes, local and remote): `patch` deep-merges the provided keys;
+ * `set` replaces the whole scope — it requires the full object, and any schema key missing
+ * from the payload reverts to its schema default (its persisted override is deleted).
+ *
  * Addon defining config:
  * ```ts
  * const config = core.config.define({
@@ -25,9 +29,9 @@
  * await shopCfg?.server.patch({ pricing: { taxRate: 0.1 } })
  * ```
  */
-import { DimensionTypes, system, world } from '@minecraft/server';
+import { system, world } from '@minecraft/server';
 import type { Dimension, Player } from '@minecraft/server';
-import type { SyncNode, Unsubscribe } from '@bedrock-core/sync';
+import type { StateKey, SyncNode, Unsubscribe } from '@bedrock-core/sync';
 import {
   type ConfigDefinition,
   type ConfigValue,
@@ -51,25 +55,17 @@ import {
 } from './persistence';
 import {
   broadcastSchema,
-  broadcastScopedSchema,
   broadcastServerValues,
-  broadcastDimensionValues,
-  broadcastPlayerValues,
-  broadcastDimensionRoster,
-  broadcastPlayerRoster as broadcastPlayerRosterState,
   BC_CONFIG_SCHEMA,
-  BC_CONFIG_SCOPED_SCHEMA,
   BC_CONFIG_SERVER,
-  BC_CONFIG_DIMENSIONS,
-  BC_CONFIG_PLAYERS,
   dimValuesKey,
   playerValuesKey,
-  type RosterEntry,
 } from './broadcast';
 import { ServerConfigScope, EntityConfigScope } from './scopes';
-import { buildNestedObject } from './scopes/utils';
-import { flattenObject } from './scopes/utils';
+import { buildNestedObject, flattenObject } from './scopes/utils';
 import { registerConfigRpc } from './rpc';
+
+type Flat = Record<string, ConfigValue>;
 
 // ─── Return types ──────────────────────────────────────────────────────────────
 
@@ -90,64 +86,64 @@ export interface Config<I extends ConfigDefinition> {
 
 /**
  * Untyped, read+write view of another addon's config.
- * Reads are synchronous (from the state mirror); writes go through RPC.
+ * Reads are synchronous (from the state mirror); writes go through RPC —
+ * `patch` merges, `set` replaces (missing keys revert to schema defaults).
  */
 export class RemoteConfigAccessor {
-  private readonly node: SyncNode;
-  private readonly addonId: string;
+  private readonly _node: SyncNode;
+  private readonly _addonId: string;
 
   readonly server = {
     get: (): unknown => {
-      const flat = this.node.state.get(this.addonId, BC_CONFIG_SERVER);
+      const flat = this._node.state.get(this._addonId, BC_CONFIG_SERVER);
 
       return flat ? buildNestedObject(flat, this.schema) : undefined;
     },
-    patch: async (value: Record<string, unknown>): Promise<unknown> => this.node.rpc.request(this.addonId, 'bc:config.patch', Object.fromEntries(flattenObject(value))),
-    set: async (value: Record<string, unknown>): Promise<unknown> => this.node.rpc.request(this.addonId, 'bc:config.patch', Object.fromEntries(flattenObject(value))),
+    patch: async (value: Record<string, unknown>): Promise<unknown> => this._node.rpc.request(this._addonId, 'bc:config.patch', Object.fromEntries(flattenObject(value))),
+    set: async (value: Record<string, unknown>): Promise<unknown> => this._node.rpc.request(this._addonId, 'bc:config.set', Object.fromEntries(flattenObject(value))),
   };
 
   readonly dimension = {
     get: (dimId: string): unknown => {
-      const flat = this.node.state.get(this.addonId, dimValuesKey(dimId));
+      const flat = this._node.state.get(this._addonId, dimValuesKey(dimId));
 
       return flat ? buildNestedObject(flat, this.schema) : undefined;
     },
-    patch: async (dimId: string, value: Record<string, unknown>): Promise<unknown> => this.node.rpc.request(this.addonId, 'bc:config.patch-dim', { dimId, values: Object.fromEntries(flattenObject(value)) }),
-    set: async (dimId: string, value: Record<string, unknown>): Promise<unknown> => this.node.rpc.request(this.addonId, 'bc:config.patch-dim', { dimId, values: Object.fromEntries(flattenObject(value)) }),
+    patch: async (dimId: string, value: Record<string, unknown>): Promise<unknown> => this._node.rpc.request(this._addonId, 'bc:config.patch-dim', { dimId, values: Object.fromEntries(flattenObject(value)) }),
+    set: async (dimId: string, value: Record<string, unknown>): Promise<unknown> => this._node.rpc.request(this._addonId, 'bc:config.set-dim', { dimId, values: Object.fromEntries(flattenObject(value)) }),
   };
 
   readonly player = {
     get: (playerId: string): unknown => {
-      const flat = this.node.state.get(this.addonId, playerValuesKey(playerId));
+      const flat = this._node.state.get(this._addonId, playerValuesKey(playerId));
 
       return flat ? buildNestedObject(flat, this.schema) : undefined;
     },
-    patch: async (playerId: string, value: Record<string, unknown>): Promise<unknown> => this.node.rpc.request(this.addonId, 'bc:config.patch-player', { playerId, values: Object.fromEntries(flattenObject(value)) }),
-    set: async (playerId: string, value: Record<string, unknown>): Promise<unknown> => this.node.rpc.request(this.addonId, 'bc:config.patch-player', { playerId, values: Object.fromEntries(flattenObject(value)) }),
+    patch: async (playerId: string, value: Record<string, unknown>): Promise<unknown> => this._node.rpc.request(this._addonId, 'bc:config.patch-player', { playerId, values: Object.fromEntries(flattenObject(value)) }),
+    set: async (playerId: string, value: Record<string, unknown>): Promise<unknown> => this._node.rpc.request(this._addonId, 'bc:config.set-player', { playerId, values: Object.fromEntries(flattenObject(value)) }),
   };
 
   constructor(node: SyncNode, addonId: string) {
-    this.node = node;
-    this.addonId = addonId;
-  }
-
-  get schema(): FlatSchema {
-    return this.node.state.get(this.addonId, BC_CONFIG_SCHEMA) ?? {};
+    this._node = node;
+    this._addonId = addonId;
   }
 
   /** Schema with `server.`/`dimension.`/`player.` prefixes on every key. Used by UI to determine scope. */
   get scopedSchema(): FlatSchema {
-    return this.node.state.get(this.addonId, BC_CONFIG_SCOPED_SCHEMA) ?? {};
+    return this._node.state.get(this._addonId, BC_CONFIG_SCHEMA) ?? {};
   }
 
-  /** Known dimensions, for a UI picker. */
-  get dimensionRoster(): RosterEntry[] {
-    return this.node.state.get(this.addonId, BC_CONFIG_DIMENSIONS) ?? [];
-  }
+  /** Unprefixed flat schema, derived from {@link scopedSchema} by stripping the scope segment. */
+  get schema(): FlatSchema {
+    const flat: FlatSchema = {};
 
-  /** Currently online players, for a UI picker. */
-  get playerRoster(): RosterEntry[] {
-    return this.node.state.get(this.addonId, BC_CONFIG_PLAYERS) ?? [];
+    for (const [key, entry] of Object.entries(this.scopedSchema)) {
+      const dot = key.indexOf('.');
+
+      flat[dot === -1 ? key : key.slice(dot + 1)] = entry;
+    }
+
+    return flat;
   }
 }
 
@@ -156,6 +152,7 @@ export class RemoteConfigAccessor {
 /**
  * Typed read+write view of another addon's config.
  * Obtain via `core.config.of<I>()` or `core.config.subscribe<I>()`.
+ * `patch` merges a partial; `set` replaces the whole scope (full object required).
  */
 export type TypedRemoteConfig<I extends ConfigDefinition> = {
   server: {
@@ -179,26 +176,26 @@ export type TypedRemoteConfig<I extends ConfigDefinition> = {
 // ─── ConfigRegistry ────────────────────────────────────────────────────────────
 
 export class ConfigRegistry {
-  private readonly node: SyncNode;
-  private readonly addonId: string;
+  private readonly _node: SyncNode;
+  private readonly _addonId: string;
   private _defined = false;
-  private readonly addonConfigListeners = new Map<string, Set<(cfg: RemoteConfigAccessor) => void>>();
-  private readonly disposers: Unsubscribe[] = [];
-  private readonly onlinePlayers = new Map<string, Player>();
+  private readonly _addonConfigListeners = new Map<string, Set<(cfg: RemoteConfigAccessor) => void>>();
+  private readonly _disposers: Unsubscribe[] = [];
+  private readonly _onlinePlayers = new Map<string, Player>();
 
   constructor(node: SyncNode, addonId: string) {
-    this.node = node;
-    this.addonId = addonId;
+    this._node = node;
+    this._addonId = addonId;
   }
 
   start(): void {
-    this.disposers.push(
-      this.node.state.onChange((change) => {
-        if (change.ns !== this.addonId && change.key === BC_CONFIG_SCHEMA && !change.deleted) {
-          const listeners = this.addonConfigListeners.get(change.ns);
+    this._disposers.push(
+      this._node.state.onChange((change) => {
+        if (change.ns !== this._addonId && change.key === BC_CONFIG_SCHEMA && !change.deleted) {
+          const listeners = this._addonConfigListeners.get(change.ns);
 
           if (listeners?.size) {
-            const accessor = new RemoteConfigAccessor(this.node, change.ns);
+            const accessor = new RemoteConfigAccessor(this._node, change.ns);
 
             for (const l of listeners) { l(accessor); }
           }
@@ -208,7 +205,7 @@ export class ConfigRegistry {
   }
 
   stop(): void {
-    for (const d of this.disposers.splice(0)) { d(); }
+    for (const d of this._disposers.splice(0)) { d(); }
   }
 
   /**
@@ -227,7 +224,6 @@ export class ConfigRegistry {
     const serverFlat = flattenSchema(serverTree);
     const dimensionFlat = flattenSchema(dimensionTree);
     const playerFlat = flattenSchema(playerTree);
-    const fullSchema: FlatSchema = { ...serverFlat, ...dimensionFlat, ...playerFlat };
 
     const serverValues = new Map<string, ConfigValue>(
       Object.entries(serverFlat).map(([k, e]) => [k, e.default]),
@@ -236,14 +232,17 @@ export class ConfigRegistry {
     const playerValues = new Map<string, Map<string, ConfigValue>>();
 
     // ─── Scope accessors ────────────────────────────────────────────────────────
+    // Each scope hands applied batches back here for persistence + broadcast; an
+    // `undefined` value in a batch deletes the persisted override (set-revert).
 
     const serverScope = new ServerConfigScope<NonNullable<I['server']>>(
       serverTree,
       serverFlat,
       serverValues,
-      (key, value) => {
-        saveServerValue(this.addonId, key, value);
-        broadcastServerValues(this.node.state, this.addonId, serverValues);
+      (changes) => {
+        for (const [key, value] of changes) { saveServerValue(this._addonId, key, value); }
+
+        broadcastServerValues(this._node.state, this._addonId, serverValues);
       },
     );
 
@@ -251,9 +250,10 @@ export class ConfigRegistry {
       dimensionTree,
       dimensionFlat,
       dimensionValues,
-      (dimId, key, value) => {
-        saveDimensionValue(this.addonId, dimId, key, value);
-        this.broadcastEffectiveDim(dimId, dimensionFlat, dimensionValues);
+      (dimId, changes) => {
+        for (const [key, value] of changes) { saveDimensionValue(this._addonId, dimId, key, value); }
+
+        this.broadcastEffective(dimId, dimensionFlat, dimensionValues, dimValuesKey);
       },
     );
 
@@ -261,75 +261,82 @@ export class ConfigRegistry {
       playerTree,
       playerFlat,
       playerValues,
-      (playerId, key, value) => {
-        const player = this.onlinePlayers.get(playerId);
+      (playerId, changes) => {
+        const player = this._onlinePlayers.get(playerId);
 
-        if (player) {
-          savePlayerValue(player, this.addonId, key, value);
-          this.broadcastEffectivePlayer(playerId, playerFlat, playerValues);
+        if (!player) {
+          console.warn(`[bedrock-core] '${this._addonId}' config: player '${playerId}' is offline; values not persisted`);
+
+          return;
         }
+
+        for (const [key, value] of changes) { savePlayerValue(player, this._addonId, key, value); }
+
+        this.broadcastEffective(playerId, playerFlat, playerValues, playerValuesKey);
       },
     );
 
     // ─── RPC handlers ───────────────────────────────────────────────────────────
+    // Persistence + broadcast run through the scopes' apply callbacks above.
 
-    registerConfigRpc(this.node.rpc, {
-      onPatchServer: (flat) => {
-        serverScope.applyRemotePatch(flat);
+    const requireOnline = (playerId: string, method: string): boolean => {
+      if (this._onlinePlayers.has(playerId)) { return true; }
 
-        for (const [key, value] of Object.entries(flat)) { saveServerValue(this.addonId, key, value); }
+      console.warn(`[bedrock-core] '${this._addonId}' config: ${method} for offline player '${playerId}' ignored`);
 
-        broadcastServerValues(this.node.state, this.addonId, serverValues);
-      },
-      onPatchDimension: (dimId, flat) => {
-        dimensionScope.applyRemotePatch(dimId, flat);
+      return false;
+    };
 
-        for (const [key, value] of Object.entries(flat)) { saveDimensionValue(this.addonId, dimId, key, value); }
-
-        this.broadcastEffectiveDim(dimId, dimensionFlat, dimensionValues);
-      },
+    registerConfigRpc(this._node.rpc, {
+      onPatchServer: flat => serverScope.applyRemotePatch(flat),
+      onSetServer: flat => serverScope.applyRemoteSet(flat),
+      onPatchDimension: (dimId, flat) => dimensionScope.applyRemotePatch(dimId, flat),
+      onSetDimension: (dimId, flat) => dimensionScope.applyRemoteSet(dimId, flat),
       onGetPlayer: playerId => playerScope.getFlat(playerId),
       onPatchPlayer: (playerId, flat) => {
-        const player = this.onlinePlayers.get(playerId);
-
-        if (!player) { return; }
-
-        playerScope.applyRemotePatch(playerId, flat);
-
-        for (const [key, value] of Object.entries(flat)) { savePlayerValue(player, this.addonId, key, value); }
-
-        this.broadcastEffectivePlayer(playerId, playerFlat, playerValues);
+        if (requireOnline(playerId, 'patch')) { playerScope.applyRemotePatch(playerId, flat); }
+      },
+      onSetPlayer: (playerId, flat) => {
+        if (requireOnline(playerId, 'set')) { playerScope.applyRemoteSet(playerId, flat); }
       },
     });
 
     // ─── Deferred DP loading ────────────────────────────────────────────────────
+    // Dynamic properties are readable from tick 1 onward. Loading emits change events
+    // for keys whose persisted value differs from the schema default, so subscribers
+    // attached right after define() still learn the real values.
 
     system.run(() => {
-      serverScope.loadInitial(loadServerValues(this.addonId, serverFlat));
+      serverScope.loadInitial(loadServerValues(this._addonId, serverFlat));
 
       if (Object.keys(dimensionFlat).length > 0) {
-        for (const dimId of loadedDimensionIds(this.addonId, dimensionFlat)) {
-          const loaded = loadDimensionValues(this.addonId, dimId, dimensionFlat);
+        for (const dimId of loadedDimensionIds(this._addonId, dimensionFlat)) {
+          const loaded = loadDimensionValues(this._addonId, dimId, dimensionFlat);
 
-          if (loaded.size > 0) { dimensionValues.set(dimId, loaded); }
+          if (loaded.size > 0) { dimensionScope.loadInitial(dimId, loaded); }
         }
 
         for (const dimId of dimensionValues.keys()) {
-          this.broadcastEffectiveDim(dimId, dimensionFlat, dimensionValues);
+          this.broadcastEffective(dimId, dimensionFlat, dimensionValues, dimValuesKey);
         }
-
-        broadcastDimensionRoster(
-          this.node.state,
-          this.addonId,
-          DimensionTypes.getAll().map(d => ({ id: d.typeId, name: d.typeId })),
-        );
       }
 
-      broadcastSchema(this.node.state, this.addonId, fullSchema);
-      broadcastScopedSchema(this.node.state, this.addonId, serverFlat, dimensionFlat, playerFlat);
+      // Seed players that are already connected — after a script reload (e.g. /reload)
+      // no playerSpawn fires for them, so relying on the event alone would leave
+      // player-scope config dead until they rejoin.
+      for (const player of world.getAllPlayers()) {
+        this._onlinePlayers.set(player.id, player);
+
+        if (Object.keys(playerFlat).length > 0) {
+          playerScope.init(player.id, loadPlayerValues(player, this._addonId, playerFlat));
+          this.broadcastEffective(player.id, playerFlat, playerValues, playerValuesKey);
+        }
+      }
+
+      broadcastSchema(this._node.state, this._addonId, serverFlat, dimensionFlat, playerFlat);
 
       if (Object.keys(serverFlat).length > 0) {
-        broadcastServerValues(this.node.state, this.addonId, serverValues);
+        broadcastServerValues(this._node.state, this._addonId, serverValues);
       }
     });
 
@@ -338,27 +345,25 @@ export class ConfigRegistry {
     const onSpawn = world.afterEvents.playerSpawn.subscribe(({ player, initialSpawn }) => {
       if (!initialSpawn) { return; }
 
-      this.onlinePlayers.set(player.id, player);
-      this.broadcastPlayerRoster();
+      this._onlinePlayers.set(player.id, player);
 
       if (Object.keys(playerFlat).length === 0) { return; }
 
-      playerScope.init(player.id, loadPlayerValues(player, this.addonId, playerFlat));
-      this.broadcastEffectivePlayer(player.id, playerFlat, playerValues);
+      playerScope.init(player.id, loadPlayerValues(player, this._addonId, playerFlat));
+      this.broadcastEffective(player.id, playerFlat, playerValues, playerValuesKey);
     });
 
-    this.disposers.push(() => { world.afterEvents.playerSpawn.unsubscribe(onSpawn); });
+    this._disposers.push(() => { world.afterEvents.playerSpawn.unsubscribe(onSpawn); });
 
-    const onLeave = world.beforeEvents.playerLeave.subscribe(({ player }) => {
-      this.onlinePlayers.delete(player.id);
-      this.broadcastPlayerRoster();
+    const onLeave = world.afterEvents.playerLeave.subscribe(({ playerId }) => {
+      this._onlinePlayers.delete(playerId);
 
       if (Object.keys(playerFlat).length === 0) { return; }
 
-      playerScope.clear(player.id);
+      playerScope.clear(playerId);
     });
 
-    this.disposers.push(() => { world.beforeEvents.playerLeave.unsubscribe(onLeave); });
+    this._disposers.push(() => { world.afterEvents.playerLeave.unsubscribe(onLeave); });
 
     return { server: serverScope, dimension: dimensionScope, player: playerScope };
   }
@@ -366,9 +371,9 @@ export class ConfigRegistry {
   of(addonId: string): RemoteConfigAccessor | undefined;
   of<I extends ConfigDefinition>(addonId: string): TypedRemoteConfig<I> | undefined;
   of(addonId: string): unknown {
-    if (this.node.state.get(addonId, BC_CONFIG_SCHEMA) === undefined) { return undefined; }
+    if (this._node.state.get(addonId, BC_CONFIG_SCHEMA) === undefined) { return undefined; }
 
-    return new RemoteConfigAccessor(this.node, addonId);
+    return new RemoteConfigAccessor(this._node, addonId);
   }
 
   subscribe(addonId: string, listener: (cfg: RemoteConfigAccessor) => void): Unsubscribe;
@@ -378,68 +383,38 @@ export class ConfigRegistry {
     // runtime object); the accessor's private fields keep TS from relating the two types.
     // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion
     const cb = listener as (cfg: RemoteConfigAccessor) => void;
-    let set = this.addonConfigListeners.get(addonId);
+    let set = this._addonConfigListeners.get(addonId);
 
-    if (!set) { set = new Set(); this.addonConfigListeners.set(addonId, set); }
+    if (!set) { set = new Set(); this._addonConfigListeners.set(addonId, set); }
 
     set.add(cb);
 
-    if (this.node.state.get(addonId, BC_CONFIG_SCHEMA) !== undefined) {
-      cb(new RemoteConfigAccessor(this.node, addonId));
+    if (this._node.state.get(addonId, BC_CONFIG_SCHEMA) !== undefined) {
+      cb(new RemoteConfigAccessor(this._node, addonId));
     }
 
-    return () => { this.addonConfigListeners.get(addonId)?.delete(cb); };
+    return () => { this._addonConfigListeners.get(addonId)?.delete(cb); };
   }
 
   // ─── Private ──────────────────────────────────────────────────────────────────
 
-  private broadcastEffectiveDim(
-    dimId: string,
+  /** Publish an entity's effective values (stored override → schema default) under its state key. */
+  private broadcastEffective(
+    entityId: string,
     flat: FlatSchema,
     values: Map<string, Map<string, ConfigValue>>,
+    keyFor: (id: string) => StateKey<Flat>,
   ): void {
     if (Object.keys(flat).length === 0) { return; }
 
-    const effective = new Map<string, ConfigValue>();
+    const effective: Flat = {};
 
     for (const key of Object.keys(flat)) {
-      const stored = values.get(dimId)?.get(key);
+      const value = values.get(entityId)?.get(key) ?? flat[key]?.default;
 
-      if (stored !== undefined) { effective.set(key, stored); continue; }
-
-      const schemaDef = flat[key]?.default;
-
-      if (schemaDef !== undefined) { effective.set(key, schemaDef); }
+      if (value !== undefined) { effective[key] = value; }
     }
 
-    broadcastDimensionValues(this.node.state, this.addonId, dimId, effective);
-  }
-
-  private broadcastEffectivePlayer(
-    playerId: string,
-    flat: FlatSchema,
-    values: Map<string, Map<string, ConfigValue>>,
-  ): void {
-    if (Object.keys(flat).length === 0) { return; }
-
-    const effective = new Map<string, ConfigValue>();
-
-    for (const key of Object.keys(flat)) {
-      const stored = values.get(playerId)?.get(key);
-
-      if (stored !== undefined) { effective.set(key, stored); continue; }
-
-      const schemaDef = flat[key]?.default;
-
-      if (schemaDef !== undefined) { effective.set(key, schemaDef); }
-    }
-
-    broadcastPlayerValues(this.node.state, this.addonId, playerId, effective);
-  }
-
-  private broadcastPlayerRoster(): void {
-    const roster: RosterEntry[] = [...this.onlinePlayers.values()].map(p => ({ id: p.id, name: p.name }));
-
-    broadcastPlayerRosterState(this.node.state, this.addonId, roster);
+    this._node.state.set(this._addonId, keyFor(entityId), effective);
   }
 }

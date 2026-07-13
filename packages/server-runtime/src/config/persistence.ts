@@ -76,8 +76,10 @@ export function loadPlayerValues(
 }
 
 // ─── Save helpers ──────────────────────────────────────────────────────────────
+// `value: undefined` deletes the stored override (used by `set`, which reverts
+// keys missing from its input to their schema defaults).
 
-export function saveServerValue(addonId: string, key: string, value: ConfigValue): void {
+export function saveServerValue(addonId: string, key: string, value: ConfigValue | undefined): void {
   world.setDynamicProperty(serverDpKey(addonId, key), value);
 }
 
@@ -94,7 +96,7 @@ export function savePlayerValue(
   player: Player,
   addonId: string,
   key: string,
-  value: ConfigValue,
+  value: ConfigValue | undefined,
 ): void {
   player.setDynamicProperty(playerDpKey(addonId, key), value);
 }

@@ -1,13 +1,6 @@
 /**
  * Config schema types and compile-time inference helpers.
  *
- * Entry types map 1-to-1 onto UI widgets:
- *   boolean → toggle / checkbox
- *   number  → slider / number-input  (min/max required)
- *   string  → input / textarea
- *   enum    → dropdown / radio / toggle-buttons
- *   list    → list editor (ordered string array, stored as JSON)
- *
  * `type` is a reserved key — do not use it as a group name.
  */
 
@@ -22,7 +15,6 @@ export type BooleanEntry = {
   default: boolean;
   label: string;
   description?: string;
-  widget?: 'toggle' | 'checkbox';
 };
 
 export type NumberEntry = {
@@ -33,7 +25,6 @@ export type NumberEntry = {
   step?: number;
   label: string;
   description?: string;
-  widget?: 'slider' | 'number-input';
 };
 
 export type StringEntry = {
@@ -42,7 +33,6 @@ export type StringEntry = {
   maxLength?: number;
   label: string;
   description?: string;
-  widget?: 'input' | 'textarea';
 };
 
 export type EnumEntry<O extends readonly string[] = readonly string[]> = {
@@ -51,7 +41,6 @@ export type EnumEntry<O extends readonly string[] = readonly string[]> = {
   options: O;
   label: string;
   description?: string;
-  widget?: 'dropdown' | 'radio' | 'toggle-buttons';
 };
 
 export type ListEntry = {
@@ -146,10 +135,10 @@ export type FlatValue<T, K extends string>
 // ─── Serialized form (broadcast) ──────────────────────────────────────────────
 
 export type SerializedEntry
-  = | { type: 'boolean'; default: boolean; label: string; description?: string; widget?: 'toggle' | 'checkbox' }
-    | { type: 'number'; default: number; min: number; max: number; step?: number; label: string; description?: string; widget?: 'slider' | 'number-input' }
-    | { type: 'string'; default: string; maxLength?: number; label: string; description?: string; widget?: 'input' | 'textarea' }
-    | { type: 'enum'; default: string; options: readonly string[]; label: string; description?: string; widget?: 'dropdown' | 'radio' | 'toggle-buttons' }
+  = | { type: 'boolean'; default: boolean; label: string; description?: string }
+    | { type: 'number'; default: number; min: number; max: number; step?: number; label: string; description?: string }
+    | { type: 'string'; default: string; maxLength?: number; label: string; description?: string }
+    | { type: 'enum'; default: string; options: readonly string[]; label: string; description?: string }
     | { type: 'list'; itemType: 'string' | 'enum'; options?: readonly string[]; maxItems?: number; default: string; label: string; description?: string };
 
 export type FlatSchema = Record<string, SerializedEntry>;
@@ -179,58 +168,50 @@ export function isEntry(node: unknown): node is ConfigEntry {
 }
 
 function serializeEntry(entry: ConfigEntry): SerializedEntry {
-  if (entry.type === 'boolean') {
-    const e: SerializedEntry = { type: 'boolean', default: entry.default, label: entry.label };
+  const common = {
+    label: entry.label,
+    ...(entry.description ? { description: entry.description } : {}),
+  };
 
-    if (entry.description) { (e as { description?: string }).description = entry.description; }
-
-    if (entry.widget) { (e as { widget?: string }).widget = entry.widget; }
-
-    return e;
+  switch (entry.type) {
+    case 'boolean':
+      return {
+        type: 'boolean',
+        default: entry.default,
+        ...common,
+      };
+    case 'number':
+      return {
+        type: 'number',
+        default: entry.default,
+        min: entry.min,
+        max: entry.max,
+        ...(entry.step !== undefined ? { step: entry.step } : {}),
+        ...common,
+      };
+    case 'string':
+      return {
+        type: 'string',
+        default: entry.default,
+        ...(entry.maxLength !== undefined ? { maxLength: entry.maxLength } : {}),
+        ...common,
+      };
+    case 'enum':
+      return {
+        type: 'enum',
+        default: entry.default,
+        options: entry.options,
+        ...common,
+      };
+    case 'list':
+      // Store the default as a JSON string — list values travel as serialized arrays.
+      return {
+        type: 'list',
+        itemType: entry.itemType,
+        default: JSON.stringify(entry.default),
+        ...(entry.options ? { options: entry.options } : {}),
+        ...(entry.maxItems !== undefined ? { maxItems: entry.maxItems } : {}),
+        ...common,
+      };
   }
-
-  if (entry.type === 'number') {
-    const e: SerializedEntry = { type: 'number', default: entry.default, min: entry.min, max: entry.max, label: entry.label };
-
-    if (entry.step !== undefined) { (e as { step?: number }).step = entry.step; }
-
-    if (entry.description) { (e as { description?: string }).description = entry.description; }
-
-    if (entry.widget) { (e as { widget?: string }).widget = entry.widget; }
-
-    return e;
-  }
-
-  if (entry.type === 'string') {
-    const e: SerializedEntry = { type: 'string', default: entry.default, label: entry.label };
-
-    if (entry.maxLength !== undefined) { (e as { maxLength?: number }).maxLength = entry.maxLength; }
-
-    if (entry.description) { (e as { description?: string }).description = entry.description; }
-
-    if (entry.widget) { (e as { widget?: string }).widget = entry.widget; }
-
-    return e;
-  }
-
-  if (entry.type === 'enum') {
-    const e: SerializedEntry = { type: 'enum', default: entry.default, options: entry.options, label: entry.label };
-
-    if (entry.description) { (e as { description?: string }).description = entry.description; }
-
-    if (entry.widget) { (e as { widget?: string }).widget = entry.widget; }
-
-    return e;
-  }
-
-  // list — store default as JSON string
-  const e: SerializedEntry = { type: 'list', itemType: entry.itemType, default: JSON.stringify(entry.default), label: entry.label };
-
-  if (entry.options) { (e as { options?: readonly string[] }).options = entry.options; }
-
-  if (entry.maxItems !== undefined) { (e as { maxItems?: number }).maxItems = entry.maxItems; }
-
-  if (entry.description) { (e as { description?: string }).description = entry.description; }
-
-  return e;
 }

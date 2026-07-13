@@ -51,7 +51,7 @@ const DEFAULT_LOCALE = 'en_US';
  * The address string is unchanged from the pre-by-locale design; only the payload type changed,
  * and `publishedByLocale` defensively wraps any un-migrated flat payload.
  */
-export const TRANSLATIONS_STATE_KEY = stateKey<TranslationKeysByLocale>('bc-i18n/keys');
+const TRANSLATIONS_STATE_KEY = stateKey<TranslationKeysByLocale>('bc-i18n/keys');
 
 export type TranslationsChangeListener = () => void;
 

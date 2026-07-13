@@ -35,7 +35,7 @@ import { stateKey } from '@bedrock-core/sync';
 import type { State, StateKey, Unsubscribe } from '@bedrock-core/sync';
 import type { Registry } from './registry';
 
-export const FEATURE_STATE_PREFIX = 'bc-feature/';
+const FEATURE_STATE_PREFIX = 'bc-feature/';
 
 /** Published enabled-flag for one feature of one addon. */
 const featureStateKey = (featureId: string): StateKey<boolean> => stateKey(`${FEATURE_STATE_PREFIX}${featureId}`);
@@ -49,6 +49,12 @@ export interface FeatureConditionContext {
 }
 
 export interface FeatureSpec {
+
+  /**
+   * Whether the feature should be enabled right now. Re-evaluated on **every** registry
+   * and state change, so it must be a cheap, pure predicate over `ctx` — no side effects,
+   * no expensive work.
+   */
   condition(ctx: FeatureConditionContext): boolean;
   onEnable(): void;
   onDisable(): void;
@@ -80,11 +86,10 @@ export class FeatureManager {
     this._disposers.push(
       this._registry.onRegister(() => this.evaluateAll()),
       this._registry.onUnregister(() => this.evaluateAll()),
-      this._state.onChange((change) => {
-        if (change.key.startsWith(FEATURE_STATE_PREFIX) || !change.key.startsWith('bc-')) {
-          this.evaluateAll();
-        }
-      }),
+      // Re-evaluate on every state change (conditions may read any published value,
+      // including other addons' config). Feature-flag writes triggered by evaluation
+      // can't loop: evaluate() short-circuits when the condition result hasn't flipped.
+      this._state.onChange(() => this.evaluateAll()),
     );
     this.evaluateAll();
   }

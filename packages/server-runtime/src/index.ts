@@ -13,8 +13,8 @@
  *   namespace: 'bc_shop',          // unique id, lowercase a-z0-9_
  *   name: 'My Cool Shop',          // display label only
  *   version: '1.2.0',
- *   dependencies: ['bc_economy'],
- *   optionalDependencies: ['bc_leaderboards'],
+ *   dependencies: ['other_studio:bc_economy'],           // transport ids (creator:namespace)
+ *   optionalDependencies: ['other_studio:bc_leaderboards'],
  * });
  *
  * core.registry.onRegister(addon => console.warn('registered', addon.id));
@@ -25,7 +25,7 @@
  *   onDisable() { console.warn('leaderboards gone'); },
  * });
  * core.rpc.onRequest('buy', params => purchase(params));
- * core.state.set('price', 10);   // namespace pre-filled from core.id
+ * core.state.set('price', 10);   // namespace pre-filled from core.namespace
  * ```
  */
 export { Runtime, core } from './runtime';
@@ -46,10 +46,10 @@ export type { AddonManifest, ManifestMeta } from './manifest';
 
 export type { TypedClient, RPCHandlerMap } from '@bedrock-core/sync';
 
-export { TranslationsRegistry, TRANSLATIONS_STATE_KEY } from './translations';
+export { TranslationsRegistry } from './translations';
 export type { TranslationsChangeListener } from './translations';
 
-export { GuidesRegistry, GUIDE_MANIFEST_STATE_KEY } from './guides/guides-registry';
+export { GuidesRegistry } from './guides/guides-registry';
 export type { GuidesChangeListener } from './guides/guides-registry';
 export type {
   GuideManifest,

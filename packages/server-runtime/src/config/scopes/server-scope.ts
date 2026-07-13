@@ -2,35 +2,40 @@ import type { Unsubscribe } from '@bedrock-core/sync';
 import type {
   ConfigValue,
   FlatSchema,
-  SchemaNode,
   SchemaToValue,
   DotPath,
   PathValue,
   DeepPartial,
 } from '../schema';
-import { isEntry } from '../schema';
 import { ChangeEmitter, type ChangeListener } from './change-emitter';
-import { flattenObject, collectAffectedPaths, parseListValue } from './utils';
+import { buildTreeValue, emitAffected, flattenObject, type SchemaTree } from './utils';
+
+/**
+ * A batch of applied flat changes, handed to the owner for persistence + broadcast.
+ * A value of `undefined` means the key reverted to its schema default — the persisted
+ * override must be deleted.
+ */
+export type ApplyListener = (changes: ReadonlyMap<string, ConfigValue | undefined>) => void;
 
 export class ServerConfigScope<S extends Record<string, unknown>> {
-  private readonly tree: Record<string, SchemaNode>;
-  private readonly flatSchema: FlatSchema;
-  private readonly values: Map<string, ConfigValue>;
-  private readonly emitter = new ChangeEmitter();
-  private readonly onWrite: (key: string, value: ConfigValue) => void;
+  private readonly _tree: SchemaTree;
+  private readonly _flatSchema: FlatSchema;
+  private readonly _values: Map<string, ConfigValue>;
+  private readonly _emitter = new ChangeEmitter();
+  private readonly _onApply: ApplyListener;
 
   readonly schema: FlatSchema;
 
   constructor(
-    tree: Record<string, SchemaNode>,
+    tree: SchemaTree,
     flatSchema: FlatSchema,
     values: Map<string, ConfigValue>,
-    onWrite: (key: string, value: ConfigValue) => void,
+    onApply: ApplyListener,
   ) {
-    this.tree = tree;
-    this.flatSchema = flatSchema;
-    this.values = values;
-    this.onWrite = onWrite;
+    this._tree = tree;
+    this._flatSchema = flatSchema;
+    this._values = values;
+    this._onApply = onApply;
     this.schema = flatSchema;
   }
 
@@ -39,7 +44,7 @@ export class ServerConfigScope<S extends Record<string, unknown>> {
     // The tree walk reconstructs exactly the shape SchemaToValue<S> describes; TS cannot
     // verify an object assembled key-by-key at runtime, so this assertion is inherent.
     // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion
-    return this.buildTree(this.tree, '', this.values) as SchemaToValue<S>;
+    return buildTreeValue(this._tree, '', this._flatSchema, this._values) as SchemaToValue<S>;
   }
 
   /** Deep-merge a partial update. Only the provided keys are changed. */
@@ -47,114 +52,85 @@ export class ServerConfigScope<S extends Record<string, unknown>> {
     this.applyAndEmit(flattenObject(partial));
   }
 
-  /** Replace the full config. Equivalent to patching every key. */
+  /**
+   * Replace the full config. Requires the whole object; every schema key not present in
+   * the input reverts to its schema default and its persisted override is deleted.
+   */
   set(value: SchemaToValue<S>): void {
-    this.applyAndEmit(flattenObject(value));
+    this.applyAndEmit(this.withReverts(flattenObject(value)));
   }
 
   onChange(listener: ChangeListener<SchemaToValue<S>>): Unsubscribe;
   onChange<P extends DotPath<S>>(path: P, listener: ChangeListener<PathValue<S, P>>): Unsubscribe;
   onChange(pathOrListener: string | ChangeListener<unknown>, listener?: ChangeListener<unknown>): Unsubscribe {
     if (typeof pathOrListener === 'function') {
-      return this.emitter.on('', pathOrListener);
+      return this._emitter.on('', pathOrListener);
     }
 
     if (!listener) { throw new Error('onChange(path, listener): listener is required'); }
 
-    return this.emitter.on(pathOrListener, listener);
+    return this._emitter.on(pathOrListener, listener);
   }
 
-  /** @internal Load initial values from persistence. Does not emit. */
+  /**
+   * @internal Load persisted values (deferred one tick from `define()`). Emits change
+   * events for keys whose loaded value differs from what reads returned so far, so a
+   * subscriber attached right after `define()` still learns the real values. Does not
+   * persist or broadcast.
+   */
   loadInitial(values: Map<string, ConfigValue>): void {
-    for (const [key, value] of values) { this.values.set(key, value); }
+    const prev = new Map(this._values);
+    const changed: string[] = [];
+
+    for (const [key, value] of values) {
+      if (this._values.get(key) !== value) { changed.push(key); }
+
+      this._values.set(key, value);
+    }
+
+    if (changed.length > 0) {
+      emitAffected(this._emitter, changed, this._tree, this._flatSchema, this._values, prev);
+    }
   }
 
-  /** @internal Apply a remote patch from RPC (fires change events). */
+  /** @internal Apply a remote merge-patch from RPC (fires change events). */
   applyRemotePatch(flat: Record<string, ConfigValue>): void {
     this.applyAndEmit(new Map(Object.entries(flat)));
   }
 
-  private applyAndEmit(changes: Map<string, ConfigValue>): void {
+  /** @internal Apply a remote full replace from RPC (fires change events). */
+  applyRemoteSet(flat: Record<string, ConfigValue>): void {
+    this.applyAndEmit(this.withReverts(new Map(Object.entries(flat))));
+  }
+
+  /** Mark every schema key missing from `changes` as a revert-to-default. */
+  private withReverts(changes: Map<string, ConfigValue>): Map<string, ConfigValue | undefined> {
+    const full = new Map<string, ConfigValue | undefined>(changes);
+
+    for (const key of Object.keys(this._flatSchema)) {
+      if (!full.has(key)) { full.set(key, undefined); }
+    }
+
+    return full;
+  }
+
+  private applyAndEmit(changes: Map<string, ConfigValue | undefined>): void {
     if (!changes.size) { return; }
 
-    const prev = new Map(this.values);
+    const prev = new Map(this._values);
 
     for (const [key, value] of changes) {
-      this.values.set(key, value);
-      this.onWrite(key, value);
-    }
-
-    if (!this.emitter.hasAny()) { return; }
-
-    for (const path of collectAffectedPaths(changes)) {
-      if (!this.emitter.has(path)) { continue; }
-
-      const newVal = this.valueAt(path, this.values);
-      const prevVal = this.valueAt(path, prev);
-
-      this.emitter.emit(path, newVal, prevVal);
-    }
-  }
-
-  private valueAt(path: string, values: Map<string, ConfigValue>): unknown {
-    if (path === '') { return this.buildTree(this.tree, '', values); }
-
-    return this.reconstruct(path, values);
-  }
-
-  private reconstruct(path: string, values: Map<string, ConfigValue>): unknown {
-    const parts = path.split('.');
-    let subtree: Record<string, SchemaNode> = this.tree;
-    let prefix = '';
-
-    for (let i = 0; i < parts.length - 1; i++) {
-      const node = subtree[parts[i]];
-
-      if (!node || isEntry(node)) { return undefined; }
-
-      prefix = prefix ? `${prefix}.${parts[i]}` : parts[i];
-      subtree = node;
-    }
-
-    const last = parts[parts.length - 1];
-    const node = subtree[last];
-
-    if (!node) { return undefined; }
-
-    const nodePath = prefix ? `${prefix}.${last}` : last;
-
-    if (isEntry(node)) { return this.resolveLeaf(nodePath, values); }
-
-    return this.buildTree(node, nodePath, values);
-  }
-
-  private buildTree(
-    subtree: Record<string, SchemaNode>,
-    prefix: string,
-    values: Map<string, ConfigValue>,
-  ): Record<string, unknown> {
-    const result: Record<string, unknown> = {};
-
-    for (const [key, node] of Object.entries(subtree)) {
-      const path = prefix ? `${prefix}.${key}` : key;
-
-      if (isEntry(node)) {
-        result[key] = this.resolveLeaf(path, values);
-      } else {
-        result[key] = this.buildTree(node, path, values);
+      if (value !== undefined) {
+        this._values.set(key, value);
+        continue;
       }
+
+      const fallback = this._flatSchema[key]?.default;
+
+      if (fallback !== undefined) { this._values.set(key, fallback); }
     }
 
-    return result;
-  }
-
-  private resolveLeaf(path: string, values: Map<string, ConfigValue>): unknown {
-    const raw = values.get(path) ?? this.flatSchema[path]?.default;
-
-    if (this.flatSchema[path]?.type === 'list' && typeof raw === 'string') {
-      return parseListValue(raw);
-    }
-
-    return raw;
+    this._onApply(changes);
+    emitAffected(this._emitter, changes.keys(), this._tree, this._flatSchema, this._values, prev);
   }
 }

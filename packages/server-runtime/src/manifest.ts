@@ -50,20 +50,13 @@ export interface AddonManifest {
   thumbnail?: string;
 }
 
-/** The manifest fields carried in the discovery `meta` blob. The node id is the transport id (`creator:namespace`); namespace is also stored here so peers can recover it. */
-export interface ManifestMeta {
-  creator: string;
-  creatorName?: string;
-  namespace: string;
-  name: string;
-  description?: string;
-  dependencies?: string[];
-  optionalDependencies?: string[];
-  icon?: string;
-  thumbnail?: string;
-  // Index signature so a meta blob is assignable to the transport's opaque meta type.
-  [key: string]: unknown;
-}
+/**
+ * The manifest fields carried in the discovery `meta` blob — everything but `version`,
+ * which discovery carries on its own. The node id is the transport id (`creator:namespace`);
+ * namespace is also stored here so peers can recover it. The index signature makes the blob
+ * assignable to the transport's opaque meta type.
+ */
+export type ManifestMeta = Omit<AddonManifest, 'version'> & { [key: string]: unknown };
 
 // Lowercase alphanumeric + underscores, at least one character.
 const ID_PATTERN = /^[a-z0-9_]+$/;
@@ -108,7 +101,7 @@ export function validateManifest(input: AddonManifest): AddonManifest {
 
   if (input.icon !== undefined) { manifest.icon = String(input.icon); }
 
-  manifest.thumbnail = input.thumbnail ?? '';
+  if (input.thumbnail !== undefined) { manifest.thumbnail = String(input.thumbnail); }
 
   return manifest;
 }

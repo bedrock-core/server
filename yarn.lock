@@ -27,6 +27,7 @@ __metadata:
   peerDependencies:
     "@bedrock-core/navigation": "*"
     "@bedrock-core/ore-styled": "*"
+    "@bedrock-core/server-runtime": "*"
     "@bedrock-core/ui-runtime": "*"
   languageName: node
   linkType: soft

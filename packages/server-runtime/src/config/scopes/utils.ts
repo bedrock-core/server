@@ -1,4 +1,12 @@
-import type { ConfigValue, FlatSchema } from '../schema';
+import type { ConfigValue, FlatSchema, SchemaNode } from '../schema';
+import { isEntry } from '../schema';
+import type { ChangeEmitter } from './change-emitter';
+
+/** A schema subtree: group keys → nested groups or leaf entries. */
+export type SchemaTree = Record<string, SchemaNode>;
+
+/** Flat dot-path → stored value view, as kept by the scopes. */
+export type FlatValues = ReadonlyMap<string, ConfigValue>;
 
 /** Non-null object viewed as a string-indexed record (arrays included, as before). */
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -42,14 +50,14 @@ export function flattenObject(
 }
 
 /**
- * Given a set of changed flat paths, return every affected path from deepest
+ * Given the set of changed flat paths, return every affected path from deepest
  * to shallowest (leaf → ancestor groups → root '').
- * Callers use this to fire onChange listeners in the right order.
+ * Listeners are fired in that order.
  */
-export function collectAffectedPaths(changes: Map<string, ConfigValue>): string[] {
+function collectAffectedPaths(changedKeys: Iterable<string>): string[] {
   const paths = new Set<string>(['']);
 
-  for (const key of changes.keys()) {
+  for (const key of changedKeys) {
     paths.add(key);
     const parts = key.split('.');
 
@@ -111,4 +119,94 @@ export function buildNestedObject(flat: Record<string, ConfigValue>, schema?: Fl
   }
 
   return result;
+}
+
+// ─── Tree reconstruction (shared by both config scopes) ────────────────────────
+
+/** Resolve one leaf: stored value → schema default; list entries parse back to arrays. */
+function resolveLeaf(path: string, flatSchema: FlatSchema, values: FlatValues): unknown {
+  const raw = values.get(path) ?? flatSchema[path]?.default;
+
+  if (flatSchema[path]?.type === 'list' && typeof raw === 'string') {
+    return parseListValue(raw);
+  }
+
+  return raw;
+}
+
+/** Reconstruct the nested value object for a schema subtree from flat values. */
+export function buildTreeValue(
+  tree: SchemaTree,
+  prefix: string,
+  flatSchema: FlatSchema,
+  values: FlatValues,
+): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+
+  for (const [key, node] of Object.entries(tree)) {
+    const path = prefix ? `${prefix}.${key}` : key;
+
+    if (isEntry(node)) {
+      result[key] = resolveLeaf(path, flatSchema, values);
+    } else {
+      result[key] = buildTreeValue(node, path, flatSchema, values);
+    }
+  }
+
+  return result;
+}
+
+/** The value at a dot-path within the tree — `''` is the whole tree; unknown paths yield `undefined`. */
+export function valueAtPath(
+  tree: SchemaTree,
+  path: string,
+  flatSchema: FlatSchema,
+  values: FlatValues,
+): unknown {
+  if (path === '') { return buildTreeValue(tree, '', flatSchema, values); }
+
+  const parts = path.split('.');
+  let subtree: SchemaTree = tree;
+  let prefix = '';
+
+  for (let i = 0; i < parts.length - 1; i++) {
+    const node = subtree[parts[i]];
+
+    if (!node || isEntry(node)) { return undefined; }
+
+    prefix = prefix ? `${prefix}.${parts[i]}` : parts[i];
+    subtree = node;
+  }
+
+  const last = parts[parts.length - 1];
+  const node = subtree[last];
+
+  if (!node) { return undefined; }
+
+  const nodePath = prefix ? `${prefix}.${last}` : last;
+
+  if (isEntry(node)) { return resolveLeaf(nodePath, flatSchema, values); }
+
+  return buildTreeValue(node, nodePath, flatSchema, values);
+}
+
+/**
+ * Fire the emitter for every path affected by a batch of flat-key changes (deepest first),
+ * reconstructing the next/prev value at each subscribed path.
+ */
+export function emitAffected(
+  emitter: ChangeEmitter,
+  changedKeys: Iterable<string>,
+  tree: SchemaTree,
+  flatSchema: FlatSchema,
+  next: FlatValues,
+  prev: FlatValues,
+): void {
+  if (!emitter.hasAny()) { return; }
+
+  for (const path of collectAffectedPaths(changedKeys)) {
+    if (!emitter.has(path)) { continue; }
+
+    emitter.emit(path, valueAtPath(tree, path, flatSchema, next), valueAtPath(tree, path, flatSchema, prev));
+  }
 }

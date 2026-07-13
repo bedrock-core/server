@@ -2,11 +2,11 @@
  * The cross-addon registry — a live directory of every bedrock-core addon present in the
  * world, built on the sync node's discovery. Each peer's announce `meta` is interpreted as
  * an {@link AddonManifest}; the registry merges the local addon (self) with all live peers,
- * keyed by the unique namespace (e.g. `bc_economy`).
+ * keyed by the unique transport id (`creator:namespace`, e.g. `drav0011:bc_economy`).
  *
- * A collision (two addons with the same namespace) is surfaced via
- * {@link Registry.onNamespaceCollision} and logged. Dependencies are matched by namespace and
- * are soft: a missing one warns but never blocks.
+ * A collision (two addons with the same transport id) is surfaced via
+ * {@link Registry.onNamespaceCollision} and logged. Dependencies are declared and matched
+ * by transport id and are soft: a missing one warns but never blocks.
  */
 import type { CollisionInfo, Discovery, PeerInfo, Unsubscribe } from '@bedrock-core/sync';
 import { Registry as _bor } from '@bedrock-oss/add-on-registry';

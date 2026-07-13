@@ -29,7 +29,7 @@ export class Runtime {
   private _state: ScopedState | undefined;
   private _config: ConfigRegistry | undefined;
   private _translations: TranslationsRegistry | undefined;
-  private _guides?: GuidesRegistry | undefined;
+  private _guides: GuidesRegistry | undefined;
 
   /** Whether the addon has been registered (and is therefore live). */
   get registered(): boolean {

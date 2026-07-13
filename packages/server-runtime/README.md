@@ -49,8 +49,8 @@ validates the manifest and throws on a bad manifest or a second call.
 
 | Getter | Value | Use for |
 |---|---|---|
-| `core.id` | `'my_studio:bc_shop'` | RPC targeting, registry lookup |
-| `core.namespace` | `'bc_shop'` | State keys, dependency declarations, persistence filter |
+| `core.id` | `'my_studio:bc_shop'` | RPC targeting, registry lookup, dependency declarations |
+| `core.namespace` | `'bc_shop'` | State keys, persistence filter |
 
 ---
 
@@ -69,10 +69,12 @@ core.registry.onNamespaceCollision(info => console.error('collision on', info.id
 Every `RegisteredAddon` carries the full manifest plus its `id` (transport id:
 `creator:namespace`), `namespace`, and a `self` flag.
 
-### Dependencies (soft, by namespace)
+### Dependencies (soft, by transport id)
+
+Dependencies are declared and matched by transport id (`creator:namespace`):
 
 ```ts
-core.registry.missingDependencies();           // ['bc_economy'] until it registers
+core.registry.missingDependencies();           // ['other_studio:bc_economy'] until it registers
 core.registry.onDependenciesSatisfied(() => enableThingsNeedingEconomy());
 ```
 
@@ -159,8 +161,15 @@ state so other addons and UI layers can discover and edit them. Three independen
 | Scope | Shared across… | Access |
 |---|---|---|
 | `server` | whole world | `config.server` |
-| `dimension` | per dimension + global default | `config.dimension` |
-| `player` | per player + global default | `config.player` |
+| `dimension` | per dimension (schema default until overridden) | `config.dimension` |
+| `player` | per player (schema default until overridden) | `config.player` |
+
+Two write operations, same semantics everywhere (local and cross-addon):
+
+- **`patch(partial)`** — deep-merge; every part of the object is optional, only the provided
+  keys change.
+- **`set(value)`** — full replace; requires the whole object. Any schema key missing from the
+  payload at runtime reverts to its schema default and its persisted override is deleted.
 
 ### Schema declaration
 
@@ -168,9 +177,9 @@ state so other addons and UI layers can discover and edit them. Three independen
 const config = core.config.define({
   server: {
     pricing: {
-      taxRate:    { type: 'number',  default: 0.05, min: 0, max: 1, step: 0.01, label: 'Tax Rate', widget: 'slider' },
+      taxRate:    { type: 'number',  default: 0.05, min: 0, max: 1, step: 0.01, label: 'Tax Rate' },
       currency:   { type: 'enum',   default: 'emerald', options: ['emerald', 'gold', 'diamond'] as const, label: 'Currency' },
-      shopEnabled:{ type: 'boolean', default: true, label: 'Shop Enabled', widget: 'toggle' },
+      shopEnabled:{ type: 'boolean', default: true, label: 'Shop Enabled' },
     },
   },
   dimension: {
@@ -183,13 +192,20 @@ const config = core.config.define({
 });
 ```
 
-Supported entry types: `'boolean'`, `'number'` (`min`, `max`, `step`), `'string'` (`minLength`,
-`maxLength`), `'enum'` (`options: readonly string[]`). All entries support `label`, `description`,
-and an optional `widget` hint for UI auto-rendering (`'toggle' | 'checkbox'` for boolean,
-`'slider' | 'number-input'` for number, `'input' | 'textarea'` for string).
+Supported entry types: `'boolean'`, `'number'` (`min`, `max`, `step`), `'string'`
+(`maxLength`), `'enum'` (`options: readonly string[]`), and `'list'` (`itemType: 'string' |
+'enum'`, `options`, `maxItems` — an ordered string array, stored as a JSON string). All
+entries support `label` and `description`. The schema describes data only — the UI layer
+picks the control for each entry type.
 
-Groups can be nested to any depth. The full schema is published on `sync` state as a flat map so
-a UI addon can enumerate every field without knowing the provider in advance.
+Groups can be nested to any depth. The schema is published on `sync` state as a flat map
+(keys prefixed `server.` / `dimension.` / `player.`) so a UI addon can enumerate every field
+without knowing the provider in advance.
+
+Persisted values load one tick after `define()` (dynamic properties are readable from tick 1
+onward). Reads before that return schema defaults; when loading completes, change listeners
+fire for every key whose persisted value differs — a subscriber attached right after
+`define()` always ends up seeing the real values.
 
 ### Server scope
 
@@ -198,7 +214,7 @@ a UI addon can enumerate every field without knowing the provider in advance.
 const cfg = config.server.get();
 console.warn(cfg.pricing.taxRate);   // number
 
-// Write — deep-merge (patch) or full replace (set)
+// Write — deep-merge (patch, all keys optional) or full replace (set, whole object)
 config.server.patch({ pricing: { taxRate: 0.1 } });
 config.server.set({ pricing: { taxRate: 0.1, currency: 'gold', shopEnabled: true } });
 
@@ -211,18 +227,13 @@ config.server.onChange('pricing.taxRate', (next, prev) => { /* … */ });      /
 ### Dimension / player scopes
 
 Both scopes share the same API — the entity (`Dimension` or `Player`) is the first argument.
-A **global default** applies when no per-entity value has been set.
+An entity without a stored override resolves to the **schema default**.
 
 ```ts
 // Per-entity read / write
 config.dimension.get(dim)                         // → { miningBonus: number }
 config.dimension.patch(dim, { miningBonus: 2.0 })
 config.dimension.set(dim, { miningBonus: 3.0 })
-
-// Global default (applies to any entity without a per-entity override)
-config.dimension.getDefault()
-config.dimension.patchDefault({ miningBonus: 1.5 })
-config.dimension.setDefault({ miningBonus: 1.5 })
 
 // Change listeners — same depth support, entity-scoped
 config.player.onChange(player, (full) => { /* … */ })
@@ -265,6 +276,48 @@ import type { ShopConfigDef } from '@drav0011/bc-shop-types';
 core.config.subscribe<ShopConfigDef>('drav0011:bc_shop', shopCfg => {
   shopCfg.server.get().pricing.taxRate;  // number — fully typed
 });
+```
+
+---
+
+## Translations
+
+Registry display fields (`name`, `description`, `creatorName`) are translation keys shipped
+in each addon's RP `.lang`. For server-side text measurement, each addon also publishes its
+generated by-locale key map to replicated state; the runtime merges every addon's map per
+locale:
+
+```ts
+import translationKeys from '@bedrock-core/generated/translation-keys';
+
+core.register({ ... });
+core.translations.provide(translationKeys);   // publish this addon's full by-locale map
+
+core.translations.forPlayer(player);          // merged flat map for the player's locale
+core.translations.forLocale('en_US');         // merged flat map for one locale
+core.translations.onChange(() => { ... });    // any addon re-published
+```
+
+Repeated keys are overridden by whichever addon merges later — mirroring Bedrock's own
+world-level `.lang` merge.
+
+---
+
+## Guides
+
+An addon publishes its compiled guide manifest (the `guides` Regolith filter output) once;
+it replicates cross-addon so a host addon can list and render every guide locally:
+
+```ts
+import guides from '@bedrock-core/generated/guides';
+
+core.register({ ... });
+core.guide(guides);                    // publish (calling again replaces)
+
+core.guides.own();                     // this addon's manifest
+core.guides.of('vendor:bc_shop');      // another addon's manifest, or undefined
+core.guides.addonsWithGuides();        // every addon that published one
+core.guides.onChange(() => { ... });   // any addon re-published
 ```
 
 ---

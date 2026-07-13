@@ -3,12 +3,13 @@
  * (and the UI) can discover them.
  *
  * State keys (all under the owning addon's namespace):
- *   'bc-config/schema'              → FlatSchema (all scopes combined)
+ *   'bc-config/schema'              → FlatSchema, scope-prefixed keys (`server.` / `dimension.` / `player.`)
  *   'bc-config/server'              → Record<string, ConfigValue>
  *   'bc-config/dim/<dimId>'         → Record<string, ConfigValue> (effective values)
- *   'bc-config/dims'                → RosterEntry[] (known dimension ids, for UI pickers)
  *   'bc-config/player/<playerId>'   → Record<string, ConfigValue> (effective, online only)
- *   'bc-config/players'             → RosterEntry[] (online players, for UI pickers)
+ *
+ * The schema is published once, in scoped form only; the unprefixed flat view is derived
+ * on read (see `RemoteConfigAccessor.schema`) instead of shipping the map twice.
  */
 import { stateKey } from '@bedrock-core/sync';
 import type { State, StateKey } from '@bedrock-core/sync';
@@ -16,17 +17,8 @@ import type { FlatSchema, ConfigValue } from './schema';
 
 type Flat = Record<string, ConfigValue>;
 
-/** One selectable entity for a UI picker list. */
-export interface RosterEntry {
-  id: string;
-  name: string;
-}
-
 export const BC_CONFIG_SCHEMA = stateKey<FlatSchema>('bc-config/schema');
-export const BC_CONFIG_SCOPED_SCHEMA = stateKey<FlatSchema>('bc-config/schema-s');
 export const BC_CONFIG_SERVER = stateKey<Flat>('bc-config/server');
-export const BC_CONFIG_DIMENSIONS = stateKey<RosterEntry[]>('bc-config/dims');
-export const BC_CONFIG_PLAYERS = stateKey<RosterEntry[]>('bc-config/players');
 
 /** Effective per-dimension values for one dimension. */
 export const dimValuesKey = (dimId: string): StateKey<Flat> => stateKey(`bc-config/dim/${dimId}`);
@@ -34,11 +26,8 @@ export const dimValuesKey = (dimId: string): StateKey<Flat> => stateKey(`bc-conf
 /** Effective per-player values for one online player. */
 export const playerValuesKey = (playerId: string): StateKey<Flat> => stateKey(`bc-config/player/${playerId}`);
 
-export function broadcastSchema(state: State, addonId: string, schema: FlatSchema): void {
-  state.set(addonId, BC_CONFIG_SCHEMA, schema);
-}
-
-export function broadcastScopedSchema(
+/** Publish the schema with `server.`/`dimension.`/`player.` prefixes on every key. */
+export function broadcastSchema(
   state: State,
   addonId: string,
   serverFlat: FlatSchema,
@@ -53,7 +42,7 @@ export function broadcastScopedSchema(
 
   for (const [k, v] of Object.entries(playerFlat)) { scoped[`player.${k}`] = v; }
 
-  state.set(addonId, BC_CONFIG_SCOPED_SCHEMA, scoped);
+  state.set(addonId, BC_CONFIG_SCHEMA, scoped);
 }
 
 export function broadcastServerValues(
@@ -62,30 +51,4 @@ export function broadcastServerValues(
   values: Map<string, ConfigValue>,
 ): void {
   state.set(addonId, BC_CONFIG_SERVER, Object.fromEntries(values));
-}
-
-export function broadcastDimensionValues(
-  state: State,
-  addonId: string,
-  dimId: string,
-  values: Map<string, ConfigValue>,
-): void {
-  state.set(addonId, dimValuesKey(dimId), Object.fromEntries(values));
-}
-
-export function broadcastPlayerValues(
-  state: State,
-  addonId: string,
-  playerId: string,
-  values: Map<string, ConfigValue>,
-): void {
-  state.set(addonId, playerValuesKey(playerId), Object.fromEntries(values));
-}
-
-export function broadcastDimensionRoster(state: State, addonId: string, dims: RosterEntry[]): void {
-  state.set(addonId, BC_CONFIG_DIMENSIONS, dims);
-}
-
-export function broadcastPlayerRoster(state: State, addonId: string, players: RosterEntry[]): void {
-  state.set(addonId, BC_CONFIG_PLAYERS, players);
 }

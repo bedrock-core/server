@@ -2,15 +2,20 @@ import type { Unsubscribe } from '@bedrock-core/sync';
 import type {
   ConfigValue,
   FlatSchema,
-  SchemaNode,
   SchemaToValue,
   DotPath,
   PathValue,
   DeepPartial,
 } from '../schema';
-import { isEntry } from '../schema';
 import { ChangeEmitter, type ChangeListener } from './change-emitter';
-import { flattenObject, collectAffectedPaths, parseListValue } from './utils';
+import { buildTreeValue, emitAffected, flattenObject, type SchemaTree } from './utils';
+
+/**
+ * A batch of applied flat changes for one entity, handed to the owner for persistence +
+ * broadcast. A value of `undefined` means the key reverted to its schema default — the
+ * persisted per-entity override must be deleted.
+ */
+export type EntityApplyListener = (entityId: string, changes: ReadonlyMap<string, ConfigValue | undefined>) => void;
 
 /**
  * Generic per-entity config scope — works for any entity with an `id` string
@@ -19,40 +24,47 @@ import { flattenObject, collectAffectedPaths, parseListValue } from './utils';
  * Value resolution: per-entity stored value → schema default.
  */
 export class EntityConfigScope<S extends Record<string, unknown>, E extends { id: string }> {
-  private readonly tree: Record<string, SchemaNode>;
-  private readonly flatSchema: FlatSchema;
-  private readonly values: Map<string, Map<string, ConfigValue>>;
-  private readonly emitters = new Map<string, ChangeEmitter>();
-  private readonly onWrite: (entityId: string, key: string, value: ConfigValue) => void;
+  private readonly _tree: SchemaTree;
+  private readonly _flatSchema: FlatSchema;
+  private readonly _values: Map<string, Map<string, ConfigValue>>;
+  private readonly _emitters = new Map<string, ChangeEmitter>();
+  private readonly _onApply: EntityApplyListener;
 
   readonly schema: FlatSchema;
 
   constructor(
-    tree: Record<string, SchemaNode>,
+    tree: SchemaTree,
     flatSchema: FlatSchema,
     values: Map<string, Map<string, ConfigValue>>,
-    onWrite: (entityId: string, key: string, value: ConfigValue) => void,
+    onApply: EntityApplyListener,
   ) {
-    this.tree = tree;
-    this.flatSchema = flatSchema;
-    this.values = values;
-    this.onWrite = onWrite;
+    this._tree = tree;
+    this._flatSchema = flatSchema;
+    this._values = values;
+    this._onApply = onApply;
     this.schema = flatSchema;
   }
 
   /** Return the full current config for an entity as a typed nested object. */
   get(entity: E): SchemaToValue<S> {
-    return this.typedValue(this.values.get(entity.id) ?? new Map());
+    // The tree walk reconstructs exactly the shape SchemaToValue<S> describes; TS cannot
+    // verify an object assembled key-by-key at runtime, so this assertion is inherent.
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion
+    return buildTreeValue(this._tree, '', this._flatSchema, this.valuesFor(entity.id)) as SchemaToValue<S>;
   }
 
-  /** Deep-merge a partial update for a specific entity. */
+  /** Deep-merge a partial update for a specific entity. Only the provided keys are changed. */
   patch(entity: E, partial: DeepPartial<SchemaToValue<S>>): void {
     this.applyForEntity(entity.id, flattenObject(partial));
   }
 
-  /** Replace the full config for a specific entity. */
+  /**
+   * Replace the full config for a specific entity. Requires the whole object; every schema
+   * key not present in the input reverts to its schema default and its persisted per-entity
+   * override is deleted.
+   */
   set(entity: E, value: SchemaToValue<S>): void {
-    this.applyForEntity(entity.id, flattenObject(value));
+    this.applyForEntity(entity.id, this.withReverts(flattenObject(value)));
   }
 
   onChange(entity: E, listener: ChangeListener<SchemaToValue<S>>): Unsubscribe;
@@ -69,138 +81,115 @@ export class EntityConfigScope<S extends Record<string, unknown>, E extends { id
     return emitter.on(pathOrListener, listener);
   }
 
-  /** @internal Load initial entity values on join. Does not emit. */
+  /** @internal Load initial entity values on join. Does not emit (no listener can predate the entity). */
   init(entityId: string, entityValues: Map<string, ConfigValue>): void {
-    this.values.set(entityId, entityValues);
+    this._values.set(entityId, entityValues);
+  }
+
+  /**
+   * @internal Load persisted entity values (deferred one tick from `define()`). Emits change
+   * events for keys whose loaded value differs from what reads returned so far. Does not
+   * persist or broadcast.
+   */
+  loadInitial(entityId: string, loaded: Map<string, ConfigValue>): void {
+    if (!loaded.size) { return; }
+
+    const entityMap = this.ensureValues(entityId);
+    const prev = new Map(entityMap);
+    const changed: string[] = [];
+
+    for (const [key, value] of loaded) {
+      if (entityMap.get(key) !== value) { changed.push(key); }
+
+      entityMap.set(key, value);
+    }
+
+    const emitter = this._emitters.get(entityId);
+
+    if (emitter && changed.length > 0) {
+      emitAffected(emitter, changed, this._tree, this._flatSchema, entityMap, prev);
+    }
   }
 
   /** @internal Clear entity data on leave. */
   clear(entityId: string): void {
-    this.values.delete(entityId);
-    this.emitters.get(entityId)?.clear();
-    this.emitters.delete(entityId);
+    this._values.delete(entityId);
+    this._emitters.get(entityId)?.clear();
+    this._emitters.delete(entityId);
   }
 
-  /** @internal Apply a remote patch for an entity from RPC (fires change events). */
+  /** @internal Apply a remote merge-patch for an entity from RPC (fires change events). */
   applyRemotePatch(entityId: string, flat: Record<string, ConfigValue>): void {
     this.applyForEntity(entityId, new Map(Object.entries(flat)));
   }
 
+  /** @internal Apply a remote full replace for an entity from RPC (fires change events). */
+  applyRemoteSet(entityId: string, flat: Record<string, ConfigValue>): void {
+    this.applyForEntity(entityId, this.withReverts(new Map(Object.entries(flat))));
+  }
+
   /** @internal Return all effective flat values for an entity (used for RPC response). */
   getFlat(entityId: string): Record<string, ConfigValue> {
-    const entityMap = this.values.get(entityId);
+    const entityMap = this._values.get(entityId);
     const result: Record<string, ConfigValue> = {};
 
-    for (const key of Object.keys(this.flatSchema)) {
-      result[key] = entityMap?.get(key) ?? this.flatSchema[key]?.default;
+    for (const key of Object.keys(this._flatSchema)) {
+      result[key] = entityMap?.get(key) ?? this._flatSchema[key]?.default;
     }
 
     return result;
   }
 
-  private applyForEntity(entityId: string, changes: Map<string, ConfigValue>): void {
+  /** Mark every schema key missing from `changes` as a revert-to-default. */
+  private withReverts(changes: Map<string, ConfigValue>): Map<string, ConfigValue | undefined> {
+    const full = new Map<string, ConfigValue | undefined>(changes);
+
+    for (const key of Object.keys(this._flatSchema)) {
+      if (!full.has(key)) { full.set(key, undefined); }
+    }
+
+    return full;
+  }
+
+  private applyForEntity(entityId: string, changes: Map<string, ConfigValue | undefined>): void {
     if (!changes.size) { return; }
 
-    let entityMap = this.values.get(entityId);
-
-    if (!entityMap) { entityMap = new Map(); this.values.set(entityId, entityMap); }
-
+    const entityMap = this.ensureValues(entityId);
     const prev = new Map(entityMap);
 
     for (const [key, value] of changes) {
-      entityMap.set(key, value);
-      this.onWrite(entityId, key, value);
-    }
-
-    const emitter = this.emitters.get(entityId);
-
-    if (!emitter?.hasAny()) { return; }
-
-    for (const path of collectAffectedPaths(changes)) {
-      if (!emitter.has(path)) { continue; }
-
-      const newVal = this.valueAt(path, entityMap);
-      const prevVal = this.valueAt(path, prev);
-
-      emitter.emit(path, newVal, prevVal);
-    }
-  }
-
-  private valueAt(path: string, entityValues: Map<string, ConfigValue>): unknown {
-    if (path === '') { return this.buildTree(this.tree, '', entityValues); }
-
-    return this.reconstruct(path, entityValues);
-  }
-
-  private reconstruct(path: string, entityValues: Map<string, ConfigValue>): unknown {
-    const parts = path.split('.');
-    let subtree: Record<string, SchemaNode> = this.tree;
-    let prefix = '';
-
-    for (let i = 0; i < parts.length - 1; i++) {
-      const node = subtree[parts[i]];
-
-      if (!node || isEntry(node)) { return undefined; }
-
-      prefix = prefix ? `${prefix}.${parts[i]}` : parts[i];
-      subtree = node;
-    }
-
-    const last = parts[parts.length - 1];
-    const node = subtree[last];
-
-    if (!node) { return undefined; }
-
-    const nodePath = prefix ? `${prefix}.${last}` : last;
-
-    if (isEntry(node)) { return this.resolveLeaf(nodePath, entityValues); }
-
-    return this.buildTree(node, nodePath, entityValues);
-  }
-
-  private buildTree(
-    subtree: Record<string, SchemaNode>,
-    prefix: string,
-    entityValues: Map<string, ConfigValue>,
-  ): Record<string, unknown> {
-    const result: Record<string, unknown> = {};
-
-    for (const [key, node] of Object.entries(subtree)) {
-      const path = prefix ? `${prefix}.${key}` : key;
-
-      if (isEntry(node)) {
-        result[key] = this.resolveLeaf(path, entityValues);
+      if (value !== undefined) {
+        entityMap.set(key, value);
       } else {
-        result[key] = this.buildTree(
-          node, path, entityValues,
-        );
+        entityMap.delete(key);
       }
     }
 
-    return result;
-  }
+    this._onApply(entityId, changes);
 
-  private resolveLeaf(path: string, entityValues: Map<string, ConfigValue>): unknown {
-    const raw = entityValues.get(path) ?? this.flatSchema[path]?.default;
+    const emitter = this._emitters.get(entityId);
 
-    if (this.flatSchema[path]?.type === 'list' && typeof raw === 'string') {
-      return parseListValue(raw);
+    if (emitter) {
+      emitAffected(emitter, changes.keys(), this._tree, this._flatSchema, entityMap, prev);
     }
-
-    return raw;
   }
 
-  private typedValue(entityValues: Map<string, ConfigValue>): SchemaToValue<S> {
-    // The tree walk reconstructs exactly the shape SchemaToValue<S> describes; TS cannot
-    // verify an object assembled key-by-key at runtime, so this assertion is inherent.
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion
-    return this.buildTree(this.tree, '', entityValues) as SchemaToValue<S>;
+  private valuesFor(entityId: string): Map<string, ConfigValue> {
+    return this._values.get(entityId) ?? new Map<string, ConfigValue>();
+  }
+
+  private ensureValues(entityId: string): Map<string, ConfigValue> {
+    let entityMap = this._values.get(entityId);
+
+    if (!entityMap) { entityMap = new Map(); this._values.set(entityId, entityMap); }
+
+    return entityMap;
   }
 
   private emitterFor(entityId: string): ChangeEmitter {
-    let e = this.emitters.get(entityId);
+    let e = this._emitters.get(entityId);
 
-    if (!e) { e = new ChangeEmitter(); this.emitters.set(entityId, e); }
+    if (!e) { e = new ChangeEmitter(); this._emitters.set(entityId, e); }
 
     return e;
   }
