@@ -110,6 +110,17 @@ export class Bus {
 
     if (options.data !== undefined) { envelope.data = options.data; }
 
+    // Loopback: a message addressed to our own node can never come back over the wire —
+    // the receive path drops our own echoes by instance id (so a same-src twin is still
+    // heard). Deliver it to local handlers directly, on the next tick to preserve the
+    // async semantics of a real hop. This makes RPC-to-self work (e.g. the config UI
+    // reading the config of the very addon hosting it).
+    if (options.dst === this._selfId) {
+      system.run(() => this.dispatch(envelope));
+
+      return mid;
+    }
+
     const frames = splitIntoFrames(encodeEnvelope(envelope), mid, this._maxMessage);
 
     for (const frame of frames) { this._queue.enqueue(frame); }
@@ -159,10 +170,15 @@ export class Bus {
 
     if (!envelope) { return; }
 
-    // Drop our own echoes (matched by instance id, so a same-src twin is still delivered)
-    // and anything addressed to a different node.
+    // Drop our own echoes (matched by instance id, so a same-src twin is still delivered).
+    // Self-addressed messages never reach here — `send` loops them back locally.
     if (envelope.iid === this._instanceId) { return; }
 
+    this.dispatch(envelope);
+  }
+
+  /** Deliver an envelope to its type handlers, unless it is addressed to a different node. */
+  private dispatch(envelope: Envelope): void {
     if (envelope.dst !== undefined && envelope.dst !== this._selfId) { return; }
 
     const handlers = this._handlers.get(envelope.type);

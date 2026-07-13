@@ -101,6 +101,11 @@ const balance = await sync.rpc.request('economy', 'getBalance', { player: 'Steve
 
 Requests always time out (default 5 s / 100 ticks), so an absent peer can never hang your code.
 
+A node may call **itself** (`request(sync.id, …)`) — self-addressed messages are delivered
+locally on the next tick rather than over the wire (the bus drops its own echoes, so a
+self-addressed message could never come back). This keeps a uniform "always go through RPC"
+model even when the target turns out to be the caller.
+
 ---
 
 ## State

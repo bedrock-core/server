@@ -41,6 +41,29 @@ gametest('discovery_and_rpc', (test) => {
     .thenSucceed();
 });
 
+// A runtime can RPC itself. Self-addressed messages loop back locally (the bus can't
+// hear its own echoes over the wire); the config UI relies on this to read the config of
+// the very addon hosting it.
+gametest('rpc_to_self', (test) => {
+  const a = new Runtime();
+
+  a.register({ creator: 'test', namespace: 'self_rpc', name: 'A', version: '1.0.0' });
+  a.rpc.onRequest('echo', params => params);
+
+  let reply: unknown;
+
+  test.startSequence()
+    .thenIdle(10)
+    .thenExecute(() => void a.rpc.request(a.id, 'echo', 42).then((r) => { reply = r; }))
+    .thenIdle(20)
+    .thenExecute(() => {
+      if (reply !== 42) { test.fail(`self-RPC failed: expected 42, got ${String(reply)}`); }
+
+      a.stop();
+    })
+    .thenSucceed();
+});
+
 // Shared state replicates between runtimes (last-write-wins, local reads).
 gametest('state_replication', (test) => {
   const a = new Runtime();
