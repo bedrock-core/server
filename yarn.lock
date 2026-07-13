@@ -5,25 +5,29 @@ __metadata:
   version: 8
   cacheKey: 10c0
 
-"@bedrock-core/config-ui@workspace:^, @bedrock-core/config-ui@workspace:packages/config-ui":
+"@bedrock-core/config@portal:../ui/packages/config::locator=%40bedrock-core%2Fserver%40workspace%3A.":
   version: 0.0.0-use.local
-  resolution: "@bedrock-core/config-ui@workspace:packages/config-ui"
-  dependencies:
-    "@bedrock-core/server-runtime": "workspace:^"
-    "@bedrock-core/ui": "npm:^0.9.2"
-    "@minecraft/server": "npm:2.8.0"
-    "@stylistic/eslint-plugin": "npm:^5.10.0"
-    eslint: "npm:^10.5.0"
-    typescript: "npm:^6.0.3"
-    typescript-eslint: "npm:^8.62.0"
+  resolution: "@bedrock-core/config@portal:../ui/packages/config::locator=%40bedrock-core%2Fserver%40workspace%3A."
   peerDependencies:
+    "@bedrock-core/server-runtime": "*"
+    "@bedrock-core/ui": "*"
     "@minecraft/server": ">=2.8.0"
-  languageName: unknown
+  languageName: node
   linkType: soft
 
 "@bedrock-core/flexbox@portal:../ui/packages/flexbox::locator=%40bedrock-core%2Fserver%40workspace%3A.":
   version: 0.0.0-use.local
   resolution: "@bedrock-core/flexbox@portal:../ui/packages/flexbox::locator=%40bedrock-core%2Fserver%40workspace%3A."
+  languageName: node
+  linkType: soft
+
+"@bedrock-core/guides@portal:../ui/packages/guides::locator=%40bedrock-core%2Fserver%40workspace%3A.":
+  version: 0.0.0-use.local
+  resolution: "@bedrock-core/guides@portal:../ui/packages/guides::locator=%40bedrock-core%2Fserver%40workspace%3A."
+  peerDependencies:
+    "@bedrock-core/navigation": "*"
+    "@bedrock-core/ore-styled": "*"
+    "@bedrock-core/ui-runtime": "*"
   languageName: node
   linkType: soft
 
@@ -63,7 +67,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@bedrock-core/server-test-addon-2@workspace:packages/test-addon-2"
   dependencies:
-    "@bedrock-core/config-ui": "workspace:^"
+    "@bedrock-core/config": "npm:*"
     "@bedrock-core/server-runtime": "workspace:^"
     "@bedrock-core/sync": "workspace:^"
     "@bedrock-core/ui": "npm:^0.9.1"
@@ -84,7 +88,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@bedrock-core/server-test-addon@workspace:packages/test-addon"
   dependencies:
-    "@bedrock-core/config-ui": "workspace:^"
+    "@bedrock-core/config": "npm:*"
     "@bedrock-core/server-runtime": "workspace:^"
     "@bedrock-core/sync": "workspace:^"
     "@bedrock-core/ui": "npm:^0.9.1"
@@ -153,6 +157,7 @@ __metadata:
   resolution: "@bedrock-core/ui@portal:../ui::locator=%40bedrock-core%2Fserver%40workspace%3A."
   dependencies:
     "@bedrock-core/flexbox": "npm:^0.9.1"
+    "@bedrock-core/guides": "npm:^0.9.1"
     "@bedrock-core/navigation": "npm:^0.9.1"
     "@bedrock-core/ore-styled": "npm:^0.9.1"
     "@bedrock-core/ui-runtime": "npm:^0.9.1"

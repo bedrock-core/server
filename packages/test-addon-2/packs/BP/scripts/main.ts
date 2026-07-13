@@ -4,8 +4,9 @@
  * over RPC, and lights up an optional feature when a `leaderboard` addon is present.
  */
 import { core } from '@bedrock-core/server-runtime';
-import { setupConfigUI } from '@bedrock-core/config-ui';
+import { ui } from '@bedrock-core/config';
 import translationKeys from '@bedrock-core/generated/translation-keys';
+import guides from '@bedrock-core/generated/guides';
 import { setupShop } from './example';
 
 // register() brings the addon online — no separate start(). Display fields are
@@ -24,8 +25,13 @@ core.register({
   dependencies: ['drav0011:bc_economy'],
   optionalDependencies: ['drav0011:bc_leaderboard'],
 });
-// Publish this addon's translation keys — core.translations.all() merges every
-// addon's published map for UI layout lookups.
+// Publish this addon's translation keys (by locale) — the runtime merges every addon's
+// published map per locale for UI layout lookups.
 core.translations.provide(translationKeys);
+// Register this addon's guide from the MDX manifest compiled by the guides filter.
+// The alternative is a custom JSX guide: core.guide(() => <MyGuide/>).
+core.guide(guides);
 setupShop();
-setupConfigUI(core);
+// Mount the shared config UI — command registration is first-wins across addons, so with
+// several bedrock-core addons installed exactly one realm serves the UI for all of them.
+ui(core);

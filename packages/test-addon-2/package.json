@@ -10,7 +10,7 @@
 		"lint": "eslint ."
 	},
 	"dependencies": {
-		"@bedrock-core/config-ui": "workspace:^",
+		"@bedrock-core/config": "*",
 		"@bedrock-core/server-runtime": "workspace:^",
 		"@bedrock-core/sync": "workspace:^",
 		"@bedrock-core/ui": "^0.9.1",

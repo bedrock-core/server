@@ -4,8 +4,9 @@
  * balances over RPC, shares + persists its own state, and ships GameTests.
  */
 import { core } from '@bedrock-core/server-runtime';
-import { setupConfigUI } from '@bedrock-core/config-ui';
+import { ui } from '@bedrock-core/config';
 import translationKeys from '@bedrock-core/generated/translation-keys';
+import guides from '@bedrock-core/generated/guides';
 import { setupEconomy } from './example';
 import './tests';
 
@@ -21,10 +22,13 @@ core.register({
   version: '1.0.0',
   description: 'drav0011.bc_economy.description',
 });
-// Publish this addon's translation keys so other addons' UIs (e.g. the Shop config
-// screen listing every registered addon) can resolve and measure our keys.
+// Publish this addon's translation keys (by locale) so other addons' UIs (e.g. the
+// Shop config screen listing every registered addon) can resolve and measure our keys.
 core.translations.provide(translationKeys);
+// Register this addon's guide from the MDX manifest compiled by the guides filter.
+// The alternative is a custom JSX guide: core.guide(() => <MyGuide/>).
+core.guide(guides);
 setupEconomy();
-// Mount the shared config UI — registration is first-wins across addons, so with
-// several bedrock-core addons installed exactly one realm serves it for all.
-setupConfigUI(core);
+// Mount the shared config UI — command registration is first-wins across addons, so with
+// several bedrock-core addons installed exactly one realm serves the UI for all of them.
+ui(core);

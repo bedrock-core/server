@@ -17,6 +17,8 @@ import { Registry } from './registry';
 import { ScopedState } from './scoped-state';
 import { ConfigRegistry } from './config/config-registry';
 import { TranslationsRegistry } from './translations';
+import { GuidesRegistry } from './guides/guides-registry';
+import type { GuideManifest } from './guides/types';
 import type { Rpc } from '@bedrock-core/sync';
 
 export class Runtime {
@@ -27,6 +29,7 @@ export class Runtime {
   private _state: ScopedState | undefined;
   private _config: ConfigRegistry | undefined;
   private _translations: TranslationsRegistry | undefined;
+  private _guides?: GuidesRegistry | undefined;
 
   /** Whether the addon has been registered (and is therefore live). */
   get registered(): boolean {
@@ -68,6 +71,11 @@ export class Runtime {
     return this.require(this._translations, 'translations');
   }
 
+  /** Cross-addon guides — call `core.guide()` to publish this addon's guide, `core.guides.of()` for cross-addon reads. */
+  get guides(): GuidesRegistry {
+    return this.require(this._guides, 'guides');
+  }
+
   /** Replicated state scoped to this addon's namespace — no need to pass the namespace on every call. For cross-namespace reads use `core.node.state`. */
   get state(): ScopedState {
     return this.require(this._state, 'state');
@@ -106,6 +114,7 @@ export class Runtime {
     const features = new FeatureManager(registry, node.state, addonTransportId(validated));
     const config = new ConfigRegistry(node, addonTransportId(validated));
     const translations = new TranslationsRegistry(node.state, addonTransportId(validated));
+    const guides = new GuidesRegistry(node.state, addonTransportId(validated));
 
     this._node = node;
     this._registry = registry;
@@ -113,21 +122,25 @@ export class Runtime {
     this._state = new ScopedState(node.state, validated.namespace);
     this._config = config;
     this._translations = translations;
+    this._guides = guides;
 
     node.start();
     registry.start();
     features.start();
     config.start();
     translations.start();
+    guides.start();
   }
 
   /** Take the addon offline. Safe to call before registering (no-op). */
   stop(): void {
+    this._guides?.stop();
     this._translations?.stop();
     this._config?.stop();
     this._features?.stop();
     this._registry?.stop();
     this._node?.stop();
+    this._guides = undefined;
     this._translations = undefined;
     this._config = undefined;
     this._features = undefined;
@@ -143,6 +156,15 @@ export class Runtime {
    */
   feature(id: string, spec: FeatureSpec): void {
     this.require(this._features, 'features').add(id, spec);
+  }
+
+  /**
+   * Register this addon's guide: the compiled {@link GuideManifest} (from
+   * `@bedrock-core/generated/guides`), replicated cross-addon so the first-wins host can render
+   * it. Call once after `register()`; calling again replaces it.
+   */
+  guide(manifest: GuideManifest): void {
+    this.guides.provideManifest(manifest);
   }
 
   private requireManifest(): AddonManifest {

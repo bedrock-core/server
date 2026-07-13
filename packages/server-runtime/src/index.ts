@@ -30,7 +30,7 @@
  */
 export { Runtime, core } from './runtime';
 
-/** The framework version — keep in sync with package.json. Displayed by config-ui's synthetic bedrock-core list entry. */
+/** The framework version — keep in sync with package.json. Displayed by `@bedrock-core/config`'s synthetic bedrock-core list entry. */
 export const RUNTIME_VERSION = '0.1.0';
 
 export { Registry } from './registry';
@@ -48,6 +48,20 @@ export type { TypedClient, RPCHandlerMap } from '@bedrock-core/sync';
 
 export { TranslationsRegistry, TRANSLATIONS_STATE_KEY } from './translations';
 export type { TranslationsChangeListener } from './translations';
+
+export { GuidesRegistry, GUIDE_MANIFEST_STATE_KEY } from './guides/guides-registry';
+export type { GuidesChangeListener } from './guides/guides-registry';
+export type {
+  GuideManifest,
+  GuidePageData,
+  GuideBlock,
+  GuideTreeNode,
+  GuideRun,
+  GuideListItem,
+  LangKey,
+  PageId,
+  AdmonitionKind,
+} from './guides/types';
 
 export { ConfigRegistry } from './config/config-registry';
 export type { Config, RemoteConfigAccessor, TypedRemoteConfig } from './config/config-registry';
