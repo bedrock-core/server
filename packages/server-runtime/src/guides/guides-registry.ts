@@ -11,8 +11,8 @@
  * ```ts
  * import guides from '@bedrock-core/generated/guides';
  *
- * core.register({ ... });
- * core.guide(guides);          // manifest inferred from the filter
+ * core.register({ ..., guide: guides });        // manifest from the filter
+ * core.guides.provideManifest(guides);          // or publish/replace later
  * ```
  *
  * Late joiners are covered by sync's state snapshot exchange.
@@ -58,7 +58,8 @@ export class GuidesRegistry {
 
   /**
    * Publish this addon's compiled guide manifest to replicated state so peers can render it
-   * without an RPC round-trip. Call once after `register()`; calling again replaces it.
+   * without an RPC round-trip. Usually declared up front via `core.register({ guide })`;
+   * call directly to publish late or replace it.
    */
   provideManifest(manifest: GuideManifest): void {
     this._state.set(this._addonId, GUIDE_MANIFEST_STATE_KEY, manifest);

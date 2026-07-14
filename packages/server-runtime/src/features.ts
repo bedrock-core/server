@@ -7,7 +7,7 @@
  *
  * Local feature:
  * ```ts
- * core.feature('leaderboard-sync', {
+ * core.features.add('leaderboard-sync', {
  *   condition: ctx => ctx.registry.has('other_studio:bc_leaderboard'),
  *   onEnable() { startSync(); },
  *   onDisable() { stopSync(); },
@@ -16,7 +16,7 @@
  *
  * Cross-addon feature check (in a condition):
  * ```ts
- * core.feature('cross-pvp', {
+ * core.features.add('cross-pvp', {
  *   condition: ctx =>
  *     ctx.registry.has('other_studio:bc_pvp') &&
  *     ctx.feature('other_studio:bc_pvp', 'arena-mode'),

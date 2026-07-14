@@ -10,12 +10,16 @@
  * any schema key missing from the payload reverts to its schema default (its persisted
  * override is deleted).
  *
- * Addon defining config:
+ * Addon defining config (usually via the `config` field of `core.register()`, which
+ * delegates here and returns the same typed accessors):
  * ```ts
- * const config = core.config.define({
- *   server:    { pricing: { taxRate: { type: 'number', default: 0.05, min: 0, max: 1, label: 'Tax Rate' } } },
- *   dimension: { miningBonus: { type: 'number', default: 1.0, min: 0, max: 5, label: 'Mining Bonus' } },
- *   player:    { allowGifts: { type: 'boolean', default: true, label: 'Allow Gifts' } },
+ * const config = core.register({
+ *   // ...identity fields...
+ *   config: {
+ *     server:    { pricing: { taxRate: { type: 'number', default: 0.05, min: 0, max: 1, label: 'Tax Rate' } } },
+ *     dimension: { miningBonus: { type: 'number', default: 1.0, min: 0, max: 5, label: 'Mining Bonus' } },
+ *     player:    { allowGifts: { type: 'boolean', default: true, label: 'Allow Gifts' } },
+ *   },
  * });
  *
  * config.server.get()                            // { pricing: { taxRate: number } } — local, sync
@@ -211,8 +215,9 @@ export class ConfigRegistry {
   }
 
   /**
-   * Define this addon's config. Call once, after `core.register()`. Returns typed
-   * scope accessors (`config.server`, `config.dimension`, `config.player`).
+   * Define this addon's config. Call once — usually implicitly, via the `config` field of
+   * `core.register()`; call directly only to define late. Returns typed scope accessors
+   * (`config.server`, `config.dimension`, `config.player`).
    */
   define<I extends ConfigDefinition>(input: I): Config<I> {
     if (this._defined) { throw new Error('core.config.define() called more than once'); }

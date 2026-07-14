@@ -7,12 +7,15 @@ import { core } from '@bedrock-core/server-runtime';
 import { ui } from '@bedrock-core/config';
 import translationKeys from '@bedrock-core/generated/translation-keys';
 import guides from '@bedrock-core/generated/guides';
-import { setupShop } from './example';
+import { configDef, setupShop } from './example';
 
-// register() brings the addon online — no separate start(). Display fields are
-// translation keys shipped in this addon's RP (texts/en_US.lang); UIs localize
-// them per player language, and Bedrock falls back to the literal string when
-// no .lang entry matches.
+// register() declares everything in one call and brings the addon online — no separate
+// start(). Display fields are translation keys shipped in this addon's RP
+// (texts/en_US.lang); UIs localize them per player language, and Bedrock falls back to
+// the literal string when no .lang entry matches. The generated translations and guide
+// manifest (from the Regolith filters) and the config schema ride along as optional
+// fields; the typed config accessors register() returns are unused here — Shop only
+// exposes its config to the UI and to cross-addon `core.config.of()` readers.
 core.register({
   creator: 'drav0011',
   namespace: 'bc_shop',
@@ -24,13 +27,11 @@ core.register({
   thumbnail: 'textures/ui/bc_shop/thumbnail',
   dependencies: ['drav0011:bc_economy'],
   optionalDependencies: ['drav0011:bc_leaderboard'],
+  translations: translationKeys,
+  guide: guides,
+  config: configDef,
 });
-// Publish this addon's translation keys (by locale) — the runtime merges every addon's
-// published map per locale for UI layout lookups.
-core.translations.provide(translationKeys);
-// Register this addon's guide from the MDX manifest compiled by the guides filter.
-// The alternative is a custom JSX guide: core.guide(() => <MyGuide/>).
-core.guide(guides);
+
 setupShop();
 // Mount the shared config UI — command registration is first-wins across addons, so with
 // several bedrock-core addons installed exactly one realm serves the UI for all of them.

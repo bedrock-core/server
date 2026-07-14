@@ -2,7 +2,8 @@
  * The "Shop" example behavior: react to the Economy addon, call it over RPC, and toggle an
  * optional feature based on whether a `leaderboard` addon is installed.
  *
- * Also demonstrates core.config.define() — server-scope pricing and player-scope preferences.
+ * The config schema (server-scope pricing and player-scope preferences) is declared via the
+ * `config` field of `core.register()` in main.ts.
  */
 import { core } from '@bedrock-core/server-runtime';
 
@@ -10,7 +11,7 @@ import { core } from '@bedrock-core/server-runtime';
 // (e.g. `@drav0011/bc-economy-types`) and you install it as a devDependency.
 interface EconomyRPC { getBalance(params: { player: string }): number }
 
-const configDef = {
+export const configDef = {
   server: {
     pricing: {
       taxRate: { type: 'number', default: 0.05, min: 0, max: 1, step: 0.01, label: 'Tax Rate', description: 'Tax applied to all purchases' },
@@ -29,8 +30,6 @@ const configDef = {
 export type ShopConfigDef = typeof configDef;
 
 export function setupShop(): void {
-  core.config.define(configDef);
-
   // Once our required dependency (economy) is present, ask it for a balance.
   core.registry.onDependenciesSatisfied(() => {
     const economy = core.registry.get('drav0011:bc_economy');

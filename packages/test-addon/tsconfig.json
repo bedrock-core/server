@@ -37,6 +37,7 @@
 	],
 	"include": [
 		"packs/BP/scripts/**/*",
+		"packs/data/**/*.d.ts",
 	],
 	"exclude": [
 		"node_modules",

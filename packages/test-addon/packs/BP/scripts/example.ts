@@ -7,6 +7,7 @@
  *   types          : export EconomyConfigDef so consumers can type cross-addon reads
  */
 import { core } from '@bedrock-core/server-runtime';
+import type { Config } from '@bedrock-core/server-runtime';
 import { system, world } from '@minecraft/server';
 
 // ─── State persistence ────────────────────────────────────────────────────────
@@ -20,10 +21,11 @@ export interface EconomyRPC { getBalance(params: { player: string }): number }
 // ─── Config schema ────────────────────────────────────────────────────────────
 
 /**
- * Export this type (e.g. from `@drav0011/bc-economy-types`) so consumers can
- * get fully-typed access via `core.config.of<EconomyConfigDef>(...)`.
+ * Declared via the `config` field of `core.register()` in main.ts. Export this type
+ * (e.g. from `@drav0011/bc-economy-types`) so consumers can get fully-typed access
+ * via `core.config.of<EconomyConfigDef>(...)`.
  */
-const configDef = {
+export const configDef = {
   server: {
     economy: {
       startingBalance: { type: 'number' as const, default: 100, min: 0, max: 10000, step: 1, label: 'Starting Balance', widget: 'number-input' as const },
@@ -55,7 +57,7 @@ export type EconomyConfigDef = typeof configDef;
 
 // ─── Setup ────────────────────────────────────────────────────────────────────
 
-export function setupEconomy(): void {
+export function setupEconomy(config: Config<EconomyConfigDef>): void {
   // ─── RPC ──────────────────────────────────────────────────────────────────
 
   core.rpc.serve<EconomyRPC>({
@@ -65,10 +67,6 @@ export function setupEconomy(): void {
       return typeof balance === 'number' ? balance : 0;
     },
   });
-
-  // ─── Config ───────────────────────────────────────────────────────────────
-
-  const config = core.config.define(configDef);
 
   // ─── Deferred setup (requires tick ≥ 1 for DP access) ────────────────────
 

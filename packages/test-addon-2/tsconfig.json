@@ -33,7 +33,8 @@
 		"packs/BP/scripts/main.ts"
 	],
 	"include": [
-		"packs/BP/scripts/**/*"
+		"packs/BP/scripts/**/*",
+		"packs/data/**/*.d.ts"
 	],
 	"exclude": [
 		"node_modules",

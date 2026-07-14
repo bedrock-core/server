@@ -126,7 +126,7 @@ gametest('feature_toggle', (test) => {
 
   let enabled = 0;
 
-  consumer.feature('lb-sync', { condition: r => r.registry.has('test:lb_main'), onEnable: () => enabled++, onDisable: () => { /* noop */ } });
+  consumer.features.add('lb-sync', { condition: r => r.registry.has('test:lb_main'), onEnable: () => enabled++, onDisable: () => { /* noop */ } });
 
   const provider = new Runtime();
 
