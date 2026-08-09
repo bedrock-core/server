@@ -63,17 +63,7 @@ export type { TranslationsChangeListener, TranslationKeysMap, TranslationKeysByL
 
 export { GuidesRegistry } from './guides/guides-registry';
 export type { GuidesChangeListener } from './guides/guides-registry';
-export type {
-  GuideManifest,
-  GuidePageData,
-  GuideBlock,
-  GuideTreeNode,
-  GuideRun,
-  GuideListItem,
-  LangKey,
-  PageId,
-  AdmonitionKind,
-} from './guides/types';
+export type { GuideManifest } from './guides/types';
 
 export { ConfigRegistry } from './config/config-registry';
 export type { Config, RemoteConfigAccessor, TypedRemoteConfig } from './config/config-registry';

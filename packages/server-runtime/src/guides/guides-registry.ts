@@ -104,6 +104,10 @@ export class GuidesRegistry {
     };
   }
 
+  /**
+   * Shallow envelope check only — the runtime deliberately does not understand the IR. A
+   * renderer narrows the payload properly with `isGuideManifest` from `@bedrock-core/guides`.
+   */
   private manifestFor(ns: string): GuideManifest | undefined {
     const value = this._state.get(ns, GUIDE_MANIFEST_STATE_KEY);
 
