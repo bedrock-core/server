@@ -35,8 +35,7 @@
 		"lint": "eslint ."
 	},
 	"dependencies": {
-		"@bedrock-core/sync": "workspace:^",
-		"@bedrock-oss/add-on-registry": "*"
+		"@bedrock-core/sync": "workspace:^"
 	},
 	"devDependencies": {
 		"@minecraft/server": "2.8.0",

@@ -9,7 +9,6 @@
  * by transport id and are soft: a missing one warns but never blocks.
  */
 import type { CollisionInfo, Discovery, PeerInfo, Unsubscribe } from '@bedrock-core/sync';
-import { Registry as _bor } from '@bedrock-oss/add-on-registry';
 import { addonTransportId, type AddonManifest, manifestFromPeer } from './manifest';
 
 /** A manifest in the registry: its namespace as `id`, plus whether it's the local addon. */
@@ -31,7 +30,7 @@ export class Registry {
 
   constructor(discovery: Discovery, self: AddonManifest) {
     this._discovery = discovery;
-    this._self = { ...this.enrich(self), id: addonTransportId(self), self: true };
+    this._self = { ...self, id: addonTransportId(self), self: true };
     this._missingSinceLastCheck = this.missingDependencies();
     this._depsSatisfied = this._missingSinceLastCheck.length === 0;
   }
@@ -124,23 +123,9 @@ export class Registry {
   }
 
   private peerToAddon(peer: PeerInfo): RegisteredAddon {
-    const manifest = this.enrich(manifestFromPeer(peer.id, peer.version, peer.meta));
+    const manifest = manifestFromPeer(peer.id, peer.version, peer.meta);
 
     return { ...manifest, id: peer.id, self: false };
-  }
-
-  private enrich(manifest: AddonManifest): AddonManifest {
-    const entry = _bor[manifest.namespace];
-
-    if (!entry) { return manifest; }
-
-    const patches: Partial<AddonManifest> = {};
-
-    if (manifest.name === manifest.namespace) { patches.name = entry.name; }
-
-    if (!manifest.creatorName) { patches.creatorName = entry.creator; }
-
-    return Object.keys(patches).length ? { ...manifest, ...patches } : manifest;
   }
 
   private handlePeerUp(peer: PeerInfo): void {

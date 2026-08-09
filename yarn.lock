@@ -87,7 +87,6 @@ __metadata:
   resolution: "@bedrock-core/server-runtime@workspace:packages/server-runtime"
   dependencies:
     "@bedrock-core/sync": "workspace:^"
-    "@bedrock-oss/add-on-registry": "npm:*"
     "@minecraft/server": "npm:2.8.0"
     "@stylistic/eslint-plugin": "npm:^5.10.0"
     eslint: "npm:^10.5.0"
@@ -202,13 +201,6 @@ __metadata:
     "@minecraft/server-ui": "*"
   languageName: node
   linkType: soft
-
-"@bedrock-oss/add-on-registry@npm:*":
-  version: 1.0.26
-  resolution: "@bedrock-oss/add-on-registry@npm:1.0.26"
-  checksum: 10c0/ee76a2483387ccd78350fbd5ee24ff58774db8f2b559fae8934d66512dcb68e0c8c8728c1d90079eecbc506f01a1c739c7ebc71fae59cd6f79a5f434588ef7f2
-  languageName: node
-  linkType: hard
 
 "@changesets/apply-release-plan@npm:^7.1.1":
   version: 7.1.1

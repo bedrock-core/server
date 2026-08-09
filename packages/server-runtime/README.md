@@ -342,15 +342,6 @@ core.guides.onChange(() => { ... });   // any addon re-published
 
 ---
 
-## BOR enrichment
-
-`@bedrock-core/server-runtime` bundles [`@bedrock-oss/add-on-registry`](https://github.com/Bedrock-OSS/addon-registry)
-as a dependency. When a peer's addon namespace appears in that registry, the runtime
-automatically fills in its `name` (if the peer didn't broadcast one) and `creatorName`
-(if not already set). No configuration needed.
-
----
-
 ## Testing
 
 The `Runtime` class stands alone, so a GameTest can create **several runtimes in one script
