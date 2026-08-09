@@ -9,10 +9,15 @@
  * by transport id and are soft: a missing one warns but never blocks.
  */
 import type { CollisionInfo, Discovery, PeerInfo, Unsubscribe } from '@bedrock-core/sync';
-import { addonTransportId, type AddonManifest, manifestFromPeer } from './manifest';
+import { addonTransportId, type AddonManifest, manifestFromPeer, runtimeVersionFromPeer } from './manifest';
+import { RUNTIME_VERSION } from './runtime-version';
 
-/** A manifest in the registry: its namespace as `id`, plus whether it's the local addon. */
-export type RegisteredAddon = AddonManifest & { id: string; self: boolean };
+/**
+ * A manifest in the registry: its namespace as `id`, whether it's the local addon, and the
+ * `@bedrock-core/server-runtime` version that addon was built against (which the host
+ * election compares — not the addon's own `version`).
+ */
+export type RegisteredAddon = AddonManifest & { id: string; self: boolean; runtimeVersion: string };
 
 export type AddonListener = (addon: RegisteredAddon) => void;
 export type CollisionListener = (info: CollisionInfo) => void;
@@ -30,7 +35,7 @@ export class Registry {
 
   constructor(discovery: Discovery, self: AddonManifest) {
     this._discovery = discovery;
-    this._self = { ...self, id: addonTransportId(self), self: true };
+    this._self = { ...self, id: addonTransportId(self), self: true, runtimeVersion: RUNTIME_VERSION };
     this._missingSinceLastCheck = this.missingDependencies();
     this._depsSatisfied = this._missingSinceLastCheck.length === 0;
   }
@@ -125,7 +130,7 @@ export class Registry {
   private peerToAddon(peer: PeerInfo): RegisteredAddon {
     const manifest = manifestFromPeer(peer.id, peer.version, peer.meta);
 
-    return { ...manifest, id: peer.id, self: false };
+    return { ...manifest, id: peer.id, self: false, runtimeVersion: runtimeVersionFromPeer(peer.meta) };
   }
 
   private handlePeerUp(peer: PeerInfo): void {

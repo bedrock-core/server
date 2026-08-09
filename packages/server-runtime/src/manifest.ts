@@ -7,6 +7,7 @@
  * if both fields match. `name` and
  * `creatorName` are purely human-readable display labels.
  */
+import { RUNTIME_VERSION } from './runtime-version';
 
 export interface AddonManifest {
 
@@ -55,8 +56,15 @@ export interface AddonManifest {
  * which discovery carries on its own. The node id is the transport id (`creator:namespace`);
  * namespace is also stored here so peers can recover it. The index signature makes the blob
  * assignable to the transport's opaque meta type.
+ *
+ * `runtimeVersion` is added by the runtime rather than declared by the addon: it is the
+ * version of `@bedrock-core/server-runtime` the addon was built against, and the host
+ * election compares it across realms.
  */
-export type ManifestMeta = Omit<AddonManifest, 'version'> & { [key: string]: unknown };
+export type ManifestMeta = Omit<AddonManifest, 'version'> & {
+  runtimeVersion: string;
+  [key: string]: unknown;
+};
 
 // Lowercase alphanumeric + underscores, at least one character.
 const ID_PATTERN = /^[a-z0-9_]+$/;
@@ -111,9 +119,14 @@ export function addonTransportId(manifest: AddonManifest): string {
   return `${manifest.creator}:${manifest.namespace}`;
 }
 
-/** Extract the discovery `meta` blob from a manifest. */
+/** Extract the discovery `meta` blob from a manifest, stamping the runtime version peers elect on. */
 export function manifestToMeta(manifest: AddonManifest): ManifestMeta {
-  const meta: ManifestMeta = { creator: manifest.creator, namespace: manifest.namespace, name: manifest.name };
+  const meta: ManifestMeta = {
+    creator: manifest.creator,
+    namespace: manifest.namespace,
+    name: manifest.name,
+    runtimeVersion: RUNTIME_VERSION,
+  };
 
   if (manifest.creatorName !== undefined) { meta.creatorName = manifest.creatorName; }
 
@@ -161,6 +174,14 @@ export function manifestFromPeer(
   }
 
   return manifest;
+}
+
+/**
+ * The runtime version a peer announced. Defaults to `0.0.0` when the field is missing or
+ * malformed, which makes that peer lose the host election rather than corrupt it.
+ */
+export function runtimeVersionFromPeer(meta: Record<string, unknown> | undefined): string {
+  return typeof meta?.runtimeVersion === 'string' ? meta.runtimeVersion : '0.0.0';
 }
 
 function requireString(value: unknown, field: string): string {

@@ -24,6 +24,7 @@ config.server.get().taxRate;
 Included:
 
 - **Registry** — enumerate registered peers, react to `onRegister` and `onNamespaceCollision`.
+- **Host election** — `core.host` elects the realm running the newest runtime, so work only one realm may do (rendering the shared UI) follows the newest build rather than load order.
 - **Features** — enable and disable behaviour based on which peers are present.
 - **Config** — server / dimension / player scopes with typed accessors and live change subscriptions.
 - **Translations** — per-locale keys shared across addons' UIs.

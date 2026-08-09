@@ -3,7 +3,7 @@
  *
  * A guide is a compiled {@link GuideManifest} (the `guides` Regolith filter output,
  * `@bedrock-core/generated/guides`). Each addon publishes its manifest to replicated state,
- * so the first-wins host realm can list and render every addon's guide locally.
+ * so the elected host realm can list and render every addon's guide locally.
  *
  * Each addon publishes under its own transport-id namespace, so sync's late-join snapshot
  * exchange replicates guides for free:

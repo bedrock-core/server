@@ -20,7 +20,6 @@
  * - `forLocale(locale)` merges every addon's table for that single locale (cached per locale).
  * - `forPlayer(player)` picks the player's client locale when any addon authored it, else the
  *   default locale, else any available locale, then returns that merged flat map.
- * - `all()` is the default-locale (`en_US`) back-compat view — equivalent to `forLocale('en_US')`.
  *
  * ```ts
  * import translationKeys from '@bedrock-core/generated/translation-keys'; // TranslationKeysByLocale
@@ -42,14 +41,10 @@ export type TranslationKeysMap = Record<string, string>;
 /** Locale code (e.g. `"en_US"`) -> {@link TranslationKeysMap}. */
 export type TranslationKeysByLocale = Record<string, TranslationKeysMap>;
 
-/** Locale assumed for the `all()` back-compat view and the flat-map defensive wrap. */
+/** Locale `forPlayer` falls back to when the player's own locale wasn't authored by any addon. */
 const DEFAULT_LOCALE = 'en_US';
 
-/**
- * State key each addon publishes its by-locale map under (namespace = the addon's transport id).
- * The address string is unchanged from the pre-by-locale design; only the payload type changed,
- * and `publishedByLocale` defensively wraps any un-migrated flat payload.
- */
+/** State key each addon publishes its by-locale map under (namespace = the addon's transport id). */
 const TRANSLATIONS_STATE_KEY = stateKey<TranslationKeysByLocale>('bc-i18n/keys');
 
 export type TranslationsChangeListener = () => void;
@@ -133,15 +128,6 @@ export class TranslationsRegistry {
     return this.forLocale(chosen);
   }
 
-  /**
-   * BACK-COMPAT: the merged flat map for the default locale (`en_US`) — equivalent to
-   * `forLocale('en_US')`. Retained so external addons written against the pre-by-locale API keep
-   * working; prefer `forPlayer(player)` (per-player locale) or `forLocale(locale)` for new code.
-   */
-  all(): TranslationKeysMap {
-    return this.forLocale(DEFAULT_LOCALE);
-  }
-
   /** The full BY-LOCALE map another addon published, or `{}` if it hasn't. Local-mirror read. */
   of(addonId: string): TranslationKeysByLocale {
     return this.publishedByLocale(addonId);
@@ -175,17 +161,13 @@ export class TranslationsRegistry {
 
   /**
    * The by-locale map an addon published under this namespace, or `{}` if none/invalid.
-   * Defensive back-compat: an un-migrated addon may still publish the old FLAT shape
-   * (`Record<string, string>`); detect that (all values are strings) and wrap it as
-   * `{ [DEFAULT_LOCALE]: flat }` so mixed fleets still resolve. Otherwise keep only the
-   * entries that are themselves nested `Record<string, string>` objects.
+   * Keeps only the entries that are themselves `Record<string, string>` tables, so one
+   * addon publishing a malformed payload can't poison the merge for everyone else.
    */
   private publishedByLocale(ns: string): TranslationKeysByLocale {
     const value = this._state.get(ns, TRANSLATIONS_STATE_KEY);
 
     if (!isRecord(value)) { return {}; }
-
-    if (isFlatMap(value)) { return { [DEFAULT_LOCALE]: value }; }
 
     const result: TranslationKeysByLocale = {};
 
@@ -207,9 +189,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * True when `value` is a flat locale table: a record whose every value is a string. An empty
- * record qualifies (nothing contradicts it) and wrapping it as one empty default-locale table
- * is harmless. Narrows to {@link TranslationKeysMap} so callers avoid an `as` cast.
+ * True when `value` is a locale table: a record whose every value is a string. An empty record
+ * qualifies — nothing contradicts it, and merging it is a no-op. Narrows to
+ * {@link TranslationKeysMap} so callers avoid an `as` cast.
  */
 function isFlatMap(value: unknown): value is TranslationKeysMap {
   if (!isRecord(value)) { return false; }

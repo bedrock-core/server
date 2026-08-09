@@ -21,6 +21,7 @@ import { ConfigRegistry, type Config } from './config/config-registry';
 import type { ConfigDefinition } from './config/schema';
 import { TranslationsRegistry, type TranslationKeysByLocale } from './translations';
 import { GuidesRegistry } from './guides/guides-registry';
+import { HostElection } from './host';
 import type { GuideManifest } from './guides/types';
 import type { Rpc } from '@bedrock-core/sync';
 
@@ -44,7 +45,7 @@ export interface RegisterOptions<I extends ConfigDefinition = ConfigDefinition> 
    */
   translations?: TranslationKeysByLocale;
 
-  /** This addon's compiled guide manifest (`@bedrock-core/generated/guides`), published for the first-wins host to render. */
+  /** This addon's compiled guide manifest (`@bedrock-core/generated/guides`), published for the elected host to render. */
   guide?: GuideManifest;
 
   /** This addon's config schema. When given, `register()` returns the typed scope accessors. */
@@ -60,6 +61,7 @@ export class Runtime {
   private _config: ConfigRegistry | undefined;
   private _translations: TranslationsRegistry | undefined;
   private _guides: GuidesRegistry | undefined;
+  private _host: HostElection | undefined;
 
   /** Whether the addon has been registered (and is therefore live). */
   get registered(): boolean {
@@ -96,7 +98,7 @@ export class Runtime {
     return this.require(this._config, 'config');
   }
 
-  /** Cross-addon translation keys — publish via `register({ translations })` (or `core.translations.provide()`), `all()` for the merged map. */
+  /** Cross-addon translation keys — publish via `register({ translations })` (or `core.translations.provide()`), `forPlayer(player)` for the merged map. */
   get translations(): TranslationsRegistry {
     return this.require(this._translations, 'translations');
   }
@@ -104,6 +106,11 @@ export class Runtime {
   /** Cross-addon guides — publish via `register({ guide })` (or `core.guides.provideManifest()` to replace at runtime), `core.guides.of()` for cross-addon reads. */
   get guides(): GuidesRegistry {
     return this.require(this._guides, 'guides');
+  }
+
+  /** Host election — `core.host.isHost` tells you whether this realm should do the work only one realm may do (e.g. render the shared UI). */
+  get host(): HostElection {
+    return this.require(this._host, 'host');
   }
 
   /** Replicated state scoped to this addon's namespace — no need to pass the namespace on every call. For cross-namespace reads use `core.node.state`. */
@@ -154,6 +161,7 @@ export class Runtime {
     const config = new ConfigRegistry(node, addonTransportId(validated));
     const translations = new TranslationsRegistry(node.state, addonTransportId(validated));
     const guides = new GuidesRegistry(node.state, addonTransportId(validated));
+    const host = new HostElection(registry, addonTransportId(validated));
 
     this._node = node;
     this._registry = registry;
@@ -162,6 +170,7 @@ export class Runtime {
     this._config = config;
     this._translations = translations;
     this._guides = guides;
+    this._host = host;
 
     node.start();
     registry.start();
@@ -169,6 +178,7 @@ export class Runtime {
     config.start();
     translations.start();
     guides.start();
+    host.start();
 
     if (options.translations) { translations.provide(options.translations); }
 
@@ -179,12 +189,14 @@ export class Runtime {
 
   /** Take the addon offline. Safe to call before registering (no-op). */
   stop(): void {
+    this._host?.stop();
     this._guides?.stop();
     this._translations?.stop();
     this._config?.stop();
     this._features?.stop();
     this._registry?.stop();
     this._node?.stop();
+    this._host = undefined;
     this._guides = undefined;
     this._translations = undefined;
     this._config = undefined;

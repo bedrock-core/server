@@ -48,7 +48,7 @@
 		"watch": "yarn install && nodemon",
 		"lint": "eslint .",
 		"changeset": "changeset",
-		"version-packages": "changeset version",
+		"version-packages": "changeset version && node scripts/sync-runtime-version.mjs",
 		"release": "yarn lint:libs && yarn build:libs && changeset publish"
 	},
 	"devDependencies": {
