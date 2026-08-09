@@ -1,7 +1,7 @@
 {
-	"name": "@bedrock-core/server",
+	"name": "@bedrock-core/server-monorepo",
 	"version": "0.1.0",
-	"description": "Modular TypeScript packages for cross-addon compatible Minecraft Bedrock development",
+	"description": "Monorepo root for the @bedrock-core/server packages — modular TypeScript packages for cross-addon compatible Minecraft Bedrock development",
 	"keywords": [
 		"minecraft",
 		"bedrock",
@@ -24,6 +24,7 @@
 	"type": "module",
 	"packageManager": "yarn@4.9.3",
 	"workspaces": [
+		"packages/server",
 		"packages/sync",
 		"packages/server-runtime",
 		"packages/test-addon",
@@ -41,11 +42,18 @@
 	"scripts": {
 		"regolith-install": "yarn workspaces foreach -i -A --topological --jobs=1 run regolith-install",
 		"build": "yarn workspaces foreach -ptA run build",
+		"build:libs": "yarn workspaces foreach -A -pt --no-private run build",
+		"lint:libs": "yarn workspaces foreach -A -pt --no-private run lint",
 		"prepack": "yarn build",
 		"watch": "yarn install && nodemon",
-		"lint": "eslint ."
+		"lint": "eslint .",
+		"changeset": "changeset",
+		"version-packages": "changeset version",
+		"release": "yarn lint:libs && yarn build:libs && changeset publish"
 	},
 	"devDependencies": {
+		"@changesets/changelog-github": "^0.7.0",
+		"@changesets/cli": "^2.31.0",
 		"@stylistic/eslint-plugin": "^5.10.0",
 		"@types/node": "^26.0.1",
 		"concurrently": "^10.0.3",

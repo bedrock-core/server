@@ -1,6 +1,7 @@
 {
 	"name": "@bedrock-core/server-test-addon",
 	"version": "1.0.0",
+	"private": true,
 	"description": "Test addon and reference implementation for @bedrock-core/server framework",
 	"main": "main.js",
 	"scripts": {

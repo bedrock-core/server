@@ -1,0 +1,57 @@
+{
+	"name": "@bedrock-core/server",
+	"version": "0.1.0",
+	"description": "The bedrock-core server meta package: one install for the cross-addon server stack",
+	"keywords": [
+		"minecraft",
+		"bedrock",
+		"cross-addon",
+		"framework",
+		"runtime",
+		"meta"
+	],
+	"license": "MIT",
+	"author": "DrAv0011",
+	"contributors": [
+		{
+			"name": "DrAv0011",
+			"email": "contact@drav.dev",
+			"url": "https://drav.dev"
+		}
+	],
+	"repository": "github:bedrock-core/server",
+	"type": "module",
+	"exports": {
+		".": {
+			"types": "./src/index.ts",
+			"import": "./src/index.ts"
+		},
+		"./sync": {
+			"types": "./src/sync.ts",
+			"import": "./src/sync.ts"
+		}
+	},
+	"files": [
+		"src",
+		"tsconfig.json",
+		"README.md"
+	],
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"lint": "eslint ."
+	},
+	"dependencies": {
+		"@bedrock-core/server-runtime": "workspace:*",
+		"@bedrock-core/sync": "workspace:*"
+	},
+	"devDependencies": {
+		"@minecraft/server": "2.8.0",
+		"@stylistic/eslint-plugin": "^5.10.0",
+		"eslint": "^10.5.0",
+		"typescript": "^6.0.3",
+		"typescript-eslint": "^8.62.0"
+	},
+	"peerDependencies": {
+		"@minecraft/server": ">=2.8.0"
+	}
+}

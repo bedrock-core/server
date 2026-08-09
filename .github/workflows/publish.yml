@@ -1,0 +1,67 @@
+name: Release
+
+# Standard Changesets flow, powered by changesets/action.
+#
+# Author changesets during development (`yarn changeset`). Every push to `main`
+# runs this workflow:
+#   • changesets pending  → the action opens/updates a "Version Packages" PR that
+#     bumps versions + writes changelogs (running the `version` command below).
+#     The PR is refreshed on every push while it stays open.
+#   • no changesets left  → merging that PR lands the bumps on `main`; this run
+#     then executes the `publish` command, pushing each changed package to npm,
+#     tagging it and cutting a GitHub release.
+#
+# The @bedrock-core/{server,sync,server-runtime} libraries have no cross-repo
+# dependencies, so we install ONLY those (plus the monorepo root, for the
+# changesets CLI) with `yarn workspaces focus`. The `portal:../ui` resolutions used
+# by the private test addons are therefore never resolved — this release is
+# self-contained and does NOT need the sibling `ui` checkout. (If that ever stops
+# being true, check out `bedrock-core/ui` as a sibling and run a full install.)
+#
+# NOTE: opening the Version PR needs "Allow GitHub Actions to create and approve
+# pull requests" enabled under Settings → Actions → General. If that is off,
+# pass a PAT via the action's `github-token` input instead.
+on:
+  push:
+    branches: [main]
+
+concurrency: ${{ github.workflow }}-${{ github.ref }}
+
+permissions:
+  contents: write        # push the version-bump commit/branch, tags and releases
+  pull-requests: write   # open and update the "Version Packages" PR
+
+jobs:
+  release:
+    name: Version or publish changed packages
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'yarn'
+          registry-url: 'https://registry.npmjs.org'
+          scope: '@bedrock-core'
+
+      - name: Install publishable libraries only
+        run: yarn workspaces focus @bedrock-core/server-monorepo @bedrock-core/server @bedrock-core/sync @bedrock-core/server-runtime
+
+      - name: Create Version PR or publish
+        uses: changesets/action@v1
+        with:
+          version: yarn version-packages
+          publish: yarn release
+          commit: 'chore(release): version packages'
+          title: 'chore(release): version packages'
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

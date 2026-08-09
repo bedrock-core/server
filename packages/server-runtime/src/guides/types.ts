@@ -45,9 +45,15 @@ export type GuideBlock
     | { t: 'hr' }
     | { t: 'cmp'; name: string; props?: Record<string, unknown>; blocks?: GuideBlock[] };
 
+/**
+ * A sidebar entry. `icon` is a resource-pack texture path (e.g. `textures/ui/…`) shown as the
+ * row/section thumbnail; `descK` (pages only) is a one-line subtitle localization key. Both are
+ * optional — a bare `titleK`/`labelK` renders text-only. The consuming pack must ship any texture
+ * an `icon` points at.
+ */
 export type GuideTreeNode
-  = | { t: 'page'; id: PageId; titleK: LangKey }
-    | { t: 'cat'; id: string; labelK: LangKey; collapsed?: boolean; link?: PageId; children: GuideTreeNode[] };
+  = | { t: 'page'; id: PageId; titleK: LangKey; icon?: string; descK?: LangKey }
+    | { t: 'cat'; id: string; labelK: LangKey; collapsed?: boolean; link?: PageId; icon?: string; children: GuideTreeNode[] };
 
 export interface GuidePageData {
   id: PageId;

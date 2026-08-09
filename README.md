@@ -1,133 +1,35 @@
 # @bedrock-core/server
 
-A modular collection of TypeScript packages for Minecraft Bedrock addon development, designed to enable easier cross-addon compatibility and cleaner architecture.
+![@bedrock-core](./assets/logo/title.png)
 
-Each package provides a focused abstraction layer over the `@minecraft/server` API, allowing developers to build more maintainable and interoperable addons.
+> ⚠️ Beta Status: Active development. Breaking changes may occur until 1.0.0. Pin exact versions for stability.
 
-## Features
 
-- 🔗 **Cross-addon compatibility** - Build addons that work seamlessly together
-- 📦 **Modular packages** - Use only what you need, when you need it
-- 🎯 **Type-safe APIs** - Full TypeScript support with strict typing
-- 🧪 **Battle-tested** - Verified in-game with GameTests
-- 🎨 **Clean code** - Enforced code quality with ESLint + Stylistic
-- 🚀 **Bundle-ready** - Designed to be bundled into your addon projects
+A modular collection of TypeScript packages for Minecraft Bedrock addon development, built for cross-addon compatibility. Every addon runs in its own isolated script realm — bedrock-core lets addons from different creators find each other and share data.
 
-## Packages
+Full documentation & guides: https://bedrock-core.drav.dev/
 
-### `@bedrock-core/sync`
+---
 
-The low-level cross-addon transport library, and the first layer directly on
-`@minecraft/server`. Each addon runs in its own isolated script realm, so the only shared
-channels are script events and scoreboards. This package layers a message bus, peer
-discovery, request/response RPC and a replicated key/value state on top of script events, so
-bedrock-core addons can find each other and exchange data.
+## ✨ Features
 
-- **Bus** — one script-event channel, JSON envelopes, automatic chunking/reassembly for
-  payloads larger than the engine's message limit, and a rate-limited outbound queue.
-- **Discovery** — `announce`/`whois` handshake with heartbeats and TTL, so even late-loading
-  addons can enumerate their peers.
-- **RPC** — `request()` / `onRequest()` with correlation ids and tick-based timeouts.
-- **State** — shared-mutable replicated KV (last-write-wins). It's an in-memory channel;
-  persistence is each addon's own responsibility (via `onChange` + its dynamic properties).
+- **Addon discovery** — addons announce their identity, version and dependencies, and enumerate their peers at runtime.
+- **Replicated state** — shared last-write-wins key/value, scoped to your namespace.
+- **Typed RPC** — typed request/response calls between addons, with timeouts.
+- **Features** — enable or disable behaviour based on which peers are present.
+- **Configuration** — server / dimension / player scopes, with typed accessors and live change subscriptions.
+- **Guides** — compiled in-game guides, declared when the addon registers.
 
-```ts
-import { createSync } from '@bedrock-core/sync';
+## 📦 Packages
 
-const sync = createSync({ id: 'myaddon', version: '1.0.0' });
-sync.start();
+- **`@bedrock-core/server`** — the meta package: one install for the whole stack. Re-exports the runtime at the root and the transport at `/sync`.
+- **`@bedrock-core/server-runtime`** — the framework runtime: registration, the cross-addon registry, features, config and guides. Built on `sync`.
+- **`@bedrock-core/sync`** — the low-level transport: message bus, discovery, RPC and replicated state over script events.
 
-sync.rpc.onRequest('ping', () => 'pong');
-sync.state.set('myaddon', 'volume', 5);
-```
+## 🤝 Contributing
 
-### `@bedrock-core/server-runtime`
+Let's talk in Discord: <https://bedrock-core.drav.dev/discord>
 
-The framework runtime addons build on — analogous to how `@minecraft/server` is the thing
-you register into. An addon declares its identity + base data once; that flows into a
-**cross-addon registry** of every bedrock-core addon present in the world. Built on `sync`.
-Identity is **`creator` + `namespace`** (both `[a-z0-9_]+`). The transport id is derived as
-`creator:namespace` (e.g. `my_studio:bc_shop`) and is what `core.id` returns. `core.namespace`
-returns just the namespace — use it for state keys and dependency declarations. `name` and
-`creatorName` are purely display labels. `register()` brings the addon online; no separate `start()`.
-
-```ts
-import { core } from '@bedrock-core/server-runtime';
-import translationKeys from '@bedrock-core/generated/translation-keys';
-import guides from '@bedrock-core/generated/guides';
-
-// One call declares everything: identity, plus optional translations / guide / config.
-// When `config` is given, register() returns the typed scope accessors.
-const config = core.register({
-  creator: 'my_studio',       // vendor/creator id — [a-z0-9_]+
-  namespace: 'bc_shop',       // addon id — [a-z0-9_]+
-  name: 'My Cool Shop',       // display label only
-  version: '1.2.0',
-  dependencies: ['other_studio:bc_economy'],
-  optionalDependencies: ['other_studio:bc_leaderboard'],
-  translations: translationKeys,  // generated by-locale keys (translation-keys filter)
-  guide: guides,                  // compiled guide manifest (guides filter)
-  config: {                       // config schema — server/dimension/player scopes
-    server:    { pricing: { taxRate: { type: 'number', default: 0.05, min: 0, max: 1, label: 'Tax Rate' } } },
-    dimension: { miningBonus: { type: 'number', default: 1.0, min: 0, max: 5, label: 'Mining Bonus' } },
-    player:    { allowGifts: { type: 'boolean', default: true, label: 'Allow Gifts' } },
-  },
-});
-
-// core.id        → 'my_studio:bc_shop'  (transport id — use for RPC targeting)
-// core.namespace → 'bc_shop'            (namespace — use for state keys and dependencies)
-
-core.registry.all();                               // every registered addon (self + peers)
-core.registry.onRegister(addon => /* … */ {});
-core.registry.onDependenciesSatisfied(() => /* … */ {});
-core.registry.onNamespaceCollision(info => /* … */ {});
-core.features.add('lb-sync', { condition: ctx => ctx.registry.has('other_studio:bc_leaderboard'), onEnable() {}, onDisable() {} });
-core.features.of<'arena-mode' | 'pvp'>('other_studio:bc_pvp').isEnabled('arena-mode'); // typed cross-addon read
-core.rpc.serve<MyRPC>({ buy: ({ item }) => purchase(item) });    // typed provider
-core.rpc.typed<TheirRPC>('other_studio:bc_economy').getBalance({ player: 'Steve' }); // typed consumer
-core.state.set('open', true);                      // scoped to your namespace automatically
-
-// Config — the accessors returned by register() (or core.config.define() for late definition):
-// get/patch/set as typed nested objects, subscribe to changes
-config.server.get().pricing.taxRate;               // number — fully typed
-config.server.patch({ pricing: { taxRate: 0.1 } });
-config.server.onChange('pricing.taxRate', (next, prev) => { /* … */ });
-config.dimension.patch(dim, { miningBonus: 2.0 }); // per-entity override
-config.dimension.patchDefault({ miningBonus: 1.5 });
-
-// Cross-addon config read (typed if you have the ConfigDefinition type)
-core.config.subscribe<ShopConfigDef>('other_studio:bc_shop', cfg => {
-  cfg.server.get().pricing.taxRate;                // number
-});
-```
-
-### `@bedrock-core/server-test-addon` + `@bedrock-core/server-test-addon-2`
-
-Two reference addons — "Economy" and "Shop" — that register with the runtime and demonstrate
-cross-addon discovery, RPC, shared state, dependencies and features. They also host the
-in-game **GameTests** for the whole stack (`/gametest runset bc`). `yarn watch` builds and
-watches both at once.
-
-### Development
-
-```bash
-# Install dependencies
-yarn install
-
-# Type-check / build all library packages
-yarn build
-
-# Lint code
-yarn lint
-
-# Build + watch both test addons (re-bundles them when the libraries change)
-yarn watch
-```
-
-The libraries (`sync`, `server-runtime`) are type-checked with `tsc`. There are no headless
-unit tests — correctness is verified **in-game with GameTests** shipped in the test addons
-(`/gametest runset bc`).
-
-## License
+## 📄 License
 
 MIT

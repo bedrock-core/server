@@ -1,0 +1,82 @@
+---
+title: Markdown Showcase
+sidebar_position: 3
+---
+
+This page demonstrates every markdown feature the guides compiler understands: **bold**,
+*italic*, ***bold italic***, ~~strikethrough~~, and `inline code`, all inside one paragraph.
+
+## Text and links
+
+A paragraph can mix styling freely, and it can also link elsewhere — to another page in
+this guide, like [Buying Items](./getting-started/buying.mdx), or out to the web, like the
+[bedrock.dev wiki](https://wiki.bedrock.dev). Internal links become pressable buttons woven
+into the sentence; external links stay as styled, non-pressable text.
+
+## Lists
+
+### Unordered, with nesting
+
+- Browse the shop catalog
+- Buy an item
+  - Confirm the purchase
+  - Watch your balance update
+- Sell an item you no longer need
+
+### Ordered, including a custom start
+
+1. Open the shop
+2. Pick an item
+3. Confirm the purchase
+
+The next list picks up where step 4 would have been, skipped for brevity:
+
+5. Step five
+6. Step six
+
+## Code blocks
+
+```js
+function greet(name) {
+  console.log(`Hello, ${name}!`);
+}
+```
+
+## Images
+
+![Shop icon](textures/ui/bc_shop/icon.png)
+
+## Admonitions
+
+:::note
+A plain note, for supplementary context.
+:::
+
+:::tip
+A tip can contain **styled** text and `inline code` too.
+:::
+
+:::info
+An info box for neutral callouts.
+:::
+
+:::warning[Careful]
+Admonitions can override their title — this one says "Careful" instead of "Warning".
+:::
+
+:::danger
+A danger box, for anything destructive or hard to undo.
+:::
+
+## Blockquotes
+
+> Blockquotes compile to the same note admonition as `:::note` — there is no separate
+> "quote" block in the IR.
+
+## Horizontal rule
+
+Below is a thematic break:
+
+---
+
+Back to the [Shop Guide](./intro.mdx).

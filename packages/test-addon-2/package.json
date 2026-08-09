@@ -1,6 +1,7 @@
 {
 	"name": "@bedrock-core/server-test-addon-2",
 	"version": "1.0.0",
+	"private": true,
 	"description": "Second test addon (Shop) — cross-addon example with @bedrock-core/server-test-addon",
 	"main": "main.js",
 	"scripts": {
