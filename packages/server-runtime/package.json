@@ -1,6 +1,6 @@
 {
 	"name": "@bedrock-core/server-runtime",
-	"version": "0.1.0",
+	"version": "0.0.0",
 	"description": "The bedrock-core server runtime: addon registration and a cross-addon registry, built on @bedrock-core/sync",
 	"keywords": [
 		"minecraft",
