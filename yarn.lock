@@ -22,9 +22,6 @@ __metadata:
     "@bedrock-core/server-runtime": "*"
     "@bedrock-core/ui-runtime": "*"
     "@minecraft/server": "*"
-  peerDependenciesMeta:
-    "@bedrock-core/server-runtime":
-      optional: true
   languageName: node
   linkType: soft
 
@@ -40,11 +37,7 @@ __metadata:
   peerDependencies:
     "@bedrock-core/navigation": "*"
     "@bedrock-core/ore-styled": "*"
-    "@bedrock-core/server-runtime": "*"
     "@bedrock-core/ui-runtime": "*"
-  peerDependenciesMeta:
-    "@bedrock-core/server-runtime":
-      optional: true
   languageName: node
   linkType: soft
 

@@ -21,14 +21,14 @@
  *
  * The result is deterministic and needs no negotiation messages: every realm sees the same
  * registry and applies the same rule — highest runtime version, ties broken by the lowest
- * transport id — so they all independently agree on the same winner. Re-elected whenever a
+ * namespace — so they all independently agree on the same winner. Re-elected whenever a
  * peer appears or disappears.
  */
 import type { Unsubscribe } from '@bedrock-core/sync';
 import type { RegisteredAddon, Registry } from './registry';
 import { compareVersions } from './version';
 
-/** Notified with the new host's transport id, and the previous one when there was one. */
+/** Notified with the new host's namespace, and the previous one when there was one. */
 export type HostListener = (hostId: string, previousHostId: string | undefined) => void;
 
 export class HostElection {
@@ -91,7 +91,7 @@ export class HostElection {
   }
 
   /**
-   * Highest runtime version wins; equal versions are broken by the lowest transport id.
+   * Highest runtime version wins; equal versions are broken by the lowest namespace.
    * The tie-break must be total and stable or two realms could each believe they won.
    */
   private elect(): string {

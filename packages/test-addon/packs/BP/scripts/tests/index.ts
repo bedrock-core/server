@@ -18,10 +18,10 @@ function gametest(name: string, fn: (test: Test) => void): void {
 gametest('discovery_and_rpc', (test) => {
   const a = new Runtime();
 
-  a.register({ creator: 'test', namespace: 'demo_a', name: 'A', version: '1.0.0' });
+  a.register({ creator: 'test', pack: 'demo_a', packName: 'A', version: '1.0.0' });
   const b = new Runtime();
 
-  b.register({ creator: 'test', namespace: 'demo_b', name: 'B', version: '1.0.0' });
+  b.register({ creator: 'test', pack: 'demo_b', packName: 'B', version: '1.0.0' });
   b.rpc.onRequest('ping', () => 'pong');
 
   let reply: unknown;
@@ -47,7 +47,7 @@ gametest('discovery_and_rpc', (test) => {
 gametest('rpc_to_self', (test) => {
   const a = new Runtime();
 
-  a.register({ creator: 'test', namespace: 'self_rpc', name: 'A', version: '1.0.0' });
+  a.register({ creator: 'test', pack: 'self_rpc', packName: 'A', version: '1.0.0' });
   a.rpc.onRequest('echo', params => params);
 
   let reply: unknown;
@@ -68,10 +68,10 @@ gametest('rpc_to_self', (test) => {
 gametest('state_replication', (test) => {
   const a = new Runtime();
 
-  a.register({ creator: 'test', namespace: 'state_a', name: 'A', version: '1.0.0' });
+  a.register({ creator: 'test', pack: 'state_a', packName: 'A', version: '1.0.0' });
   const b = new Runtime();
 
-  b.register({ creator: 'test', namespace: 'state_b', name: 'B', version: '1.0.0' });
+  b.register({ creator: 'test', pack: 'state_b', packName: 'B', version: '1.0.0' });
 
   a.state.set('volume', 7);
   test.startSequence()
@@ -89,20 +89,20 @@ gametest('state_replication', (test) => {
 gametest('distinct_vs_collision', (test) => {
   const x = new Runtime();
 
-  x.register({ creator: 'test', namespace: 'dup_a', name: 'X', version: '1.0.0' });
+  x.register({ creator: 'test', pack: 'dup_a', packName: 'X', version: '1.0.0' });
   const y = new Runtime();
 
-  y.register({ creator: 'test', namespace: 'dup_b', name: 'Y', version: '1.0.0' });
+  y.register({ creator: 'test', pack: 'dup_b', packName: 'Y', version: '1.0.0' });
 
   const c1 = new Runtime();
 
-  c1.register({ creator: 'test', namespace: 'clash_same', name: 'First', version: '1.0.0' });
+  c1.register({ creator: 'test', pack: 'clash_same', packName: 'First', version: '1.0.0' });
   let collided = false;
 
   c1.registry.onNamespaceCollision(() => { collided = true; });
   const c2 = new Runtime();
 
-  c2.register({ creator: 'test', namespace: 'clash_same', name: 'Second', version: '1.0.0' });
+  c2.register({ creator: 'test', pack: 'clash_same', packName: 'Second', version: '1.0.0' });
 
   test.startSequence()
     .thenIdle(30)
@@ -122,11 +122,11 @@ gametest('distinct_vs_collision', (test) => {
 gametest('feature_toggle', (test) => {
   const consumer = new Runtime();
 
-  consumer.register({ creator: 'test', namespace: 'game_main', name: 'Game', version: '1.0.0', optionalDependencies: ['test:lb_main'] });
+  consumer.register({ creator: 'test', pack: 'game_main', packName: 'Game', version: '1.0.0', optionalDependencies: ['test_lb_main'] });
 
   let enabled = 0;
 
-  consumer.features.add('lb-sync', { condition: r => r.registry.has('test:lb_main'), onEnable: () => enabled++, onDisable: () => { /* noop */ } });
+  consumer.features.add('lb-sync', { condition: r => r.registry.has('test_lb_main'), onEnable: () => enabled++, onDisable: () => { /* noop */ } });
 
   const provider = new Runtime();
 
@@ -135,7 +135,7 @@ gametest('feature_toggle', (test) => {
     .thenExecute(() => {
       if (enabled !== 0) { test.fail('feature enabled before its provider was present'); }
 
-      provider.register({ creator: 'test', namespace: 'lb_main', name: 'Leaderboard', version: '1.0.0' });
+      provider.register({ creator: 'test', pack: 'lb_main', packName: 'Leaderboard', version: '1.0.0' });
     })
     .thenIdle(20)
     .thenExecute(() => {
@@ -152,7 +152,7 @@ gametest('cross_pack_shop_present', (test) => {
   test.startSequence()
     .thenIdle(40)
     .thenExecute(() => {
-      if (!core.registry.has('drav0011:bc_shop')) {
+      if (!core.registry.has('drav0011_bc_shop')) {
         test.fail('shop addon not present — is test-addon-2 installed and enabled?');
       }
     })

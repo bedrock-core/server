@@ -9,7 +9,7 @@ The meta package: one install that curates matching versions of the server stack
 ```ts
 import { core } from '@bedrock-core/server';
 
-const config = core.register({ creator: 'my_studio', namespace: 'bc_shop', name: 'My Shop', version: '1.0.0' });
+const config = core.register({ creator: 'bt', pack: 'gc_shop', packName: 'My Shop', version: '1.0.0' });
 ```
 
 Most addons should depend on this rather than on `@bedrock-core/server-runtime` and `@bedrock-core/sync` separately.

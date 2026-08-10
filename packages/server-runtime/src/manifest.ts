@@ -2,35 +2,45 @@
  * The declaration an addon makes when it registers with the runtime. This is the "base
  * data" that flows into the cross-addon registry, analogous to a pack manifest.
  *
- * Identity is **`creator` + `namespace`** — both id-safe strings. The transport id is derived
- * as `${creator}:${namespace}` (e.g. `chillcraft_studios:cc_mechs`); two addons collide only
- * if both fields match. `name` and
- * `creatorName` are purely human-readable display labels.
+ * ## Identity is one namespace, declared in two halves
+ *
+ * Minecraft's rule for add-ons is that every item in a pack shares a single namespace, that no
+ * two packs may share one, and that it should read as creator-then-pack — `bt_gc_graves` for
+ * Bedrock Tweaks' graves addon. That namespace is this addon's identity everywhere: its sync
+ * transport id, its replicated state, its custom commands, and its command enums.
+ *
+ * It is declared as **`creator` + `pack`** rather than as one string so the halves stay
+ * machine-readable — the registry groups by creator, and a UI can show them apart — and
+ * {@link addonNamespace} joins them. Two addons collide only if both halves match.
+ *
+ * `name` and `creatorName` are purely human-readable display labels.
  */
 import { RUNTIME_VERSION } from './runtime-version';
 
 export interface AddonManifest {
 
-  /** Creator/vendor id, lowercase alphanumeric + underscores (e.g. `chillcraft_studios`). */
+  /** Creator/vendor id, lowercase alphanumeric + underscores (e.g. `bt` for Bedrock Tweaks). */
   creator: string;
 
   /**
    * Creator display name. Assumed to be a Minecraft translation key (e.g.
-   * `chillcraft.cc_mechs.creator`) shipped in this addon's RP .lang — registry UIs render
+   * `bt.gc_graves.creator`) shipped in this addon's RP .lang — registry UIs render
    * it per player language. Plain text also works: Bedrock falls back to the literal
    * string when no .lang entry matches. Optional.
    */
   creatorName?: string;
 
-  /** Addon id, lowercase alphanumeric + underscores (e.g. `bc_economy`). Combined with `creator` to form the unique transport identity. */
-  namespace: string;
+  /**
+   * Abbreviated pack id, lowercase alphanumeric + underscores (e.g. `gc_graves` — gameplay
+   * changes, graves). Joined to `creator` as `creator_pack` to form this addon's namespace.
+   */
+  pack: string;
 
   /**
-   * Human-readable display label. Assumed to be a translation key (see `creatorName`
-   * for the contract, e.g. `chillcraft.cc_mechs.name`); plain text falls back to the
-   * literal. Not part of identity.
+   * Pack display name. Assumed to be a translation key (see `creatorName` for the contract,
+   * e.g. `bt.gc_graves.name`); plain text falls back to the literal. Not part of identity.
    */
-  name: string;
+  packName: string;
 
   /** Addon version (free-form, e.g. semver). */
   version: string;
@@ -38,10 +48,10 @@ export interface AddonManifest {
   /** Assumed to be a translation key (see `creatorName` for the contract). */
   description?: string;
 
-  /** Transport ids (`creator:namespace`, e.g. `drav0011:bc_economy`) this addon needs present (soft — warns, never blocks). */
+  /** Namespaces (`creator_pack`, e.g. `bt_gc_economy`) this addon needs present (soft — warns, never blocks). */
   dependencies?: string[];
 
-  /** Transport ids that unlock optional, togglable features when present. */
+  /** Namespaces that unlock optional, togglable features when present. */
   optionalDependencies?: string[];
 
   /** Resource-pack texture path for the registry UI icon (e.g. `textures/ui/my_addon_logo`). */
@@ -53,9 +63,10 @@ export interface AddonManifest {
 
 /**
  * The manifest fields carried in the discovery `meta` blob — everything but `version`,
- * which discovery carries on its own. The node id is the transport id (`creator:namespace`);
- * namespace is also stored here so peers can recover it. The index signature makes the blob
- * assignable to the transport's opaque meta type.
+ * which discovery carries on its own. The node id is the addon's namespace; `creator` and
+ * `pack` ride along so peers can recover the halves without splitting a string that has no
+ * unambiguous split point. The index signature makes the blob assignable to the transport's
+ * opaque meta type.
  *
  * `runtimeVersion` is added by the runtime rather than declared by the addon: it is the
  * version of `@bedrock-core/server-runtime` the addon was built against, and the host
@@ -84,16 +95,16 @@ export function validateManifest(input: AddonManifest): AddonManifest {
     throw new Error(`invalid creator '${creator}': must be lowercase alphanumeric and underscores only (a-z0-9_)`);
   }
 
-  const namespace = requireString(input.namespace, 'namespace');
+  const pack = requireString(input.pack, 'pack');
 
-  if (!ID_PATTERN.test(namespace)) {
-    throw new Error(`invalid namespace '${namespace}': must be lowercase alphanumeric and underscores only (a-z0-9_)`);
+  if (!ID_PATTERN.test(pack)) {
+    throw new Error(`invalid pack '${pack}': must be lowercase alphanumeric and underscores only (a-z0-9_)`);
   }
 
   const manifest: AddonManifest = {
     creator,
-    namespace,
-    name: requireString(input.name, 'name'),
+    pack,
+    packName: requireString(input.packName, 'packName'),
     version: requireString(input.version, 'version'),
   };
 
@@ -114,17 +125,24 @@ export function validateManifest(input: AddonManifest): AddonManifest {
   return manifest;
 }
 
-/** Derives the SyncNode transport id from a manifest: `${creator}:${namespace}`. */
-export function addonTransportId(manifest: AddonManifest): string {
-  return `${manifest.creator}:${manifest.namespace}`;
+/**
+ * This addon's namespace: `${creator}_${pack}`, e.g. `bt_gc_graves`.
+ *
+ * The one identifier the addon is known by — sync transport id, replicated state namespace,
+ * custom command namespace, command enum namespace. Minecraft requires a pack to use exactly
+ * one and no two packs to share it, which is the same uniqueness the registry already enforces
+ * on `creator` + `pack`, so there is nothing else to reconcile.
+ */
+export function addonNamespace(manifest: AddonManifest): string {
+  return `${manifest.creator}_${manifest.pack}`;
 }
 
 /** Extract the discovery `meta` blob from a manifest, stamping the runtime version peers elect on. */
 export function manifestToMeta(manifest: AddonManifest): ManifestMeta {
   const meta: ManifestMeta = {
     creator: manifest.creator,
-    namespace: manifest.namespace,
-    name: manifest.name,
+    pack: manifest.pack,
+    packName: manifest.packName,
     runtimeVersion: RUNTIME_VERSION,
   };
 
@@ -143,17 +161,23 @@ export function manifestToMeta(manifest: AddonManifest): ManifestMeta {
   return meta;
 }
 
-/** Reconstruct a manifest from a peer's transport id + discovery fields + `meta` blob. */
+/**
+ * Reconstruct a manifest from a peer's namespace + discovery fields + `meta` blob.
+ *
+ * The halves come from `meta` rather than from splitting `namespace`: `bt_gc_graves` has no
+ * unambiguous split point, so a peer that published no meta keeps its whole namespace as `pack`
+ * and an empty `creator` instead of being guessed at.
+ */
 export function manifestFromPeer(
-  transportId: string,
+  namespace: string,
   version: string,
   meta: Record<string, unknown> | undefined,
 ): AddonManifest {
-  const namespace = typeof meta?.namespace === 'string' ? meta.namespace : transportId;
+  const pack = typeof meta?.pack === 'string' ? meta.pack : namespace;
   const manifest: AddonManifest = {
     creator: typeof meta?.creator === 'string' ? meta.creator : '',
-    namespace,
-    name: typeof meta?.name === 'string' ? meta.name : namespace,
+    pack,
+    packName: typeof meta?.packName === 'string' ? meta.packName : pack,
     version,
   };
 

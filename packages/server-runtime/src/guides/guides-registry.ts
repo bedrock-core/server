@@ -5,7 +5,7 @@
  * `@bedrock-core/generated/guides`). Each addon publishes its manifest to replicated state,
  * so the elected host realm can list and render every addon's guide locally.
  *
- * Each addon publishes under its own transport-id namespace, so sync's late-join snapshot
+ * Each addon publishes under its own namespace, so sync's late-join snapshot
  * exchange replicates guides for free:
  *
  * ```ts
@@ -21,7 +21,7 @@ import { stateKey } from '@bedrock-core/sync';
 import type { State, Unsubscribe } from '@bedrock-core/sync';
 import type { GuideManifest } from './types';
 
-/** State key an addon publishes its compiled manifest under (namespace = the addon's transport id). */
+/** State key an addon publishes its compiled manifest under (namespace = the addon's namespace). */
 const GUIDE_MANIFEST_STATE_KEY = stateKey<GuideManifest>('bc-guide/manifest');
 
 export type GuidesChangeListener = () => void;

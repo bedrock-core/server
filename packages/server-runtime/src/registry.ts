@@ -2,14 +2,14 @@
  * The cross-addon registry — a live directory of every bedrock-core addon present in the
  * world, built on the sync node's discovery. Each peer's announce `meta` is interpreted as
  * an {@link AddonManifest}; the registry merges the local addon (self) with all live peers,
- * keyed by the unique transport id (`creator:namespace`, e.g. `drav0011:bc_economy`).
+ * keyed by the unique namespace (`creator_pack`, e.g. `bt_gc_economy`).
  *
- * A collision (two addons with the same transport id) is surfaced via
+ * A collision (two addons with the same namespace) is surfaced via
  * {@link Registry.onNamespaceCollision} and logged. Dependencies are declared and matched
- * by transport id and are soft: a missing one warns but never blocks.
+ * by namespace and are soft: a missing one warns but never blocks.
  */
 import type { CollisionInfo, Discovery, PeerInfo, Unsubscribe } from '@bedrock-core/sync';
-import { addonTransportId, type AddonManifest, manifestFromPeer, runtimeVersionFromPeer } from './manifest';
+import { addonNamespace, type AddonManifest, manifestFromPeer, runtimeVersionFromPeer } from './manifest';
 import { RUNTIME_VERSION } from './runtime-version';
 
 /**
@@ -35,7 +35,7 @@ export class Registry {
 
   constructor(discovery: Discovery, self: AddonManifest) {
     this._discovery = discovery;
-    this._self = { ...self, id: addonTransportId(self), self: true, runtimeVersion: RUNTIME_VERSION };
+    this._self = { ...self, id: addonNamespace(self), self: true, runtimeVersion: RUNTIME_VERSION };
     this._missingSinceLastCheck = this.missingDependencies();
     this._depsSatisfied = this._missingSinceLastCheck.length === 0;
   }
@@ -64,7 +64,7 @@ export class Registry {
     return [this._self, ...this._discovery.peers.map(peer => this.peerToAddon(peer))];
   }
 
-  /** Look up an addon by its transport id (`creator:namespace`, e.g. `drav0011:bc_economy`). */
+  /** Look up an addon by its namespace (`creator_pack`, e.g. `bt_gc_economy`). */
   get(id: string): RegisteredAddon | undefined {
     if (id === this._self.id) { return this._self; }
 
@@ -73,7 +73,7 @@ export class Registry {
     return peer ? this.peerToAddon(peer) : undefined;
   }
 
-  /** Whether an addon with the given transport id is present. */
+  /** Whether an addon with the given namespace is present. */
   has(id: string): boolean {
     return this.get(id) !== undefined;
   }
@@ -105,7 +105,7 @@ export class Registry {
     };
   }
 
-  /** This addon's declared dependencies (transport ids) that are not currently present. */
+  /** This addon's declared dependencies (namespaces) that are not currently present. */
   missingDependencies(): string[] {
     const deps = this._self.dependencies ?? [];
 

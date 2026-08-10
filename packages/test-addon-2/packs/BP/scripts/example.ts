@@ -32,7 +32,7 @@ export type ShopConfigDef = typeof configDef;
 export function setupShop(): void {
   // Once our required dependency (economy) is present, ask it for a balance.
   core.registry.onDependenciesSatisfied(() => {
-    const economy = core.registry.get('drav0011:bc_economy');
+    const economy = core.registry.get('drav0011_bc_economy');
 
     if (!economy) {
       return;

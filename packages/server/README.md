@@ -17,9 +17,10 @@ yarn add @bedrock-core/server
   import { core } from '@bedrock-core/server';
 
   const config = core.register({
-    creator: 'my_studio',
-    namespace: 'bc_shop',
-    name: 'My Shop',
+    creator: 'ms',
+    creatorName: 'My Studio',
+    pack: 'bc_shop',
+    packName: 'My Shop',
     version: '1.0.0',
   });
   ```

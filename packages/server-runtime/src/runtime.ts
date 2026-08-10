@@ -13,7 +13,7 @@
  * script realm; they all talk over the real `system` script-event bus.
  */
 import { SyncNode } from '@bedrock-core/sync';
-import { addonTransportId, type AddonManifest, manifestToMeta, validateManifest } from './manifest';
+import { addonNamespace, type AddonManifest, manifestToMeta, validateManifest } from './manifest';
 import { FeatureManager } from './features';
 import { Registry } from './registry';
 import { ScopedState } from './scoped-state';
@@ -68,14 +68,19 @@ export class Runtime {
     return this._manifest !== undefined;
   }
 
-  /** This addon's unique transport id: `creator:namespace` (e.g. `drav0011:bc_economy`). Use this for RPC targeting. */
+  /**
+   * This addon's namespace: `creator_pack` (e.g. `bt_gc_economy`).
+   *
+   * The one identifier it is known by — RPC targeting, state keys, dependency declarations,
+   * and the namespace of any custom command or command enum it registers.
+   */
   get id(): string {
-    return addonTransportId(this.requireManifest());
+    return addonNamespace(this.requireManifest());
   }
 
-  /** This addon's namespace (e.g. `bc_economy`). Use this for state keys and dependency declarations. */
+  /** Alias of {@link id}, for code that reads better naming the namespace than the id. */
   get namespace(): string {
-    return this.requireManifest().namespace;
+    return this.id;
   }
 
   /** This addon's manifest. */
@@ -148,25 +153,27 @@ export class Runtime {
 
     this._manifest = validated;
 
+    // One namespace for everything this addon owns — transport id, state, config, guides.
+    const namespace = addonNamespace(validated);
+
     const node = new SyncNode({
-      id: addonTransportId(validated),
+      id: namespace,
       version: validated.version,
       meta: manifestToMeta(validated),
-      // Own the transport-id namespace too: config and translations publish under it, and
-      // only owned namespaces are answered in sync's late-join snapshot exchange.
-      ownedNamespaces: [validated.namespace, addonTransportId(validated)],
+      // Only owned namespaces are answered in sync's late-join snapshot exchange.
+      ownedNamespaces: [namespace],
     });
     const registry = new Registry(node.discovery, validated);
-    const features = new FeatureManager(registry, node.state, addonTransportId(validated));
-    const config = new ConfigRegistry(node, addonTransportId(validated));
-    const translations = new TranslationsRegistry(node.state, addonTransportId(validated));
-    const guides = new GuidesRegistry(node.state, addonTransportId(validated));
-    const host = new HostElection(registry, addonTransportId(validated));
+    const features = new FeatureManager(registry, node.state, namespace);
+    const config = new ConfigRegistry(node, namespace);
+    const translations = new TranslationsRegistry(node.state, namespace);
+    const guides = new GuidesRegistry(node.state, namespace);
+    const host = new HostElection(registry, namespace);
 
     this._node = node;
     this._registry = registry;
     this._features = features;
-    this._state = new ScopedState(node.state, validated.namespace);
+    this._state = new ScopedState(node.state, namespace);
     this._config = config;
     this._translations = translations;
     this._guides = guides;

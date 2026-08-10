@@ -44,7 +44,7 @@ export type TranslationKeysByLocale = Record<string, TranslationKeysMap>;
 /** Locale `forPlayer` falls back to when the player's own locale wasn't authored by any addon. */
 const DEFAULT_LOCALE = 'en_US';
 
-/** State key each addon publishes its by-locale map under (namespace = the addon's transport id). */
+/** State key each addon publishes its by-locale map under (namespace = the addon's namespace). */
 const TRANSLATIONS_STATE_KEY = stateKey<TranslationKeysByLocale>('bc-i18n/keys');
 
 export type TranslationsChangeListener = () => void;

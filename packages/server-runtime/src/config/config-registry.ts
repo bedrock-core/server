@@ -64,6 +64,7 @@ import { broadcastSchema, BC_CONFIG_SCHEMA } from './broadcast';
 import { ServerConfigScope, EntityConfigScope } from './scopes';
 import { buildNestedObject, flattenObject } from './scopes/utils';
 import { registerConfigRpc } from './rpc';
+import { denyReason, type ConfigScopeName } from './authorization';
 
 type Flat = Record<string, ConfigValue>;
 
@@ -100,32 +101,41 @@ export interface Config<I extends ConfigDefinition> {
  * state mirror; values are fetched (and written) via RPC — `patch` merges, `set`
  * replaces (missing keys revert to schema defaults). Writes resolve with the updated
  * effective flat values.
+ *
+ * An accessor obtained with an `actorId` acts **on behalf of that player**, and the owning
+ * addon authorizes every request against them (see `authorization.ts`). Without one the
+ * accessor acts as the addon itself, which is unrestricted — see that file for why.
+ *
+ * The actor rides along in the request payload, which is why server-scope writes wrap their
+ * flat map in `values` instead of being the params (see `rpc.ts`).
  */
 export class RemoteConfigAccessor {
   private readonly _node: SyncNode;
   private readonly _addonId: string;
+  private readonly _actorId: string | undefined;
 
   readonly server = {
     get: async (): Promise<unknown> => this.nested(await this._node.rpc.request(this._addonId, 'bc:config.get-server', {})),
-    patch: async (value: Record<string, unknown>): Promise<unknown> => this._node.rpc.request(this._addonId, 'bc:config.patch', Object.fromEntries(flattenObject(value))),
-    set: async (value: Record<string, unknown>): Promise<unknown> => this._node.rpc.request(this._addonId, 'bc:config.set', Object.fromEntries(flattenObject(value))),
+    patch: async (value: Record<string, unknown>): Promise<unknown> => this._node.rpc.request(this._addonId, 'bc:config.patch', { values: Object.fromEntries(flattenObject(value)), actorId: this._actorId }),
+    set: async (value: Record<string, unknown>): Promise<unknown> => this._node.rpc.request(this._addonId, 'bc:config.set', { values: Object.fromEntries(flattenObject(value)), actorId: this._actorId }),
   };
 
   readonly dimension = {
     get: async (dimId: string): Promise<unknown> => this.nested(await this._node.rpc.request(this._addonId, 'bc:config.get-dim', { dimId })),
-    patch: async (dimId: string, value: Record<string, unknown>): Promise<unknown> => this._node.rpc.request(this._addonId, 'bc:config.patch-dim', { dimId, values: Object.fromEntries(flattenObject(value)) }),
-    set: async (dimId: string, value: Record<string, unknown>): Promise<unknown> => this._node.rpc.request(this._addonId, 'bc:config.set-dim', { dimId, values: Object.fromEntries(flattenObject(value)) }),
+    patch: async (dimId: string, value: Record<string, unknown>): Promise<unknown> => this._node.rpc.request(this._addonId, 'bc:config.patch-dim', { dimId, values: Object.fromEntries(flattenObject(value)), actorId: this._actorId }),
+    set: async (dimId: string, value: Record<string, unknown>): Promise<unknown> => this._node.rpc.request(this._addonId, 'bc:config.set-dim', { dimId, values: Object.fromEntries(flattenObject(value)), actorId: this._actorId }),
   };
 
   readonly player = {
-    get: async (playerId: string): Promise<unknown> => this.nested(await this._node.rpc.request(this._addonId, 'bc:config.get-player', { playerId })),
-    patch: async (playerId: string, value: Record<string, unknown>): Promise<unknown> => this._node.rpc.request(this._addonId, 'bc:config.patch-player', { playerId, values: Object.fromEntries(flattenObject(value)) }),
-    set: async (playerId: string, value: Record<string, unknown>): Promise<unknown> => this._node.rpc.request(this._addonId, 'bc:config.set-player', { playerId, values: Object.fromEntries(flattenObject(value)) }),
+    get: async (playerId: string): Promise<unknown> => this.nested(await this._node.rpc.request(this._addonId, 'bc:config.get-player', { playerId, actorId: this._actorId })),
+    patch: async (playerId: string, value: Record<string, unknown>): Promise<unknown> => this._node.rpc.request(this._addonId, 'bc:config.patch-player', { playerId, values: Object.fromEntries(flattenObject(value)), actorId: this._actorId }),
+    set: async (playerId: string, value: Record<string, unknown>): Promise<unknown> => this._node.rpc.request(this._addonId, 'bc:config.set-player', { playerId, values: Object.fromEntries(flattenObject(value)), actorId: this._actorId }),
   };
 
-  constructor(node: SyncNode, addonId: string) {
+  constructor(node: SyncNode, addonId: string, actorId?: string) {
     this._node = node;
     this._addonId = addonId;
+    this._actorId = actorId;
   }
 
   /** Schema with `server.`/`dimension.`/`player.` prefixes on every key. Used by UI to determine scope. */
@@ -181,10 +191,35 @@ export type TypedRemoteConfig<I extends ConfigDefinition> = {
 
 // ─── ConfigRegistry ────────────────────────────────────────────────────────────
 
+/**
+ * This addon's own scopes, narrowed to what a generic consumer can use without knowing the
+ * schema's type. `core.config.local` hands these out so tooling built on top of the runtime —
+ * config commands, debug screens — can enumerate and edit local config from a plain `Runtime`,
+ * which the strongly-typed value `register()` returns is not reachable from.
+ *
+ * Writes go through the same `patch` the typed accessors use, so persistence, change events
+ * and revert-to-default all behave identically.
+ */
+export interface LocalConfigScopes {
+  server: { readonly schema: FlatSchema; get(): unknown; patch(partial: Record<string, unknown>): void };
+  dimension: { readonly schema: FlatSchema; get(entity: Dimension): unknown; patch(entity: Dimension, partial: Record<string, unknown>): void };
+  player: { readonly schema: FlatSchema; get(entity: Player): unknown; patch(entity: Player, partial: Record<string, unknown>): void };
+}
+
+/** Options for {@link ConfigRegistry.of}. */
+export interface ConfigAccessOptions {
+  /**
+   * The player this access is made on behalf of. Present for anything a player drives (a UI
+   * screen, a config command); absent for an addon acting on its own behalf.
+   */
+  actorId?: string;
+}
+
 export class ConfigRegistry {
   private readonly _node: SyncNode;
   private readonly _addonId: string;
   private _defined = false;
+  private _local: LocalConfigScopes | undefined;
   private readonly _addonConfigListeners = new Map<string, Set<(cfg: RemoteConfigAccessor) => void>>();
   private readonly _disposers: Unsubscribe[] = [];
   private readonly _onlinePlayers = new Map<string, Player>();
@@ -290,36 +325,60 @@ export class ConfigRegistry {
       return false;
     };
 
+    // Throwing rejects the RPC, so the caller learns why instead of watching a write silently
+    // do nothing. A request with no actor is an addon acting for itself and passes untouched.
+    const requireAllowed = (scope: ConfigScopeName, actorId: string | undefined, targetId?: string): void => {
+      const reason = denyReason(scope, actorId, targetId);
+
+      if (reason !== undefined) {
+        throw new Error(`'${this._addonId}' config: ${scope} request refused - ${reason}`);
+      }
+    };
+
     registerConfigRpc(this._node.rpc, {
       onGetServer: () => serverScope.getFlat(),
-      onPatchServer: (flat) => {
+      onPatchServer: (flat, actorId) => {
+        requireAllowed('server', actorId);
         serverScope.applyRemotePatch(flat);
 
         return serverScope.getFlat();
       },
-      onSetServer: (flat) => {
+      onSetServer: (flat, actorId) => {
+        requireAllowed('server', actorId);
         serverScope.applyRemoteSet(flat);
 
         return serverScope.getFlat();
       },
       onGetDimension: dimId => dimensionScope.getFlat(dimId),
-      onPatchDimension: (dimId, flat) => {
+      onPatchDimension: (dimId, flat, actorId) => {
+        requireAllowed('dimension', actorId);
         dimensionScope.applyRemotePatch(dimId, flat);
 
         return dimensionScope.getFlat(dimId);
       },
-      onSetDimension: (dimId, flat) => {
+      onSetDimension: (dimId, flat, actorId) => {
+        requireAllowed('dimension', actorId);
         dimensionScope.applyRemoteSet(dimId, flat);
 
         return dimensionScope.getFlat(dimId);
       },
-      onGetPlayer: playerId => playerScope.getFlat(playerId),
-      onPatchPlayer: (playerId, flat) => {
+      // Reads are unrestricted for server and dimension — those are world settings, not
+      // secrets. One player's settings are another matter, so this scope checks reads too.
+      onGetPlayer: (playerId, actorId) => {
+        requireAllowed('player', actorId, playerId);
+
+        return playerScope.getFlat(playerId);
+      },
+      onPatchPlayer: (playerId, flat, actorId) => {
+        requireAllowed('player', actorId, playerId);
+
         if (requireOnline(playerId, 'patch')) { playerScope.applyRemotePatch(playerId, flat); }
 
         return playerScope.getFlat(playerId);
       },
-      onSetPlayer: (playerId, flat) => {
+      onSetPlayer: (playerId, flat, actorId) => {
+        requireAllowed('player', actorId, playerId);
+
         if (requireOnline(playerId, 'set')) { playerScope.applyRemoteSet(playerId, flat); }
 
         return playerScope.getFlat(playerId);
@@ -380,15 +439,31 @@ export class ConfigRegistry {
 
     this._disposers.push(() => { world.afterEvents.playerLeave.unsubscribe(onLeave); });
 
+    this._local = { server: serverScope, dimension: dimensionScope, player: playerScope };
+
     return { server: serverScope, dimension: dimensionScope, player: playerScope };
   }
 
-  of(addonId: string): RemoteConfigAccessor | undefined;
-  of<I extends ConfigDefinition>(addonId: string): TypedRemoteConfig<I> | undefined;
-  of(addonId: string): unknown {
+  /**
+   * This addon's own config scopes, or `undefined` before `define()` has run. Available
+   * synchronously — unlike {@link of}, which needs the schema to have reached replicated state
+   * one tick later — so startup-time consumers such as command registration can read it.
+   */
+  get local(): LocalConfigScopes | undefined {
+    return this._local;
+  }
+
+  /**
+   * View another addon's config. Pass `{ actorId }` when the reads and writes are being made
+   * on behalf of a player — a UI screen, a command — so the owning addon authorizes them
+   * against that player. Omit it for programmatic access, which is unrestricted.
+   */
+  of(addonId: string, options?: ConfigAccessOptions): RemoteConfigAccessor | undefined;
+  of<I extends ConfigDefinition>(addonId: string, options?: ConfigAccessOptions): TypedRemoteConfig<I> | undefined;
+  of(addonId: string, options?: ConfigAccessOptions): unknown {
     if (this._node.state.get(addonId, BC_CONFIG_SCHEMA) === undefined) { return undefined; }
 
-    return new RemoteConfigAccessor(this._node, addonId);
+    return new RemoteConfigAccessor(this._node, addonId, options?.actorId);
   }
 
   subscribe(addonId: string, listener: (cfg: RemoteConfigAccessor) => void): Unsubscribe;
