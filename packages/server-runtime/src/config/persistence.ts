@@ -2,9 +2,9 @@
  * Dynamic property persistence for config values.
  *
  * Key scheme:
- *   server scope:       world.getDynamicProperty('bc-cfg:s:<addonId>:<key>')
- *   dimension scope:    world.getDynamicProperty('bc-cfg:d:<addonId>:<dimId>:<key>')
- *   player scope:       player.getDynamicProperty('bc-cfg:p:<addonId>:<key>')
+ *   server scope:       world.getDynamicProperty('core-cfg:s:<addonId>:<key>')
+ *   dimension scope:    world.getDynamicProperty('core-cfg:d:<addonId>:<dimId>:<key>')
+ *   player scope:       player.getDynamicProperty('core-cfg:p:<addonId>:<key>')
  *
  * All config values are stored as primitives (boolean | number | string).
  * All functions that touch DPs must only be called from tick 1 onward.
@@ -16,15 +16,15 @@ import type { ConfigValue, FlatSchema, SerializedEntry } from './schema';
 // ─── Key builders ──────────────────────────────────────────────────────────────
 
 export function serverDpKey(addonId: string, key: string): string {
-  return `bc-cfg:s:${addonId}:${key}`;
+  return `core-cfg:s:${addonId}:${key}`;
 }
 
 export function dimensionDpKey(addonId: string, dimId: string, key: string): string {
-  return `bc-cfg:d:${addonId}:${dimId}:${key}`;
+  return `core-cfg:d:${addonId}:${dimId}:${key}`;
 }
 
 export function playerDpKey(addonId: string, key: string): string {
-  return `bc-cfg:p:${addonId}:${key}`;
+  return `core-cfg:p:${addonId}:${key}`;
 }
 
 // ─── Load helpers ──────────────────────────────────────────────────────────────
@@ -107,7 +107,7 @@ export function savePlayerValue(
  * matching known schema keys as suffixes rather than splitting on `:`.
  */
 export function loadedDimensionIds(addonId: string, schema: FlatSchema): string[] {
-  const prefix = `bc-cfg:d:${addonId}:`;
+  const prefix = `core-cfg:d:${addonId}:`;
   const schemaKeys = Object.keys(schema);
   const dimIds = new Set<string>();
 

@@ -35,7 +35,7 @@ import { stateKey } from '@bedrock-core/sync';
 import type { State, StateKey, Unsubscribe } from '@bedrock-core/sync';
 import type { Registry } from './registry';
 
-const FEATURE_STATE_PREFIX = 'bc-feature/';
+const FEATURE_STATE_PREFIX = 'core-feature/';
 
 /** Published enabled-flag for one feature of one addon. */
 const featureStateKey = (featureId: string): StateKey<boolean> => stateKey(`${FEATURE_STATE_PREFIX}${featureId}`);

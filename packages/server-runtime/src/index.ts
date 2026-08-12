@@ -51,7 +51,7 @@ export type { RegisteredAddon, AddonListener, CollisionListener } from './regist
 export { FeatureManager } from './features';
 export type { FeatureSpec, FeatureConditionContext, TypedFeatureAccessor } from './features';
 
-export { ScopedState } from './scoped-state';
+export { ScopedState, RESERVED_STATE_PREFIX, isReservedStateKey } from './scoped-state';
 
 export { addonNamespace, validateManifest } from './manifest';
 export type { AddonManifest, ManifestMeta } from './manifest';

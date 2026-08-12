@@ -14,15 +14,15 @@
  * a schema key of that name.
  *
  * Methods (all return the scope's effective flat values):
- *   bc:config.get-server         {}                                     → read server values
- *   bc:config.patch              { values, actorId? }                   → merge server values
- *   bc:config.set                { values, actorId? }                   → replace server values
- *   bc:config.get-dim            { dimId }                              → read per-dimension values
- *   bc:config.patch-dim          { dimId, values, actorId? }            → merge per-dimension values
- *   bc:config.set-dim            { dimId, values, actorId? }            → replace per-dimension values
- *   bc:config.get-player         { playerId, actorId? }                 → read player values
- *   bc:config.patch-player       { playerId, values, actorId? }         → merge player values
- *   bc:config.set-player         { playerId, values, actorId? }         → replace player values
+ *   core:config.get-server         {}                                     → read server values
+ *   core:config.patch              { values, actorId? }                   → merge server values
+ *   core:config.set                { values, actorId? }                   → replace server values
+ *   core:config.get-dim            { dimId }                              → read per-dimension values
+ *   core:config.patch-dim          { dimId, values, actorId? }            → merge per-dimension values
+ *   core:config.set-dim            { dimId, values, actorId? }            → replace per-dimension values
+ *   core:config.get-player         { playerId, actorId? }                 → read player values
+ *   core:config.patch-player       { playerId, values, actorId? }         → merge player values
+ *   core:config.set-player         { playerId, values, actorId? }         → replace player values
  */
 import type { Rpc, RPCHandlerMap } from '@bedrock-core/sync';
 import type { ConfigValue } from './schema';
@@ -30,15 +30,15 @@ import type { ConfigValue } from './schema';
 type Flat = Record<string, ConfigValue>;
 
 interface ConfigRpcInterface {
-  'bc:config.get-server': (params: Record<string, never>) => Flat;
-  'bc:config.patch': (params: { values: Flat; actorId?: string }) => Flat;
-  'bc:config.set': (params: { values: Flat; actorId?: string }) => Flat;
-  'bc:config.get-dim': (params: { dimId: string }) => Flat;
-  'bc:config.patch-dim': (params: { dimId: string; values: Flat; actorId?: string }) => Flat;
-  'bc:config.set-dim': (params: { dimId: string; values: Flat; actorId?: string }) => Flat;
-  'bc:config.get-player': (params: { playerId: string; actorId?: string }) => Flat;
-  'bc:config.patch-player': (params: { playerId: string; values: Flat; actorId?: string }) => Flat;
-  'bc:config.set-player': (params: { playerId: string; values: Flat; actorId?: string }) => Flat;
+  'core:config.get-server': (params: Record<string, never>) => Flat;
+  'core:config.patch': (params: { values: Flat; actorId?: string }) => Flat;
+  'core:config.set': (params: { values: Flat; actorId?: string }) => Flat;
+  'core:config.get-dim': (params: { dimId: string }) => Flat;
+  'core:config.patch-dim': (params: { dimId: string; values: Flat; actorId?: string }) => Flat;
+  'core:config.set-dim': (params: { dimId: string; values: Flat; actorId?: string }) => Flat;
+  'core:config.get-player': (params: { playerId: string; actorId?: string }) => Flat;
+  'core:config.patch-player': (params: { playerId: string; values: Flat; actorId?: string }) => Flat;
+  'core:config.set-player': (params: { playerId: string; values: Flat; actorId?: string }) => Flat;
 }
 
 /**
@@ -59,15 +59,15 @@ export interface ConfigRpcHandlers {
 
 export function registerConfigRpc(rpc: Rpc, handlers: ConfigRpcHandlers): void {
   const map: RPCHandlerMap<ConfigRpcInterface> = {
-    'bc:config.get-server': () => handlers.onGetServer(),
-    'bc:config.patch': ({ values, actorId }) => handlers.onPatchServer(values, actorId),
-    'bc:config.set': ({ values, actorId }) => handlers.onSetServer(values, actorId),
-    'bc:config.get-dim': ({ dimId }) => handlers.onGetDimension(dimId),
-    'bc:config.patch-dim': ({ dimId, values, actorId }) => handlers.onPatchDimension(dimId, values, actorId),
-    'bc:config.set-dim': ({ dimId, values, actorId }) => handlers.onSetDimension(dimId, values, actorId),
-    'bc:config.get-player': ({ playerId, actorId }) => handlers.onGetPlayer(playerId, actorId),
-    'bc:config.patch-player': ({ playerId, values, actorId }) => handlers.onPatchPlayer(playerId, values, actorId),
-    'bc:config.set-player': ({ playerId, values, actorId }) => handlers.onSetPlayer(playerId, values, actorId),
+    'core:config.get-server': () => handlers.onGetServer(),
+    'core:config.patch': ({ values, actorId }) => handlers.onPatchServer(values, actorId),
+    'core:config.set': ({ values, actorId }) => handlers.onSetServer(values, actorId),
+    'core:config.get-dim': ({ dimId }) => handlers.onGetDimension(dimId),
+    'core:config.patch-dim': ({ dimId, values, actorId }) => handlers.onPatchDimension(dimId, values, actorId),
+    'core:config.set-dim': ({ dimId, values, actorId }) => handlers.onSetDimension(dimId, values, actorId),
+    'core:config.get-player': ({ playerId, actorId }) => handlers.onGetPlayer(playerId, actorId),
+    'core:config.patch-player': ({ playerId, values, actorId }) => handlers.onPatchPlayer(playerId, values, actorId),
+    'core:config.set-player': ({ playerId, values, actorId }) => handlers.onSetPlayer(playerId, values, actorId),
   };
 
   rpc.serve(map);

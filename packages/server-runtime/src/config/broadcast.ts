@@ -2,7 +2,7 @@
  * Config discovery over the sync state layer.
  *
  * Only the schema is pushed — one small, static map per addon:
- *   'bc-config/schema' → FlatSchema, scope-prefixed keys (`server.` / `dimension.` / `player.`)
+ *   'core-config/schema' → FlatSchema, scope-prefixed keys (`server.` / `dimension.` / `player.`)
  *
  * Its presence is the "this addon has config" signal (drives `core.config.of()` /
  * `subscribe()` and UI listings), and it lets a UI build forms without a round trip.
@@ -14,7 +14,7 @@ import { stateKey } from '@bedrock-core/sync';
 import type { State } from '@bedrock-core/sync';
 import type { FlatSchema } from './schema';
 
-export const BC_CONFIG_SCHEMA = stateKey<FlatSchema>('bc-config/schema');
+export const BC_CONFIG_SCHEMA = stateKey<FlatSchema>('core-config/schema');
 
 /** Publish the schema with `server.`/`dimension.`/`player.` prefixes on every key. */
 export function broadcastSchema(

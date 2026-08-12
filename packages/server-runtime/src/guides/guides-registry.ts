@@ -22,7 +22,7 @@ import type { State, Unsubscribe } from '@bedrock-core/sync';
 import type { GuideManifest } from './types';
 
 /** State key an addon publishes its compiled manifest under (namespace = the addon's namespace). */
-const GUIDE_MANIFEST_STATE_KEY = stateKey<GuideManifest>('bc-guide/manifest');
+const GUIDE_MANIFEST_STATE_KEY = stateKey<GuideManifest>('core-guide/manifest');
 
 export type GuidesChangeListener = () => void;
 
