@@ -5,7 +5,7 @@ import type { State, StateChangeListener, StateKey, Unsubscribe } from '@bedrock
  *
  * An addon's namespace carries more than the addon put there: the config schema, the by-locale
  * translation keys, the compiled guide and the feature states all replicate under the same
- * namespace (`bc-config/`, `bc-i18n/`, `bc-guide/`, `bc-feature/`). Those are large — a compiled
+ * namespace (`core-config/`, `core-i18n/`, `core-guide/`, `core-feature/`). Those are large — a compiled
  * guide alone dwarfs a dynamic property's 32 KB limit — so an addon that reasonably treats
  * "my namespace" as "my data" and persists it would blow up on the first write.
  *

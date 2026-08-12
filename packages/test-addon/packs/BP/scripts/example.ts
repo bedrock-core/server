@@ -12,7 +12,18 @@ import { system, world } from '@minecraft/server';
 
 // ─── State persistence ────────────────────────────────────────────────────────
 
-const SAVE_KEY = 'bc:economy:state';
+/**
+ * One dynamic property per state key, under this addon's OWN namespace — `core` belongs to the
+ * framework, an addon must not squat it.
+ *
+ * Per key, not one blob for the whole namespace: a dynamic property string caps at 32767
+ * characters, and a namespace that grows a key per player crosses that on some later write, far
+ * from the code that added the key. Persisting per key also rewrites only what changed.
+ */
+const SAVE_PREFIX = 'drav0011:economy:';
+
+/** Bedrock's ceiling for a string dynamic property. */
+const DP_STRING_MAX = 32767;
 
 // ─── RPC ─────────────────────────────────────────────────────────────────────
 
@@ -22,7 +33,7 @@ export interface EconomyRPC { getBalance(params: { player: string }): number }
 
 /**
  * Declared via the `config` field of `core.register()` in main.ts. Export this type
- * (e.g. from `@drav0011/bc-economy-types`) so consumers can get fully-typed access
+ * (e.g. from `@drav0011/economy-types`) so consumers can get fully-typed access
  * via `core.config.of<EconomyConfigDef>(...)`.
  */
 export const configDef = {
@@ -71,23 +82,42 @@ export function setupEconomy(config: Config<EconomyConfigDef>): void {
   // ─── Deferred setup (requires tick ≥ 1 for DP access) ────────────────────
 
   system.run(() => {
-    // Restore state from dynamic properties
-    const saved = world.getDynamicProperty(SAVE_KEY);
+    // Restore state from dynamic properties, before subscribing — so replaying the saved keys
+    // does not write every one of them straight back out.
+    for (const dpKey of world.getDynamicPropertyIds()) {
+      if (!dpKey.startsWith(SAVE_PREFIX)) { continue; }
 
-    if (typeof saved === 'string') {
+      const saved = world.getDynamicProperty(dpKey);
+
+      if (typeof saved !== 'string') { continue; }
+
       try {
-        const data = JSON.parse(saved) as Record<string, unknown>;
-
-        for (const [key, value] of Object.entries(data)) { core.state.set(key, value); }
+        core.state.set(dpKey.slice(SAVE_PREFIX.length), JSON.parse(saved) as unknown);
       } catch {
-        console.warn('[economy] could not parse saved state');
+        console.warn(`[economy] could not parse saved state '${dpKey}'`);
       }
     }
 
+    // No namespace check: `core.state` is already scoped to this addon and hides the framework's
+    // own keys, so this fires only for what the addon itself wrote.
     core.state.onChange((change) => {
-      if (change.ns !== core.namespace) { return; }
+      const dpKey = `${SAVE_PREFIX}${change.key}`;
 
-      world.setDynamicProperty(SAVE_KEY, JSON.stringify(core.state.getNamespace()));
+      if (change.deleted) {
+        world.setDynamicProperty(dpKey, undefined);
+
+        return;
+      }
+
+      const encoded = JSON.stringify(change.value);
+
+      if (encoded.length > DP_STRING_MAX) {
+        console.warn(`[economy] '${change.key}' is ${String(encoded.length)} chars, over the ${String(DP_STRING_MAX)} dynamic-property limit — not persisted`);
+
+        return;
+      }
+
+      world.setDynamicProperty(dpKey, encoded);
     });
     core.state.set('currency', 'gold');
 

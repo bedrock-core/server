@@ -19,7 +19,7 @@ yarn add @bedrock-core/server
   const config = core.register({
     creator: 'ms',
     creatorName: 'My Studio',
-    pack: 'bc_shop',
+    pack: 'shop',
     packName: 'My Shop',
     version: '1.0.0',
   });

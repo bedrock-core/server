@@ -6,7 +6,7 @@
  *
  * Its presence is the "this addon has config" signal (drives `core.config.of()` /
  * `subscribe()` and UI listings), and it lets a UI build forms without a round trip.
- * Values are NOT broadcast — they are fetched on demand via the `bc:config.get-*` /
+ * Values are NOT broadcast — they are fetched on demand via the `core:config.get-*` /
  * patch / set RPCs (see `rpc.ts`), which keeps steady-state traffic at zero and avoids
  * serving stale values for addons that have gone offline.
  */
@@ -14,7 +14,7 @@ import { stateKey } from '@bedrock-core/sync';
 import type { State } from '@bedrock-core/sync';
 import type { FlatSchema } from './schema';
 
-export const BC_CONFIG_SCHEMA = stateKey<FlatSchema>('core-config/schema');
+export const CONFIG_SCHEMA_KEY = stateKey<FlatSchema>('core-config/schema');
 
 /** Publish the schema with `server.`/`dimension.`/`player.` prefixes on every key. */
 export function broadcastSchema(
@@ -32,5 +32,5 @@ export function broadcastSchema(
 
   for (const [k, v] of Object.entries(playerFlat)) { scoped[`player.${k}`] = v; }
 
-  state.set(addonId, BC_CONFIG_SCHEMA, scoped);
+  state.set(addonId, CONFIG_SCHEMA_KEY, scoped);
 }

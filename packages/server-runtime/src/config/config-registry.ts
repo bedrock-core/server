@@ -31,7 +31,7 @@
  *
  * Cross-addon access (reads and writes go over RPC):
  * ```ts
- * const shopCfg = core.config.of<ShopConfigDef>('vendor:bc_shop');
+ * const shopCfg = core.config.of<ShopConfigDef>('vendor_shop');
  * await shopCfg?.server.get()                    // structured, typed
  * await shopCfg?.server.patch({ pricing: { taxRate: 0.1 } })
  * ```
@@ -60,7 +60,7 @@ import {
   savePlayerValue,
   loadedDimensionIds,
 } from './persistence';
-import { broadcastSchema, BC_CONFIG_SCHEMA } from './broadcast';
+import { broadcastSchema, CONFIG_SCHEMA_KEY } from './broadcast';
 import { ServerConfigScope, EntityConfigScope } from './scopes';
 import { buildNestedObject, flattenObject } from './scopes/utils';
 import { registerConfigRpc } from './rpc';
@@ -115,21 +115,21 @@ export class RemoteConfigAccessor {
   private readonly _actorId: string | undefined;
 
   readonly server = {
-    get: async (): Promise<unknown> => this.nested(await this._node.rpc.request(this._addonId, 'bc:config.get-server', {})),
-    patch: async (value: Record<string, unknown>): Promise<unknown> => this._node.rpc.request(this._addonId, 'bc:config.patch', { values: Object.fromEntries(flattenObject(value)), actorId: this._actorId }),
-    set: async (value: Record<string, unknown>): Promise<unknown> => this._node.rpc.request(this._addonId, 'bc:config.set', { values: Object.fromEntries(flattenObject(value)), actorId: this._actorId }),
+    get: async (): Promise<unknown> => this.nested(await this._node.rpc.request(this._addonId, 'core:config.get-server', {})),
+    patch: async (value: Record<string, unknown>): Promise<unknown> => this._node.rpc.request(this._addonId, 'core:config.patch', { values: Object.fromEntries(flattenObject(value)), actorId: this._actorId }),
+    set: async (value: Record<string, unknown>): Promise<unknown> => this._node.rpc.request(this._addonId, 'core:config.set', { values: Object.fromEntries(flattenObject(value)), actorId: this._actorId }),
   };
 
   readonly dimension = {
-    get: async (dimId: string): Promise<unknown> => this.nested(await this._node.rpc.request(this._addonId, 'bc:config.get-dim', { dimId })),
-    patch: async (dimId: string, value: Record<string, unknown>): Promise<unknown> => this._node.rpc.request(this._addonId, 'bc:config.patch-dim', { dimId, values: Object.fromEntries(flattenObject(value)), actorId: this._actorId }),
-    set: async (dimId: string, value: Record<string, unknown>): Promise<unknown> => this._node.rpc.request(this._addonId, 'bc:config.set-dim', { dimId, values: Object.fromEntries(flattenObject(value)), actorId: this._actorId }),
+    get: async (dimId: string): Promise<unknown> => this.nested(await this._node.rpc.request(this._addonId, 'core:config.get-dim', { dimId })),
+    patch: async (dimId: string, value: Record<string, unknown>): Promise<unknown> => this._node.rpc.request(this._addonId, 'core:config.patch-dim', { dimId, values: Object.fromEntries(flattenObject(value)), actorId: this._actorId }),
+    set: async (dimId: string, value: Record<string, unknown>): Promise<unknown> => this._node.rpc.request(this._addonId, 'core:config.set-dim', { dimId, values: Object.fromEntries(flattenObject(value)), actorId: this._actorId }),
   };
 
   readonly player = {
-    get: async (playerId: string): Promise<unknown> => this.nested(await this._node.rpc.request(this._addonId, 'bc:config.get-player', { playerId, actorId: this._actorId })),
-    patch: async (playerId: string, value: Record<string, unknown>): Promise<unknown> => this._node.rpc.request(this._addonId, 'bc:config.patch-player', { playerId, values: Object.fromEntries(flattenObject(value)), actorId: this._actorId }),
-    set: async (playerId: string, value: Record<string, unknown>): Promise<unknown> => this._node.rpc.request(this._addonId, 'bc:config.set-player', { playerId, values: Object.fromEntries(flattenObject(value)), actorId: this._actorId }),
+    get: async (playerId: string): Promise<unknown> => this.nested(await this._node.rpc.request(this._addonId, 'core:config.get-player', { playerId, actorId: this._actorId })),
+    patch: async (playerId: string, value: Record<string, unknown>): Promise<unknown> => this._node.rpc.request(this._addonId, 'core:config.patch-player', { playerId, values: Object.fromEntries(flattenObject(value)), actorId: this._actorId }),
+    set: async (playerId: string, value: Record<string, unknown>): Promise<unknown> => this._node.rpc.request(this._addonId, 'core:config.set-player', { playerId, values: Object.fromEntries(flattenObject(value)), actorId: this._actorId }),
   };
 
   constructor(node: SyncNode, addonId: string, actorId?: string) {
@@ -140,7 +140,7 @@ export class RemoteConfigAccessor {
 
   /** Schema with `server.`/`dimension.`/`player.` prefixes on every key. Used by UI to determine scope. */
   get scopedSchema(): FlatSchema {
-    return this._node.state.get(this._addonId, BC_CONFIG_SCHEMA) ?? {};
+    return this._node.state.get(this._addonId, CONFIG_SCHEMA_KEY) ?? {};
   }
 
   /** Unprefixed flat schema, derived from {@link scopedSchema} by stripping the scope segment. */
@@ -232,7 +232,7 @@ export class ConfigRegistry {
   start(): void {
     this._disposers.push(
       this._node.state.onChange((change) => {
-        if (change.ns !== this._addonId && change.key === BC_CONFIG_SCHEMA && !change.deleted) {
+        if (change.ns !== this._addonId && change.key === CONFIG_SCHEMA_KEY && !change.deleted) {
           const listeners = this._addonConfigListeners.get(change.ns);
 
           if (listeners?.size) {
@@ -461,7 +461,7 @@ export class ConfigRegistry {
   of(addonId: string, options?: ConfigAccessOptions): RemoteConfigAccessor | undefined;
   of<I extends ConfigDefinition>(addonId: string, options?: ConfigAccessOptions): TypedRemoteConfig<I> | undefined;
   of(addonId: string, options?: ConfigAccessOptions): unknown {
-    if (this._node.state.get(addonId, BC_CONFIG_SCHEMA) === undefined) { return undefined; }
+    if (this._node.state.get(addonId, CONFIG_SCHEMA_KEY) === undefined) { return undefined; }
 
     return new RemoteConfigAccessor(this._node, addonId, options?.actorId);
   }
@@ -479,7 +479,7 @@ export class ConfigRegistry {
 
     set.add(cb);
 
-    if (this._node.state.get(addonId, BC_CONFIG_SCHEMA) !== undefined) {
+    if (this._node.state.get(addonId, CONFIG_SCHEMA_KEY) !== undefined) {
       cb(new RemoteConfigAccessor(this._node, addonId));
     }
 

@@ -8,7 +8,7 @@
 import { core } from '@bedrock-core/server-runtime';
 
 // In a real project this interface lives in the economy addon's published types package
-// (e.g. `@drav0011/bc-economy-types`) and you install it as a devDependency.
+// (e.g. `@drav0011/economy-types`) and you install it as a devDependency.
 interface EconomyRPC { getBalance(params: { player: string }): number }
 
 export const configDef = {
@@ -26,13 +26,13 @@ export const configDef = {
   },
 } as const;
 
-/** Published in a types package (e.g. `@drav0011/bc-shop-types`) so consumers get typed access. */
+/** Published in a types package (e.g. `@drav0011/shop-types`) so consumers get typed access. */
 export type ShopConfigDef = typeof configDef;
 
 export function setupShop(): void {
   // Once our required dependency (economy) is present, ask it for a balance.
   core.registry.onDependenciesSatisfied(() => {
-    const economy = core.registry.get('drav0011_bc_economy');
+    const economy = core.registry.get('drav0011_economy');
 
     if (!economy) {
       return;

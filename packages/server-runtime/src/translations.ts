@@ -45,7 +45,7 @@ export type TranslationKeysByLocale = Record<string, TranslationKeysMap>;
 const DEFAULT_LOCALE = 'en_US';
 
 /** State key each addon publishes its by-locale map under (namespace = the addon's namespace). */
-const TRANSLATIONS_STATE_KEY = stateKey<TranslationKeysByLocale>('bc-i18n/keys');
+const TRANSLATIONS_STATE_KEY = stateKey<TranslationKeysByLocale>('core-i18n/keys');
 
 export type TranslationsChangeListener = () => void;
 

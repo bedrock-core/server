@@ -18,11 +18,11 @@ import './tests';
 // fields; register() returns the typed config accessors.
 const config = core.register({
   creator: 'drav0011',
-  pack: 'bc_economy',
-  packName: 'drav0011.bc_economy.name',
-  creatorName: 'drav0011.bc_economy.creator',
+  pack: 'economy',
+  packName: 'drav0011.economy.name',
+  creatorName: 'drav0011.economy.creator',
   version: '1.0.0',
-  description: 'drav0011.bc_economy.description',
+  description: 'drav0011.economy.description',
   translations: translationKeys,
   guide: guides,
   config: configDef,

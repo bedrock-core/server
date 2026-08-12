@@ -1,6 +1,6 @@
 ## Registry display strings for the Shop addon. The manifest's name/description/creatorName
 ## ARE these keys — other addons render them (e.g. the config UI's addon list) and Bedrock
 ## resolves them from the world's merged languages, so each addon ships its own entries.
-drav0011.bc_shop.name=Shop
-drav0011.bc_shop.description=§7Sells items for currency
-drav0011.bc_shop.creator=DrAv0011
+drav0011.shop.name=Shop
+drav0011.shop.description=§7Sells items for currency
+drav0011.shop.creator=DrAv0011

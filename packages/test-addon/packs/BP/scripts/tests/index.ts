@@ -3,15 +3,15 @@
  * realm (they talk over the real `system` bus); the last asserts the separate "Shop" pack
  * (test-addon-2) is present, so it only passes when both addons are installed.
  *
- * Run in-game: `/gametest runset bc` (or `/gametest run bc:<name>`).
+ * Run in-game: `/gametest runset core` (or `/gametest run core:<name>`).
  */
 import { type Test, register } from '@minecraft/server-gametest';
 import { Runtime, core } from '@bedrock-core/server-runtime';
 
-const STRUCTURE = 'bc:empty';
+const STRUCTURE = 'core:empty';
 
 function gametest(name: string, fn: (test: Test) => void): void {
-  register('bc', name, fn).structureName(STRUCTURE).tag('bc').maxTicks(220);
+  register('core', name, fn).structureName(STRUCTURE).tag('core').maxTicks(220);
 }
 
 // Two runtimes discover each other and complete an RPC round-trip. register() auto-starts.
@@ -152,7 +152,7 @@ gametest('cross_pack_shop_present', (test) => {
   test.startSequence()
     .thenIdle(40)
     .thenExecute(() => {
-      if (!core.registry.has('drav0011_bc_shop')) {
+      if (!core.registry.has('drav0011_shop')) {
         test.fail('shop addon not present — is test-addon-2 installed and enabled?');
       }
     })

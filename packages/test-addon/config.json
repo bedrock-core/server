@@ -2,7 +2,7 @@
 	"$schema": "https://raw.githubusercontent.com/Bedrock-OSS/regolith-schemas/main/config/v1.4.json",
 	"author": "DrAv0011",
 	"description": "Test addon and reference implementation for @bedrock-core/server library",
-	"name": "bc-server-test-public",
+	"name": "core-server-test-public",
 	"packs": {
 		"behaviorPack": "./packs/BP",
 		"resourcePack": "./packs/RP"
@@ -35,7 +35,7 @@
 					{
 						"filter": "guides",
 						"settings": {
-							"keyPrefix": "bc_economy"
+							"keyPrefix": "economy"
 						}
 					},
 					{

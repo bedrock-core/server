@@ -2,7 +2,7 @@
 	"$schema": "https://raw.githubusercontent.com/Bedrock-OSS/regolith-schemas/main/config/v1.4.json",
 	"author": "DrAv0011",
 	"description": "Second test addon (Shop) — cross-addon example with the Economy test addon",
-	"name": "bc-server-test-2-public",
+	"name": "core-server-test-2-public",
 	"packs": {
 		"behaviorPack": "./packs/BP",
 		"resourcePack": "./packs/RP"
@@ -35,7 +35,7 @@
 					{
 						"filter": "guides",
 						"settings": {
-							"keyPrefix": "bc_shop"
+							"keyPrefix": "shop"
 						}
 					},
 					{

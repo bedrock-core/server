@@ -8,7 +8,7 @@
  * Local feature:
  * ```ts
  * core.features.add('leaderboard-sync', {
- *   condition: ctx => ctx.registry.has('other_studio:bc_leaderboard'),
+ *   condition: ctx => ctx.registry.has('other_studio_leaderboard'),
  *   onEnable() { startSync(); },
  *   onDisable() { stopSync(); },
  * });
@@ -18,8 +18,8 @@
  * ```ts
  * core.features.add('cross-pvp', {
  *   condition: ctx =>
- *     ctx.registry.has('other_studio:bc_pvp') &&
- *     ctx.feature('other_studio:bc_pvp', 'arena-mode'),
+ *     ctx.registry.has('other_studio_pvp') &&
+ *     ctx.feature('other_studio_pvp', 'arena-mode'),
  *   onEnable() { /* … *\/ },
  *   onDisable() { /* … *\/ },
  * });
@@ -27,7 +27,7 @@
  *
  * Typed cross-addon read (outside a condition):
  * ```ts
- * const pvp = core.features.of<PvpFeatures>('other_studio:bc_pvp');
+ * const pvp = core.features.of<PvpFeatures>('other_studio_pvp');
  * pvp.isEnabled('arena-mode');    // type-checked
  * ```
  */

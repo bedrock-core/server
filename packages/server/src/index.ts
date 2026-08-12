@@ -7,7 +7,7 @@
  * ```ts
  * import { core } from '@bedrock-core/server';
  *
- * const config = core.register({ creator: 'ms', pack: 'bc_shop', packName: 'My Shop', version: '1.0.0' });
+ * const config = core.register({ creator: 'ms', pack: 'shop', packName: 'My Shop', version: '1.0.0' });
  * ```
  *
  * The lower-level transport (bus, discovery, RPC, replicated state) is available at
