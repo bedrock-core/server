@@ -1,6 +1,2 @@
-## Registry display strings for the Economy addon. The manifest's name/description/creatorName
-## ARE these keys — other addons render them (e.g. the config UI's addon list) and Bedrock
-## resolves them from the world's merged languages, so each addon ships its own entries.
-drav0011.economy.name=Economy
-drav0011.economy.description=§7Provides player balances to other addons and makes the description very long to see if it works correctly when it should work and do the things it should do and be longer then you so it makes it larger and larger and we see if there is scroll or not or whatever happensere is scroll or not or whatever happensere is scroll or not or whatever happensere is scroll or not or whatever happensere is scroll or not or whatever happensere is scroll or not or whatever happensere is scroll or not or whatever happensere is scroll or not or whatever happensere is scroll or not or whatever happensere is scroll or not or whatever happensere is scroll or not or whatever happensere is scroll or not or whatever happens
-drav0011.economy.creator=DrAv0011, Bedrock Tweaks
+## Registry display strings live in packs/data/i18n/<locale>.ts — the i18n filter
+## regenerates them here (namespaced, marker-delimited section) on every build.

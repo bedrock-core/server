@@ -6,7 +6,7 @@
 		"declarationMap": false,
 		"sourceMap": true,
 		"inlineSources": true,
-		"rootDir": "packs/BP/scripts",
+		"rootDir": "../../..",
 		"stripInternal": true,
 		"strict": true,
 		"moduleResolution": "bundler",
@@ -23,8 +23,14 @@
 		"jsx": "react-jsx",
 		"jsxImportSource": "@bedrock-core/ui",
 		"paths": {
-			"@bedrock-core/generated/translation-keys": [
-				"./packs/data/translation-keys/translationKeys.generated.json"
+			"@bedrock-core/ui/jsx-runtime": [
+				"../../../ui/src/jsx/jsx-runtime.ts"
+			],
+			"@bedrock-core/ui/jsx-dev-runtime": [
+				"../../../ui/src/jsx/jsx-dev-runtime.ts"
+			],
+			"@bedrock-core/generated/i18n": [
+				"./packs/data/i18n/i18n.generated.json"
 			],
 			"@bedrock-core/generated/guides": [
 				"./packs/data/guides/guides.generated.json"

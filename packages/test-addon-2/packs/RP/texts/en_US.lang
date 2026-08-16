@@ -1,6 +1,2 @@
-## Registry display strings for the Shop addon. The manifest's name/description/creatorName
-## ARE these keys — other addons render them (e.g. the config UI's addon list) and Bedrock
-## resolves them from the world's merged languages, so each addon ships its own entries.
-drav0011.shop.name=Shop
-drav0011.shop.description=§7Sells items for currency
-drav0011.shop.creator=DrAv0011
+## Registry display strings live in packs/data/i18n/<locale>.ts — the i18n filter
+## regenerates them here (namespaced, marker-delimited section) on every build.

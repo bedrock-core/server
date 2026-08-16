@@ -14,6 +14,7 @@
 	},
 	"dependencies": {
 		"@bedrock-core/config": "*",
+		"@bedrock-core/i18n": "*",
 		"@bedrock-core/server-runtime": "workspace:^",
 		"@bedrock-core/sync": "workspace:^",
 		"@bedrock-core/ui": "^0.9.1",

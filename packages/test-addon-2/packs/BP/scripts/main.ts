@@ -5,29 +5,32 @@
  */
 import { core } from '@bedrock-core/server-runtime';
 import { ui } from '@bedrock-core/config';
-import translationKeys from '@bedrock-core/generated/translation-keys';
+import bundle from '@bedrock-core/generated/i18n';
+import { createI18n } from '@bedrock-core/i18n';
 import guides from '@bedrock-core/generated/guides';
 import { configDef, setupShop } from './example';
 
+// The addon's typed verbs over its resources (packs/data/i18n). Creating the instance
+// also registers it as the default translation source for any UI this addon renders.
+const i18n = createI18n(bundle);
+
 // register() declares everything in one call and brings the addon online — no separate
-// start(). Display fields are translation keys shipped in this addon's RP
-// (texts/en_US.lang); UIs localize them per player language, and Bedrock falls back to
-// the literal string when no .lang entry matches. The generated translations and guide
-// manifest (from the Regolith filters) and the config schema ride along as optional
-// fields; the typed config accessors register() returns are unused here — Shop only
+// start(). Display fields are translation keys — typed through key(), generated into
+// this addon's .lang by the i18n filter; UIs localize them per player language. The
+// i18n bundle and guide manifest ride along as optional fields; the typed config accessors register() returns are unused here — Shop only
 // exposes its config to the UI and to cross-addon `core.config.of()` readers.
 core.register({
   creator: 'drav0011',
   pack: 'shop',
-  packName: 'drav0011.shop.name',
-  creatorName: 'drav0011.shop.creator',
+  packName: i18n.key($ => $.meta.name),
+  creatorName: i18n.key($ => $.meta.creator),
   version: '1.0.0',
-  description: 'drav0011.shop.description',
+  description: i18n.key($ => $.meta.description),
   icon: 'textures/ui/shop/icon',
   thumbnail: 'textures/ui/shop/thumbnail',
   dependencies: ['drav0011_economy'],
   optionalDependencies: ['drav0011_leaderboard'],
-  translations: translationKeys,
+  translations: bundle,
   guide: guides,
   config: configDef,
 });
