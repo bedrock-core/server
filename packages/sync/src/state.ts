@@ -70,6 +70,15 @@ function isDeltaData(value: unknown): value is DeltaData {
   return typeof ns === 'string' && typeof key === 'string' && typeof ver === 'number';
 }
 
+/** A state request carries an optional namespace filter — `{}` means "everything". */
+function requestedNamespace(value: unknown): string | undefined {
+  if (typeof value !== 'object' || value === null || !('ns' in value)) { return undefined; }
+
+  const { ns } = value;
+
+  return typeof ns === 'string' ? ns : undefined;
+}
+
 function isSnapshotData(value: unknown): value is SnapshotData {
   if (typeof value !== 'object' || value === null) { return false; }
 
@@ -238,7 +247,7 @@ export class State {
   }
 
   private handleStateRequest(envelope: Envelope): void {
-    const requested = isSnapshotData(envelope.data) ? envelope.data.ns : undefined;
+    const requested = requestedNamespace(envelope.data);
 
     for (const ns of this._owned) {
       if (requested !== undefined && requested !== ns) { continue; }
