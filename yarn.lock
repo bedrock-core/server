@@ -45,6 +45,8 @@ __metadata:
 "@bedrock-core/i18n@portal:../ui/packages/i18n::locator=%40bedrock-core%2Fserver-monorepo%40workspace%3A.":
   version: 0.0.0-use.local
   resolution: "@bedrock-core/i18n@portal:../ui/packages/i18n::locator=%40bedrock-core%2Fserver-monorepo%40workspace%3A."
+  peerDependencies:
+    "@minecraft/server": ">=2.8.0"
   languageName: node
   linkType: soft
 
@@ -59,6 +61,8 @@ __metadata:
 "@bedrock-core/ore-styled@portal:../ui/packages/ore-styled::locator=%40bedrock-core%2Fserver-monorepo%40workspace%3A.":
   version: 0.0.0-use.local
   resolution: "@bedrock-core/ore-styled@portal:../ui/packages/ore-styled::locator=%40bedrock-core%2Fserver-monorepo%40workspace%3A."
+  dependencies:
+    "@bedrock-core/i18n": "workspace:*"
   peerDependencies:
     "@bedrock-core/ui-runtime": "*"
   languageName: node
