@@ -1,5 +1,16 @@
 {
-  "watch": ["packages/sync/src", "packages/server-runtime/src", "types"],
+  "watch": [
+    "packages/sync/src",
+    "packages/server-runtime/src",
+    "types",
+    "../ui/packages/ui-runtime/src",
+    "../ui/packages/flexbox/src",
+    "../ui/packages/navigation/src",
+    "../ui/packages/ore-styled/src",
+    "../ui/packages/guides/src",
+    "../ui/packages/config/src",
+    "../ui/packages/i18n/src"
+  ],
   "ext": "ts,tsx,js,json",
   "exec": "node nodemon-execution.js"
 }
