@@ -29,7 +29,7 @@ Included:
 - **Host election** — `core.host` elects the realm running the newest runtime, so work only one realm may do (rendering the shared UI) follows the newest build rather than load order.
 - **Features** — enable and disable behaviour based on which peers are present.
 - **Config** — server / dimension / player scopes with typed accessors and live change subscriptions. Reads and writes made on a player's behalf carry an `actorId` the owning addon authorizes: server and dimension writes need an operator, and a non-operator reaches only their own player scope. Access with no actor is an addon acting for itself and stays unrestricted. Operator status is read from the readonly `playerPermissionLevel`, never the script-writable `commandPermissionLevel`. `core.config.local` exposes this addon's own scopes synchronously, for startup-time consumers such as generated config commands.
-- **Translations** — per-locale keys shared across addons' UIs.
+- **Translations** — i18n bundles replicated whole (`register({ translations: bundle })`, the `@bedrock-core/generated/i18n` module): `core.translations.forPlayer(player)` returns one lazy resolver chaining every addon's published bundle (later registrations win, like Bedrock's world-level `.lang` merge), and `of(addonId)` wraps a peer's bundle in the full verb set (`t`/`key`/`raw`/`resolve`).
 - **Guides** — compiled in-game guides, declared at registration.
 - **Manifest validation** — `validateManifest` enforces the `creator` / `pack` id rules.
 

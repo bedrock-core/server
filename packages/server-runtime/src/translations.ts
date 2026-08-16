@@ -1,51 +1,37 @@
 /**
- * Cross-addon translation-key sync (by-locale).
+ * Cross-addon translation sync — i18n-bundle native, no tables anywhere.
  *
- * Registry display fields (`name`, `description`, `creatorName`) ARE translation keys
- * shipped in each addon's own RP `texts/*.lang`. In-game, Bedrock merges every installed
- * pack's .lang into one world-wide table, so any addon's key resolves at display time.
- * The ui-runtime layout engine, however, measures text server-side from the pack-local
- * `translationKeys.generated.json` — another addon's keys are not in it, so word-wrap/
- * ellipsis metrics would be computed on the raw key string.
+ * Each addon publishes its {@link I18nBundle} — the module the i18n Regolith
+ * filter generates, or `createResourceBundle`'s runtime equivalent — via
+ * `core.register({ translations: bundle })`. The registry replicates the
+ * bundle itself: templates stay in `{{var}}` form with their recorded argument
+ * order. Peers get two views, both lazy over the bundles:
  *
- * This service closes that gap. The `translation-keys` Regolith filter now emits a
- * BY-LOCALE map (`Record<locale, Record<key, string>>`, i.e. `TranslationKeysByLocale`):
- * every configured locale's key -> resolved-string table ships in one module because
- * Bedrock script bundles are static (no per-player dynamic import). Each addon publishes
- * that full map (`@bedrock-core/generated/translation-keys`) to replicated state; the
- * registry then merges every addon's map PER LOCALE — repeated keys are simply overridden,
- * mirroring how Bedrock's world-level .lang merge behaves.
+ * - **Verbs** — `of(addonId)` wraps a peer's bundle in `createI18n`, giving
+ *   `t()`/`key()`/`raw()`/`resolve()` over another addon's strings (loosely
+ *   typed: their resource tree's types never travel).
+ * - **Resolution** — `forLocale()`/`forPlayer()` return a
+ *   {@link TranslationResolver} that chains every addon's bundle, later
+ *   registrations overriding earlier ones the way Bedrock's world-level
+ *   `.lang` merge does. Nothing is flattened or copied; each lookup reads the
+ *   winning bundle's objects and converts the one template it needs.
  *
- * At render time you want ONE flat locale map for `TranslationKeysContext`:
- * - `forLocale(locale)` merges every addon's table for that single locale (cached per locale).
- * - `forPlayer(player)` picks the player's client locale when any addon authored it, else the
- *   default locale, else any available locale, then returns that merged flat map.
- *
- * ```ts
- * import translationKeys from '@bedrock-core/generated/translation-keys'; // TranslationKeysByLocale
- *
- * core.register({ ..., translations: translationKeys });
- *
- * // In the UI root, per connecting player:
- * <TranslationKeysContext value={core.translations.forPlayer(player)}>
- * ```
- *
- * Late joiners are covered by sync's state snapshot exchange.
+ * Registry display fields (`packName`, `description`, `creatorName`) ARE
+ * translation keys shipped in each addon's generated `.lang` — this registry
+ * is what lets one addon's UI measure and resolve another addon's keys
+ * server-side. Late joiners are covered by sync's state snapshot exchange.
  */
+import { createI18n, LOCALE_PROPERTY, pickLocale } from '@bedrock-core/i18n';
+import type { I18n, I18nBundle, TranslationResolver } from '@bedrock-core/i18n';
 import { stateKey } from '@bedrock-core/sync';
 import type { State, Unsubscribe } from '@bedrock-core/sync';
 import type { Player } from '@minecraft/server';
 
-/** Key -> resolved display string, for ONE locale. */
-export type TranslationKeysMap = Record<string, string>;
-/** Locale code (e.g. `"en_US"`) -> {@link TranslationKeysMap}. */
-export type TranslationKeysByLocale = Record<string, TranslationKeysMap>;
-
-/** Locale `forPlayer` falls back to when the player's own locale wasn't authored by any addon. */
+/** Locale `forPlayer` falls back to when no candidate locale is published. */
 const DEFAULT_LOCALE = 'en_US';
 
-/** State key each addon publishes its by-locale map under (namespace = the addon's namespace). */
-const TRANSLATIONS_STATE_KEY = stateKey<TranslationKeysByLocale>('core-i18n/keys');
+/** State key each addon publishes its bundle under (namespace = the addon's namespace). */
+const TRANSLATIONS_STATE_KEY = stateKey<I18nBundle>('core-i18n/bundle');
 
 export type TranslationsChangeListener = () => void;
 
@@ -54,8 +40,10 @@ export class TranslationsRegistry {
   private readonly _addonId: string;
   private readonly _listeners = new Set<TranslationsChangeListener>();
   private readonly _disposers: Unsubscribe[] = [];
-  /** Merged flat map cache, keyed by locale; cleared whenever any addon re-publishes. */
-  private readonly _byLocale = new Map<string, TranslationKeysMap>();
+  /** Caches over replicated bundles, cleared whenever any addon re-publishes. */
+  private readonly _verbs = new Map<string, I18n<unknown> | undefined>();
+  private readonly _resolvers = new Map<string, TranslationResolver>();
+  private _locales: Set<string> | undefined;
 
   constructor(state: State, addonId: string) {
     this._state = state;
@@ -67,7 +55,7 @@ export class TranslationsRegistry {
       this._state.onChange((change) => {
         if (change.key !== TRANSLATIONS_STATE_KEY) { return; }
 
-        this._byLocale.clear();
+        this.invalidate();
         this.emitChange();
       }),
     );
@@ -77,63 +65,93 @@ export class TranslationsRegistry {
     for (const dispose of this._disposers.splice(0)) { dispose(); }
 
     this._listeners.clear();
-    this._byLocale.clear();
+    this.invalidate();
   }
 
   /**
-   * Publish this addon's translation keys — the full generated BY-LOCALE map — to replicated
-   * state so every addon can resolve them. Usually declared up front via
-   * `core.register({ translations })`; call directly to publish late or replace the map.
+   * Publish this addon's bundle to replicated state so every addon can resolve
+   * its strings. Usually declared up front via `core.register({ translations })`;
+   * call directly to publish late or replace the bundle.
    */
-  provide(byLocale: TranslationKeysByLocale): void {
-    this._state.set(this._addonId, TRANSLATIONS_STATE_KEY, byLocale);
+  provide(bundle: I18nBundle): void {
+    this._state.set(this._addonId, TRANSLATIONS_STATE_KEY, bundle);
   }
 
   /**
-   * The merged key -> resolved-string map for a SINGLE locale, across every addon that called
-   * `provide()` (including this one). Repeated keys are overridden by whichever addon is merged
-   * later — values only differ where a pack deliberately overrides another's key, mirroring
-   * Bedrock's own world-level .lang merge. Reads are local-mirror only; the per-locale result is
-   * cached and rebuilt when any addon re-publishes. Treat it as read-only.
+   * The verbs over one addon's published strings — `t()`, `key()`, `raw()`,
+   * `resolve()`, `forPlayer()` — exactly what `createI18n` gives that addon
+   * locally, minus its compile-time resource types (those never travel; paths
+   * are plain strings here). `undefined` until that addon publishes.
    */
-  forLocale(locale: string): TranslationKeysMap {
-    const cached = this._byLocale.get(locale);
+  of(addonId: string): I18n<unknown> | undefined {
+    if (this._verbs.has(addonId)) { return this._verbs.get(addonId); }
+
+    const bundle = this.publishedBundle(addonId);
+    // NEVER the default instance — these are peers' bundles, not this addon's.
+    const verbs = bundle ? createI18n(bundle, { asDefault: false }) : undefined;
+
+    this._verbs.set(addonId, verbs);
+
+    return verbs;
+  }
+
+  /** The raw bundle an addon published, or `undefined`. Local-mirror read. */
+  bundleOf(addonId: string): I18nBundle | undefined {
+    return this.publishedBundle(addonId);
+  }
+
+  /**
+   * One resolver over every published bundle, for a SINGLE locale. Later
+   * registrations win collisions (mirroring Bedrock's world-level `.lang`
+   * merge), so the chain probes namespaces in reverse. Cached per locale;
+   * rebuilt when any addon re-publishes.
+   */
+  forLocale(locale: string): TranslationResolver {
+    const cached = this._resolvers.get(locale);
 
     if (cached) { return cached; }
 
-    const merged: TranslationKeysMap = {};
+    const chain: TranslationResolver[] = [];
 
-    for (const ns of this._state.namespaces()) {
-      Object.assign(merged, this.publishedByLocale(ns)[locale] ?? {});
+    for (const ns of [...this._state.namespaces()].reverse()) {
+      const verbs = this.of(ns);
+
+      if (verbs) { chain.push(verbs.forLocale(locale).resolve); }
     }
 
-    this._byLocale.set(locale, merged);
+    const resolver: TranslationResolver = (key) => {
+      for (const resolve of chain) {
+        const value = resolve(key);
 
-    return merged;
+        if (value !== undefined) { return value; }
+      }
+
+      return undefined;
+    };
+
+    this._resolvers.set(locale, resolver);
+
+    return resolver;
   }
 
   /**
-   * Resolve the merged flat map for a specific player. Picks the player's client locale
-   * (`player.clientSystemInfo.locale`) when any addon authored it, otherwise `defaultLocale`,
-   * otherwise the first locale any addon published. Returns `{}` when no addon has published
-   * anything — mirroring how a missing key already falls back to rendering the literal key.
+   * The chained resolver for a specific player, through the same chain the
+   * i18n engine uses: persisted override → client locale → sibling region of
+   * that language → `defaultLocale` → anything published. Resolves nothing
+   * when nothing is published — a missing key already falls back to rendering
+   * the literal key.
    */
-  forPlayer(player: Player, defaultLocale = DEFAULT_LOCALE): TranslationKeysMap {
-    const locale = player.clientSystemInfo.locale;
-    const available = this.availableLocales();
-    const chosen = [locale, defaultLocale].find(candidate => available.has(candidate)) ?? this.firstOf(available);
+  forPlayer(player: Player, defaultLocale = DEFAULT_LOCALE): TranslationResolver {
+    const override = player.getDynamicProperty(LOCALE_PROPERTY);
+    const chosen = pickLocale([...this.availableLocales()], [
+      typeof override === 'string' ? override : undefined,
+      player.clientSystemInfo.locale,
+    ], defaultLocale);
 
-    if (chosen === undefined) { return {}; }
-
-    return this.forLocale(chosen);
+    return this.forLocale(chosen ?? defaultLocale);
   }
 
-  /** The full BY-LOCALE map another addon published, or `{}` if it hasn't. Local-mirror read. */
-  of(addonId: string): TranslationKeysByLocale {
-    return this.publishedByLocale(addonId);
-  }
-
-  /** Notified when any addon's published keys change (coarse — rebuild via `forLocale`/`forPlayer`). */
+  /** Notified when any addon's published bundle changes (coarse — rebuild via `forLocale`/`forPlayer`/`of`). */
   onChange(listener: TranslationsChangeListener): Unsubscribe {
     this._listeners.add(listener);
 
@@ -142,40 +160,42 @@ export class TranslationsRegistry {
     };
   }
 
-  /** Every locale any addon has published, across all namespaces. */
+  /** Every locale any addon has published (resource locales and passthrough alike). */
   private availableLocales(): Set<string> {
+    if (this._locales) { return this._locales; }
+
     const locales = new Set<string>();
 
     for (const ns of this._state.namespaces()) {
-      for (const locale of Object.keys(this.publishedByLocale(ns))) { locales.add(locale); }
+      const bundle = this.publishedBundle(ns);
+
+      if (!bundle) { continue; }
+
+      for (const locale of Object.keys(bundle.locales)) { locales.add(locale); }
+
+      for (const locale of Object.keys(bundle.extra ?? {})) { locales.add(locale); }
     }
+
+    this._locales = locales;
 
     return locales;
   }
 
-  private firstOf(locales: Set<string>): string | undefined {
-    for (const locale of locales) { return locale; }
-
-    return undefined;
-  }
-
   /**
-   * The by-locale map an addon published under this namespace, or `{}` if none/invalid.
-   * Keeps only the entries that are themselves `Record<string, string>` tables, so one
-   * addon publishing a malformed payload can't poison the merge for everyone else.
+   * The bundle an addon published under this namespace, or `undefined` if
+   * none/malformed — one addon publishing a bad payload can't poison the
+   * chain for everyone else.
    */
-  private publishedByLocale(ns: string): TranslationKeysByLocale {
+  private publishedBundle(ns: string): I18nBundle | undefined {
     const value = this._state.get(ns, TRANSLATIONS_STATE_KEY);
 
-    if (!isRecord(value)) { return {}; }
+    return isBundle(value) ? value : undefined;
+  }
 
-    const result: TranslationKeysByLocale = {};
-
-    for (const [locale, entry] of Object.entries(value)) {
-      if (isFlatMap(entry)) { result[locale] = entry; }
-    }
-
-    return result;
+  private invalidate(): void {
+    this._verbs.clear();
+    this._resolvers.clear();
+    this._locales = undefined;
   }
 
   private emitChange(): void {
@@ -189,11 +209,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * True when `value` is a locale table: a record whose every value is a string. An empty record
- * qualifies — nothing contradicts it, and merging it is a no-op. Narrows to
- * {@link TranslationKeysMap} so callers avoid an `as` cast.
+ * True when `value` is a locale table: a record whose every value is a string.
+ * An empty record qualifies — nothing contradicts it, and merging it is a no-op.
  */
-function isFlatMap(value: unknown): value is TranslationKeysMap {
+function isFlatMap(value: unknown): value is Record<string, string> {
   if (!isRecord(value)) { return false; }
 
   for (const entry of Object.values(value)) {
@@ -201,4 +220,33 @@ function isFlatMap(value: unknown): value is TranslationKeysMap {
   }
 
   return true;
+}
+
+/** True when every value of a record satisfies {@link isFlatMap}. */
+function isFlatMapRecord(value: unknown): value is Record<string, Record<string, string>> {
+  return isRecord(value) && Object.values(value).every(isFlatMap);
+}
+
+/**
+ * Structural validation of a replicated bundle — the shape `createI18n`
+ * relies on. Narrows so callers avoid an `as` cast.
+ */
+function isBundle(value: unknown): value is I18nBundle {
+  if (!isRecord(value)) { return false; }
+
+  if (typeof value['namespace'] !== 'string' || typeof value['defaultLocale'] !== 'string') { return false; }
+
+  if (!Array.isArray(value['libs']) || !value['libs'].every(entry => typeof entry === 'string')) { return false; }
+
+  const args = value['args'];
+
+  if (!isRecord(args)) { return false; }
+
+  for (const order of Object.values(args)) {
+    if (!Array.isArray(order) || !order.every(name => typeof name === 'string')) { return false; }
+  }
+
+  if (!isFlatMapRecord(value['locales'])) { return false; }
+
+  return value['extra'] === undefined || isFlatMapRecord(value['extra']);
 }

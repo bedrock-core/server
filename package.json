@@ -37,7 +37,8 @@
 		"@bedrock-core/navigation": "portal:../ui/packages/navigation",
 		"@bedrock-core/ore-styled": "portal:../ui/packages/ore-styled",
 		"@bedrock-core/guides": "portal:../ui/packages/guides",
-		"@bedrock-core/config": "portal:../ui/packages/config"
+		"@bedrock-core/config": "portal:../ui/packages/config",
+		"@bedrock-core/i18n": "portal:../ui/packages/i18n"
 	},
 	"scripts": {
 		"regolith-install": "yarn workspaces foreach -i -A --topological --jobs=1 run regolith-install",

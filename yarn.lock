@@ -17,6 +17,7 @@ __metadata:
   resolution: "@bedrock-core/config@portal:../ui/packages/config::locator=%40bedrock-core%2Fserver-monorepo%40workspace%3A."
   peerDependencies:
     "@bedrock-core/guides": "*"
+    "@bedrock-core/i18n": "*"
     "@bedrock-core/navigation": "*"
     "@bedrock-core/ore-styled": "*"
     "@bedrock-core/server-runtime": "*"
@@ -38,6 +39,12 @@ __metadata:
     "@bedrock-core/navigation": "*"
     "@bedrock-core/ore-styled": "*"
     "@bedrock-core/ui-runtime": "*"
+  languageName: node
+  linkType: soft
+
+"@bedrock-core/i18n@portal:../ui/packages/i18n::locator=%40bedrock-core%2Fserver-monorepo%40workspace%3A.":
+  version: 0.0.0-use.local
+  resolution: "@bedrock-core/i18n@portal:../ui/packages/i18n::locator=%40bedrock-core%2Fserver-monorepo%40workspace%3A."
   languageName: node
   linkType: soft
 
@@ -79,6 +86,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@bedrock-core/server-runtime@workspace:packages/server-runtime"
   dependencies:
+    "@bedrock-core/i18n": "npm:^0.0.0"
     "@bedrock-core/sync": "workspace:^"
     "@minecraft/server": "npm:2.8.0"
     "@stylistic/eslint-plugin": "npm:^5.10.0"
@@ -95,6 +103,7 @@ __metadata:
   resolution: "@bedrock-core/server-test-addon-2@workspace:packages/test-addon-2"
   dependencies:
     "@bedrock-core/config": "npm:*"
+    "@bedrock-core/i18n": "npm:*"
     "@bedrock-core/server-runtime": "workspace:^"
     "@bedrock-core/sync": "workspace:^"
     "@bedrock-core/ui": "npm:^0.9.1"
@@ -116,6 +125,7 @@ __metadata:
   resolution: "@bedrock-core/server-test-addon@workspace:packages/test-addon"
   dependencies:
     "@bedrock-core/config": "npm:*"
+    "@bedrock-core/i18n": "npm:*"
     "@bedrock-core/server-runtime": "workspace:^"
     "@bedrock-core/sync": "workspace:^"
     "@bedrock-core/ui": "npm:^0.9.1"
@@ -173,6 +183,7 @@ __metadata:
   resolution: "@bedrock-core/ui-runtime@portal:../ui/packages/ui-runtime::locator=%40bedrock-core%2Fserver-monorepo%40workspace%3A."
   dependencies:
     "@bedrock-core/flexbox": "workspace:*"
+    "@bedrock-core/i18n": "workspace:*"
   peerDependencies:
     "@minecraft/server": "*"
     "@minecraft/server-ui": "*"
