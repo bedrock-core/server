@@ -16,7 +16,7 @@
  * if (core.host.isHost) { renderLocally(player); }
  * else { core.rpc.request(core.host.hostId, 'core:open-ui', { playerId: player.id }); }
  *
- * core.host.onChange(hostId => console.warn('UI host is now', hostId));
+ * core.host.subscribe(hostId => console.warn('UI host is now', hostId));
  * ```
  *
  * The result is deterministic and needs no negotiation messages: every realm sees the same
@@ -82,7 +82,7 @@ export class HostElection {
    * Notified when hosting moves — including the initial election, if you subscribe before
    * peers appear. Fires only on an actual change. Returns an unsubscribe function.
    */
-  onChange(listener: HostListener): Unsubscribe {
+  subscribe(listener: HostListener): Unsubscribe {
     this._listeners.add(listener);
 
     return (): void => {

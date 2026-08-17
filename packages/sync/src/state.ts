@@ -7,8 +7,8 @@
  * last-write-wins on a Lamport-style logical clock, tie-broken by the writer's id, so all
  * mirrors converge regardless of delivery order.
  *
- * Persistence is **not** sync's job: an addon that wants durability subscribes to
- * {@link State.onChange}, writes its own namespace to its own dynamic properties, and
+ * Persistence is **not** sync's job: an addon that wants durability subscribes via
+ * {@link State.subscribe}, writes its own namespace to its own dynamic properties, and
  * re-publishes (via {@link State.set}) on load. Deletions are tombstones so a late-arriving
  * older write can't resurrect a removed key.
  */
@@ -197,7 +197,7 @@ export class State {
   }
 
   /** Notified on every applied change (local or remote). Returns an unsubscribe function. */
-  onChange(listener: StateChangeListener): Unsubscribe {
+  subscribe(listener: StateChangeListener): Unsubscribe {
     this._changeListeners.add(listener);
 
     return (): void => {

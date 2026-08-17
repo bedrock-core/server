@@ -76,8 +76,8 @@ export class ScopedState {
    * not also fire on every schema, translation and guide broadcast. Use `core.node.state` to
    * observe everything.
    */
-  onChange(listener: StateChangeListener): Unsubscribe {
-    return this._state.onChange((change) => {
+  subscribe(listener: StateChangeListener): Unsubscribe {
+    return this._state.subscribe((change) => {
       if (change.ns !== this._ns || isReservedStateKey(change.key)) { return; }
 
       listener(change);

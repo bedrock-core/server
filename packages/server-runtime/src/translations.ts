@@ -52,7 +52,7 @@ export class TranslationsRegistry {
 
   start(): void {
     this._disposers.push(
-      this._state.onChange((change) => {
+      this._state.subscribe((change) => {
         if (change.key !== TRANSLATIONS_STATE_KEY) { return; }
 
         this.invalidate();
@@ -152,7 +152,7 @@ export class TranslationsRegistry {
   }
 
   /** Notified when any addon's published bundle changes (coarse — rebuild via `forLocale`/`forPlayer`/`of`). */
-  onChange(listener: TranslationsChangeListener): Unsubscribe {
+  subscribe(listener: TranslationsChangeListener): Unsubscribe {
     this._listeners.add(listener);
 
     return (): void => {

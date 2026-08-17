@@ -40,7 +40,7 @@ export class GuidesRegistry {
 
   start(): void {
     this._disposers.push(
-      this._state.onChange((change) => {
+      this._state.subscribe((change) => {
         if (change.key !== GUIDE_MANIFEST_STATE_KEY) { return; }
 
         this._addons = undefined;
@@ -96,7 +96,7 @@ export class GuidesRegistry {
   }
 
   /** Notified when any addon's published guide changes (coarse — re-read via `of`/`addonsWithGuides`). */
-  onChange(listener: GuidesChangeListener): Unsubscribe {
+  subscribe(listener: GuidesChangeListener): Unsubscribe {
     this._listeners.add(listener);
 
     return (): void => {

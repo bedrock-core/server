@@ -89,7 +89,7 @@ export class FeatureManager {
       // Re-evaluate on every state change (conditions may read any published value,
       // including other addons' config). Feature-flag writes triggered by evaluation
       // can't loop: evaluate() short-circuits when the condition result hasn't flipped.
-      this._state.onChange(() => this.evaluateAll()),
+      this._state.subscribe(() => this.evaluateAll()),
     );
     this.evaluateAll();
   }
