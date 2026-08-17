@@ -3,12 +3,19 @@ import type {
   ConfigValue,
   FlatSchema,
   SchemaToValue,
-  DotPath,
-  PathValue,
   DeepPartial,
 } from '../schema';
-import { ChangeEmitter, type ChangeListener } from './change-emitter';
-import { buildTreeValue, emitAffected, flattenObject, type SchemaTree } from './utils';
+import { ChangeEmitter } from './change-emitter';
+import { buildAccessorNode, type AccessorBackend, type ConfigTree } from './accessor';
+import {
+  buildTreeValue,
+  emitAffected,
+  flattenAt,
+  flattenObject,
+  valueAtPath,
+  withRevertsUnder,
+  type SchemaTree,
+} from './utils';
 
 /**
  * A batch of applied flat changes for one entity, handed to the owner for persistence +
@@ -22,12 +29,18 @@ export type EntityApplyListener = (entityId: string, changes: ReadonlyMap<string
  * (`Dimension`, `Player`, etc.).
  *
  * Value resolution: per-entity stored value → schema default.
+ *
+ * {@link EntityConfigScope.for} is the way in: it returns the same accessor tree the server
+ * scope is, bound to one entity, so both scopes read identically past that point
+ * (`config.player.for(player).notify.onLogin.get()`). The entity-first `get` / `patch` / `set`
+ * remain for callers holding an untyped scope, such as `core.config.local`.
  */
 export class EntityConfigScope<S extends Record<string, unknown>, E extends { id: string }> {
   private readonly _tree: SchemaTree;
   private readonly _flatSchema: FlatSchema;
   private readonly _values: Map<string, Map<string, ConfigValue>>;
   private readonly _emitters = new Map<string, ChangeEmitter>();
+  private readonly _trees = new Map<string, ConfigTree<S>>();
   private readonly _onApply: EntityApplyListener;
 
   readonly schema: FlatSchema;
@@ -43,6 +56,29 @@ export class EntityConfigScope<S extends Record<string, unknown>, E extends { id
     this._values = values;
     this._onApply = onApply;
     this.schema = flatSchema;
+  }
+
+  /**
+   * The accessor tree for one entity — the same shape the server scope has, so everything
+   * past this call reads identically across scopes:
+   *
+   * ```ts
+   * config.player.for(player).notify.onLogin.get()
+   * config.player.for(player).notify.onLogin.subscribe(cb)
+   * config.player.for(player).get()                       // the whole scope for that player
+   * config.player.for(player).subscribe('notify.onLogin', cb)
+   * ```
+   *
+   * Trees are cached per entity id and dropped in {@link clear}. Caching cannot go stale: a
+   * node stores nothing, it resolves values and its emitter through this scope by id on every
+   * call — so a tree obtained before a rejoin keeps working, and only the walk is saved.
+   */
+  for(entity: E): ConfigTree<S> {
+    let tree = this._trees.get(entity.id);
+
+    if (!tree) { tree = this.buildTree(entity.id); this._trees.set(entity.id, tree); }
+
+    return tree;
   }
 
   /** Return the full current config for an entity as a typed nested object. */
@@ -64,21 +100,7 @@ export class EntityConfigScope<S extends Record<string, unknown>, E extends { id
    * override is deleted.
    */
   set(entity: E, value: SchemaToValue<S>): void {
-    this.applyForEntity(entity.id, this.withReverts(flattenObject(value)));
-  }
-
-  onChange(entity: E, listener: ChangeListener<SchemaToValue<S>>): Unsubscribe;
-  onChange<P extends DotPath<S>>(entity: E, path: P, listener: ChangeListener<PathValue<S, P>>): Unsubscribe;
-  onChange(entity: E, pathOrListener: string | ChangeListener<unknown>, listener?: ChangeListener<unknown>): Unsubscribe {
-    const emitter = this.emitterFor(entity.id);
-
-    if (typeof pathOrListener === 'function') {
-      return emitter.on('', pathOrListener);
-    }
-
-    if (!listener) { throw new Error('onChange(entity, path, listener): listener is required'); }
-
-    return emitter.on(pathOrListener, listener);
+    this.applyForEntity(entity.id, withRevertsUnder('', flattenObject(value), this._flatSchema));
   }
 
   /** @internal Load initial entity values on join. Does not emit (no listener can predate the entity). */
@@ -116,6 +138,7 @@ export class EntityConfigScope<S extends Record<string, unknown>, E extends { id
     this._values.delete(entityId);
     this._emitters.get(entityId)?.clear();
     this._emitters.delete(entityId);
+    this._trees.delete(entityId);
   }
 
   /** @internal Apply a remote merge-patch for an entity from RPC (fires change events). */
@@ -125,7 +148,7 @@ export class EntityConfigScope<S extends Record<string, unknown>, E extends { id
 
   /** @internal Apply a remote full replace for an entity from RPC (fires change events). */
   applyRemoteSet(entityId: string, flat: Record<string, ConfigValue>): void {
-    this.applyForEntity(entityId, this.withReverts(new Map(Object.entries(flat))));
+    this.applyForEntity(entityId, withRevertsUnder('', new Map(Object.entries(flat)), this._flatSchema));
   }
 
   /** @internal Return all effective flat values for an entity (used for RPC response). */
@@ -140,15 +163,24 @@ export class EntityConfigScope<S extends Record<string, unknown>, E extends { id
     return result;
   }
 
-  /** Mark every schema key missing from `changes` as a revert-to-default. */
-  private withReverts(changes: Map<string, ConfigValue>): Map<string, ConfigValue | undefined> {
-    const full = new Map<string, ConfigValue | undefined>(changes);
+  /**
+   * Walk the schema once for one entity. Every node closes over `entityId` and resolves values
+   * and its emitter through this scope on each call, so the result never holds stale state.
+   */
+  private buildTree(entityId: string): ConfigTree<S> {
+    const backend: AccessorBackend = {
+      read: (path): unknown => valueAtPath(this._tree, path, this._flatSchema, this.valuesFor(entityId)),
+      patch: (path, value): void => { this.applyForEntity(entityId, flattenAt(path, value)); },
+      replace: (path, value): void => {
+        this.applyForEntity(entityId, withRevertsUnder(path, flattenAt(path, value), this._flatSchema));
+      },
+      on: (path, listener): Unsubscribe => this.emitterFor(entityId).on(path, listener),
+    };
 
-    for (const key of Object.keys(this._flatSchema)) {
-      if (!full.has(key)) { full.set(key, undefined); }
-    }
-
-    return full;
+    // The walk reproduces exactly the shape ConfigTree<S> describes; TS cannot verify an object
+    // assembled key-by-key at runtime, so this assertion is inherent.
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion
+    return buildAccessorNode(this._tree, '', backend) as ConfigTree<S>;
   }
 
   private applyForEntity(entityId: string, changes: Map<string, ConfigValue | undefined>): void {

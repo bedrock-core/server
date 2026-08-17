@@ -27,7 +27,7 @@
  * core.registry.onRegister(addon => console.warn('registered', addon.id));
  * core.registry.onNamespaceCollision(info => console.error('collision', info.id));
  * core.features.add('leaderboard-sync', {
- *   condition: r => r.has('os_leaderboards'),
+ *   condition: ctx => ctx.registry.has('os_leaderboards'),
  *   onEnable() { console.warn('leaderboards available'); },
  *   onDisable() { console.warn('leaderboards gone'); },
  * });
@@ -72,6 +72,16 @@ export { denyReason, isOperator } from './config/authorization';
 export type { ConfigScopeName } from './config/authorization';
 export { EntityConfigScope } from './config/scopes';
 export { ServerConfigScope } from './config/scopes';
+export type {
+  ServerConfigTree,
+  ConfigTree,
+  ConfigNode,
+  ConfigChildren,
+  ConfigGroupAccessor,
+  ConfigLeafAccessor,
+  NodeValue,
+} from './config/scopes';
+export { RESERVED_KEYS, validateConfigSchema } from './config/schema';
 export type {
   ConfigDefinition,
   ConfigEntry,

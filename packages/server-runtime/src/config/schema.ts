@@ -1,7 +1,8 @@
 /**
  * Config schema types and compile-time inference helpers.
  *
- * `type` is a reserved key — do not use it as a group name.
+ * `type` is a reserved key — do not use it as a group name. So are the accessor tree's own
+ * verbs, at any depth — see {@link RESERVED_KEYS} and {@link validateConfigSchema}.
  */
 
 // ─── Value type ────────────────────────────────────────────────────────────────
@@ -142,6 +143,40 @@ export type SerializedEntry
     | { type: 'list'; itemType: 'string' | 'enum'; options?: readonly string[]; maxItems?: number; default: string; label: string; description?: string };
 
 export type FlatSchema = Record<string, SerializedEntry>;
+
+// ─── Reserved keys ─────────────────────────────────────────────────────────────
+
+/**
+ * The verbs the accessor tree hangs on **every** node (`config.server.economy.currency.get()`),
+ * plus `for`, which the entity scopes use to select an entity. A schema key with one of these
+ * names would shadow the method on its own node, so none of them may be used at any depth.
+ */
+export const RESERVED_KEYS = ['get', 'set', 'patch', 'subscribe', 'for'] as const;
+
+const RESERVED = new Set<string>(RESERVED_KEYS);
+
+/**
+ * Reject schema keys that collide with the accessor tree's own verbs. Runs at registration,
+ * before anything is materialized, so a bad schema fails at the declaration instead of
+ * silently shadowing `get` or `subscribe` somewhere deep in a tree — a failure that would
+ * otherwise surface as a `TypeError` at some unrelated call site much later.
+ *
+ * `scope` leads the reported path (`server.economy.set`) so the error points straight at the
+ * declaration, matching how the schema is addressed everywhere else it is published.
+ */
+export function validateConfigSchema(scope: string, schema: Record<string, SchemaNode>, prefix = ''): void {
+  for (const [key, node] of Object.entries(schema)) {
+    const path = prefix ? `${prefix}.${key}` : key;
+
+    if (RESERVED.has(key)) {
+      throw new Error(
+        `config schema: "${scope}.${path}" uses the reserved key "${key}"; reserved keys are ${RESERVED_KEYS.join(', ')}`,
+      );
+    }
+
+    if (!isEntry(node)) { validateConfigSchema(scope, node, path); }
+  }
+}
 
 export function flattenSchema(schema: Record<string, SchemaNode>, prefix = ''): FlatSchema {
   const result: FlatSchema = {};

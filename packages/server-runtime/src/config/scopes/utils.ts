@@ -50,6 +50,42 @@ export function flattenObject(
 }
 
 /**
+ * Flatten a value written **at** `path` into the flat changes it implies — the write half of
+ * {@link valueAtPath}. `''` is the whole scope (the value is a nested object), a group path
+ * prefixes the flattened object, and a leaf path takes the value as-is; arrays are stored as
+ * their JSON string, exactly as {@link flattenObject} does.
+ */
+export function flattenAt(path: string, value: unknown): Map<string, ConfigValue> {
+  if (Array.isArray(value)) { return new Map([[path, JSON.stringify(value)]]); }
+
+  if (isRecord(value)) { return flattenObject(value, path); }
+
+  return isConfigValue(value) ? new Map([[path, value]]) : new Map();
+}
+
+/**
+ * Mark every schema key under `path` that `changes` does not set as a revert-to-default —
+ * the `set` half of the write semantics. `''` covers the whole scope, a group path covers its
+ * subtree, and a leaf path covers only itself.
+ */
+export function withRevertsUnder(
+  path: string,
+  changes: Map<string, ConfigValue>,
+  flatSchema: FlatSchema,
+): Map<string, ConfigValue | undefined> {
+  const full = new Map<string, ConfigValue | undefined>(changes);
+  const prefix = `${path}.`;
+
+  for (const key of Object.keys(flatSchema)) {
+    if (path !== '' && key !== path && !key.startsWith(prefix)) { continue; }
+
+    if (!full.has(key)) { full.set(key, undefined); }
+  }
+
+  return full;
+}
+
+/**
  * Given the set of changed flat paths, return every affected path from deepest
  * to shallowest (leaf → ancestor groups → root '').
  * Listeners are fired in that order.

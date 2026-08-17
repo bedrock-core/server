@@ -22,11 +22,20 @@
  *   },
  * });
  *
- * config.server.get()                            // { pricing: { taxRate: number } } — local, sync
+ * // Every scope is a dotted accessor tree mirroring the schema — every node, group or leaf,
+ * // carries get / set / subscribe (groups also patch), in the style of
+ * // world.afterEvents.playerSpawn.subscribe(...). Entity scopes pick the entity with for().
+ * config.server.pricing.taxRate.get()            // number — local, sync
+ * config.server.pricing.taxRate.set(0.1)
+ * config.server.pricing.taxRate.subscribe((next, prev) => { ... })
+ * config.server.pricing.subscribe(pricing => { ... })
+ * config.player.for(player).allowGifts.get()
+ *
+ * config.server.get()                            // { pricing: { taxRate: number } } — whole scope
  * config.server.patch({ pricing: { taxRate: 0.1 } })
  * config.dimension.patch(dim, { miningBonus: 2.0 })
- * config.server.onChange('pricing.taxRate', (next, prev) => { ... })
- * config.server.onChange(full => console.warn(full.pricing.taxRate))
+ * config.server.subscribe('pricing.taxRate', (next, prev) => { ... })   // runtime-computed path
+ * config.server.subscribe(full => console.warn(full.pricing.taxRate))
  * ```
  *
  * Cross-addon access (reads and writes go over RPC):
@@ -50,6 +59,7 @@ import {
   type DimensionScopeSchema,
   type PlayerScopeSchema,
   flattenSchema,
+  validateConfigSchema,
 } from './schema';
 import {
   loadServerValues,
@@ -61,7 +71,7 @@ import {
   loadedDimensionIds,
 } from './persistence';
 import { broadcastSchema, CONFIG_SCHEMA_KEY } from './broadcast';
-import { ServerConfigScope, EntityConfigScope } from './scopes';
+import { ServerConfigScope, EntityConfigScope, type ServerConfigTree } from './scopes';
 import { buildNestedObject, flattenObject } from './scopes/utils';
 import { registerConfigRpc } from './rpc';
 import { denyReason, type ConfigScopeName } from './authorization';
@@ -88,8 +98,15 @@ type SafeDimension<I extends ConfigDefinition>
 type SafePlayer<I extends ConfigDefinition>
   = NonNullable<I['player']> extends PlayerScopeSchema ? NonNullable<I['player']> : Record<never, never>;
 
+/**
+ * This addon's own scopes, as returned by `register({ config })` / `define()`.
+ *
+ * `server` is the scope *and* its accessor tree — `config.server.get()` alongside
+ * `config.server.pricing.taxRate.get()`. The entity scopes select an entity first
+ * (`config.player.for(player).allowGifts.get()`), which yields the identical tree shape.
+ */
 export interface Config<I extends ConfigDefinition> {
-  server: ServerConfigScope<SafeServer<I>>;
+  server: ServerConfigTree<SafeServer<I>>;
   dimension: EntityConfigScope<SafeDimension<I>, Dimension>;
   player: EntityConfigScope<SafePlayer<I>, Player>;
 }
@@ -231,7 +248,7 @@ export class ConfigRegistry {
 
   start(): void {
     this._disposers.push(
-      this._node.state.onChange((change) => {
+      this._node.state.subscribe((change) => {
         if (change.ns !== this._addonId && change.key === CONFIG_SCHEMA_KEY && !change.deleted) {
           const listeners = this._addonConfigListeners.get(change.ns);
 
@@ -257,11 +274,18 @@ export class ConfigRegistry {
   define<I extends ConfigDefinition>(input: I): Config<I> {
     if (this._defined) { throw new Error('core.config.define() called more than once'); }
 
-    this._defined = true;
-
     const serverTree = (input.server ?? {}) as Record<string, SchemaNode>;
     const dimensionTree = (input.dimension ?? {}) as Record<string, SchemaNode>;
     const playerTree = (input.player ?? {}) as Record<string, SchemaNode>;
+
+    // Before anything is built, and before the registry marks itself defined: a key that
+    // collides with an accessor verb has no sane runtime recovery, so the declaration is
+    // rejected outright.
+    validateConfigSchema('server', serverTree);
+    validateConfigSchema('dimension', dimensionTree);
+    validateConfigSchema('player', playerTree);
+
+    this._defined = true;
 
     const serverFlat = flattenSchema(serverTree);
     const dimensionFlat = flattenSchema(dimensionTree);
@@ -278,14 +302,17 @@ export class ConfigRegistry {
     // value in a batch deletes the persisted override (set-revert). No broadcast —
     // consumers fetch values via the RPC handlers below.
 
-    const serverScope = new ServerConfigScope<NonNullable<I['server']>>(
+    // The constructor assigns one accessor node per top-level schema key onto the instance;
+    // TS cannot see properties produced by a schema walk, so this widening is inherent.
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion
+    const serverScope = new ServerConfigScope<SafeServer<I>>(
       serverTree,
       serverFlat,
       serverValues,
       (changes) => {
         for (const [key, value] of changes) { saveServerValue(this._addonId, key, value); }
       },
-    );
+    ) as ServerConfigTree<SafeServer<I>>;
 
     const dimensionScope = new EntityConfigScope<NonNullable<I['dimension']>, Dimension>(
       dimensionTree,

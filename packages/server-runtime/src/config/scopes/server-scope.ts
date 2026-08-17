@@ -8,7 +8,19 @@ import type {
   DeepPartial,
 } from '../schema';
 import { ChangeEmitter, type ChangeListener } from './change-emitter';
-import { buildTreeValue, emitAffected, flattenObject, type SchemaTree } from './utils';
+import {
+  buildAccessorChildren,
+  subscribeAt,
+  type AccessorBackend,
+  type ConfigChildren,
+} from './accessor';
+import {
+  emitAffected,
+  flattenAt,
+  valueAtPath,
+  withRevertsUnder,
+  type SchemaTree,
+} from './utils';
 
 /**
  * A batch of applied flat changes, handed to the owner for persistence + broadcast.
@@ -17,12 +29,23 @@ import { buildTreeValue, emitAffected, flattenObject, type SchemaTree } from './
  */
 export type ApplyListener = (changes: ReadonlyMap<string, ConfigValue | undefined>) => void;
 
+/**
+ * The server scope as `define()` hands it out: the scope's own verbs plus the materialized
+ * accessor node for every top-level schema key, so `config.server.economy.currency.get()`
+ * type-checks alongside `config.server.get()`.
+ *
+ * The nodes are real own properties assigned in the constructor — TypeScript cannot see
+ * properties produced by a schema walk, which is what this intersection states.
+ */
+export type ServerConfigTree<S extends Record<string, unknown>> = ServerConfigScope<S> & ConfigChildren<S>;
+
 export class ServerConfigScope<S extends Record<string, unknown>> {
   private readonly _tree: SchemaTree;
   private readonly _flatSchema: FlatSchema;
   private readonly _values: Map<string, ConfigValue>;
   private readonly _emitter = new ChangeEmitter();
   private readonly _onApply: ApplyListener;
+  private readonly _backend: AccessorBackend;
 
   readonly schema: FlatSchema;
 
@@ -37,6 +60,30 @@ export class ServerConfigScope<S extends Record<string, unknown>> {
     this._values = values;
     this._onApply = onApply;
     this.schema = flatSchema;
+    this._backend = {
+      read: (path): unknown => valueAtPath(this._tree, path, this._flatSchema, this._values),
+      patch: (path, value): void => { this.applyAndEmit(flattenAt(path, value)); },
+      replace: (path, value): void => { this.applyAndEmit(withRevertsUnder(path, flattenAt(path, value), this._flatSchema)); },
+      on: (path, listener): Unsubscribe => this._emitter.on(path, listener),
+    };
+
+    // Materialized here, once: the schema is fully known at registration, so the whole tree is
+    // built up front and every later `config.server.a.b.get()` is a plain property lookup.
+    const children = buildAccessorChildren(tree, '', this._backend);
+
+    // The tree is assigned ONTO the scope, so a top-level key that matches any member of this
+    // class would silently overwrite it. `validateConfigSchema` already rejects the documented
+    // verbs with a better message; this catches everything else (`schema` and the transport
+    // methods) and keeps covering new members automatically as they are added.
+    for (const key of Object.keys(children)) {
+      if (key in this) {
+        throw new Error(
+          `config schema: top-level server key "${key}" collides with a config scope member of the same name — rename it`,
+        );
+      }
+    }
+
+    Object.assign(this, children);
   }
 
   /** Return the full current config as a typed nested object. */
@@ -44,12 +91,12 @@ export class ServerConfigScope<S extends Record<string, unknown>> {
     // The tree walk reconstructs exactly the shape SchemaToValue<S> describes; TS cannot
     // verify an object assembled key-by-key at runtime, so this assertion is inherent.
     // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion
-    return buildTreeValue(this._tree, '', this._flatSchema, this._values) as SchemaToValue<S>;
+    return this._backend.read('') as SchemaToValue<S>;
   }
 
   /** Deep-merge a partial update. Only the provided keys are changed. */
   patch(partial: DeepPartial<SchemaToValue<S>>): void {
-    this.applyAndEmit(flattenObject(partial));
+    this._backend.patch('', partial);
   }
 
   /**
@@ -57,19 +104,18 @@ export class ServerConfigScope<S extends Record<string, unknown>> {
    * the input reverts to its schema default and its persisted override is deleted.
    */
   set(value: SchemaToValue<S>): void {
-    this.applyAndEmit(this.withReverts(flattenObject(value)));
+    this._backend.replace('', value);
   }
 
-  onChange(listener: ChangeListener<SchemaToValue<S>>): Unsubscribe;
-  onChange<P extends DotPath<S>>(path: P, listener: ChangeListener<PathValue<S, P>>): Unsubscribe;
-  onChange(pathOrListener: string | ChangeListener<unknown>, listener?: ChangeListener<unknown>): Unsubscribe {
-    if (typeof pathOrListener === 'function') {
-      return this._emitter.on('', pathOrListener);
-    }
-
-    if (!listener) { throw new Error('onChange(path, listener): listener is required'); }
-
-    return this._emitter.on(pathOrListener, listener);
+  /**
+   * Watch the whole scope, or one dot-path within it. The path form is the escape hatch for
+   * paths computed at runtime — when the path is a literal, prefer the node it names
+   * (`config.server.economy.currency.subscribe(...)`), which needs no path at all.
+   */
+  subscribe(listener: ChangeListener<SchemaToValue<S>>): Unsubscribe;
+  subscribe<P extends DotPath<S>>(path: P, listener: ChangeListener<PathValue<S, P>>): Unsubscribe;
+  subscribe(pathOrListener: string | ChangeListener<unknown>, listener?: ChangeListener<unknown>): Unsubscribe {
+    return subscribeAt(this._backend, '', pathOrListener, listener);
   }
 
   /**
@@ -105,18 +151,7 @@ export class ServerConfigScope<S extends Record<string, unknown>> {
 
   /** @internal Apply a remote full replace from RPC (fires change events). */
   applyRemoteSet(flat: Record<string, ConfigValue>): void {
-    this.applyAndEmit(this.withReverts(new Map(Object.entries(flat))));
-  }
-
-  /** Mark every schema key missing from `changes` as a revert-to-default. */
-  private withReverts(changes: Map<string, ConfigValue>): Map<string, ConfigValue | undefined> {
-    const full = new Map<string, ConfigValue | undefined>(changes);
-
-    for (const key of Object.keys(this._flatSchema)) {
-      if (!full.has(key)) { full.set(key, undefined); }
-    }
-
-    return full;
+    this.applyAndEmit(withRevertsUnder('', new Map(Object.entries(flat)), this._flatSchema));
   }
 
   private applyAndEmit(changes: Map<string, ConfigValue | undefined>): void {
