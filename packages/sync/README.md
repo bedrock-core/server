@@ -2,7 +2,7 @@
 
 > **For framework / library developers.**  
 > If you're building a Bedrock addon, you don't need this package directly — use
-> [`@bedrock-core/server-runtime`](../server-runtime) instead. `server-runtime` creates and
+> [`@bedrock-core/server-runtime`](https://github.com/bedrock-core/server/tree/main/packages/server-runtime#readme) instead. `server-runtime` creates and
 > manages the one sync node for you; raw transport access is available via `core.node` when
 > you need it.
 
@@ -38,10 +38,16 @@ from the one node you already have.
 
 ## Install
 
+```sh
+yarn add @bedrock-core/sync
+```
+
+`@minecraft/server` is a peer dependency (`>=2.8.0`) — it stays yours to pin, since the version
+you build against has to match the one your pack's `manifest.json` declares:
+
 ```jsonc
 {
   "dependencies": {
-    "@bedrock-core/sync": "workspace:^",
     "@minecraft/server": "2.8.0"
   }
 }
@@ -118,7 +124,7 @@ sync.state.set('mycoolitems', 'spawnRate', 5);
 const rate = sync.state.get('mycoolitems', 'spawnRate');      // 5
 const all  = sync.state.getNamespace('economy');              // { currency: 'gold', ... }
 
-sync.state.onChange(({ ns, key, value, deleted }) => { /* … */ });
+sync.state.subscribe(({ ns, key, value, deleted }) => { /* … */ });
 sync.state.delete('mycoolitems', 'spawnRate');
 ```
 
@@ -138,8 +144,8 @@ const rate = sync.state.get('mycoolitems', SPAWN_RATE);       // number | undefi
 last-write-wins on a Lamport clock. A node answers late-join snapshot requests for its
 `ownedNamespaces` (default `[id]`).
 
-**Persistence is the addon's job.** sync is in-memory only. To persist, subscribe to
-`onChange`, write to your pack's own dynamic properties, and re-publish on load (defer with
+**Persistence is the addon's job.** sync is in-memory only. To persist, call
+`subscribe`, write to your pack's own dynamic properties, and re-publish on load (defer with
 `system.run` — dynamic properties can't be touched during early execution):
 
 ```ts
@@ -153,7 +159,7 @@ system.run(() => {
       sync.state.set(NS, k, v);
     }
   }
-  sync.state.onChange(change => {
+  sync.state.subscribe(change => {
     if (change.ns !== NS) return;
     world.setDynamicProperty(`${NS}:save`, JSON.stringify(sync.state.getNamespace(NS)));
   });
@@ -174,4 +180,6 @@ system.run(() => {
 
 sync is tested **in-game with GameTests**. Several nodes in one realm all share the real
 `system` bus, so a test can create multiple `SyncNode`s and assert discovery, RPC and state
-convergence — see `packages/test-addon*`.
+convergence — see
+[`packages/test-addon`](https://github.com/bedrock-core/server/tree/main/packages/test-addon) and
+[`packages/test-addon-2`](https://github.com/bedrock-core/server/tree/main/packages/test-addon-2).

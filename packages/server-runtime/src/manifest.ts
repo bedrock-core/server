@@ -13,7 +13,7 @@
  * machine-readable — the registry groups by creator, and a UI can show them apart — and
  * {@link addonNamespace} joins them. Two addons collide only if both halves match.
  *
- * `name` and `creatorName` are purely human-readable display labels.
+ * `packName` and `creatorName` are purely human-readable display labels.
  */
 import { RUNTIME_VERSION } from './runtime-version';
 

@@ -9,7 +9,8 @@ yarn add @bedrock-core/server
 
 ## What you get
 
-- **`@bedrock-core/server`** re-exports [`@bedrock-core/server-runtime`](../server-runtime) —
+- **`@bedrock-core/server`** re-exports
+  [`@bedrock-core/server-runtime`](https://github.com/bedrock-core/server/tree/main/packages/server-runtime#readme) —
   the framework runtime: addon registration, the cross-addon registry, features, config,
   guides and RPC. This is what most addons import.
 
@@ -25,7 +26,8 @@ yarn add @bedrock-core/server
   });
   ```
 
-- **`@bedrock-core/server/sync`** re-exports [`@bedrock-core/sync`](../sync) — the
+- **`@bedrock-core/server/sync`** re-exports
+  [`@bedrock-core/sync`](https://github.com/bedrock-core/server/tree/main/packages/sync#readme) — the
   low-level cross-addon transport (message bus, peer discovery, RPC, replicated state)
   for when you need to talk to the transport layer directly.
 

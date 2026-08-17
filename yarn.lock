@@ -90,7 +90,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@bedrock-core/server-runtime@workspace:packages/server-runtime"
   dependencies:
-    "@bedrock-core/i18n": "npm:^0.0.0"
+    "@bedrock-core/i18n": "npm:^0.1.0"
     "@bedrock-core/sync": "workspace:^"
     "@minecraft/server": "npm:2.8.0"
     "@stylistic/eslint-plugin": "npm:^5.10.0"
@@ -201,6 +201,7 @@ __metadata:
     "@bedrock-core/config": "workspace:*"
     "@bedrock-core/flexbox": "workspace:*"
     "@bedrock-core/guides": "workspace:*"
+    "@bedrock-core/i18n": "workspace:*"
     "@bedrock-core/navigation": "workspace:*"
     "@bedrock-core/ore-styled": "workspace:*"
     "@bedrock-core/ui-runtime": "workspace:*"
