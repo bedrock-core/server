@@ -15,14 +15,14 @@ export const configDef = {
   server: {
     pricing: {
       taxRate: { type: 'number', default: 0.05, min: 0, max: 1, step: 0.01, label: 'Tax Rate', description: 'Tax applied to all purchases' },
-      currency: { type: 'enum', default: 'emerald', options: ['emerald', 'gold', 'diamond'] as const, label: 'Currency', widget: 'dropdown' },
+      currency: { type: 'enum', default: 'emerald', options: ['emerald', 'gold', 'diamond'] as const, label: 'Currency' },
       shopEnabled: { type: 'boolean', default: true, label: 'Shop Enabled' },
     },
     bannedItems: { type: 'list' as const, itemType: 'string' as const, maxItems: 50, default: [] as const, label: 'Banned Items', description: 'Item IDs that cannot be sold' },
   },
   player: {
     allowGifts: { type: 'boolean', default: true, label: 'Allow Gifts' },
-    displayCurrency: { type: 'enum', default: 'symbol', options: ['symbol', 'name', 'both'] as const, label: 'Currency Display', widget: 'toggle-buttons' },
+    displayCurrency: { type: 'enum', default: 'symbol', options: ['symbol', 'name', 'both'] as const, label: 'Currency Display' },
   },
 } as const;
 

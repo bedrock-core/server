@@ -1,8 +1,8 @@
 {
 	"format_version": 2,
 	"header": {
-		"name": "@bedrock-core/server-test",
-		"description": "Economy reference addon (cross-addon example with Shop)",
+		"name": "drav0011_economy.meta.name",
+		"description": "drav0011_economy.meta.description",
 		"uuid": "53a3007c-d160-46d3-bba1-c05e8bd378d6",
 		"pack_scope": "world",
 		"version": [

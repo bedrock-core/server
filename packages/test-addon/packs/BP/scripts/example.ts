@@ -1,8 +1,9 @@
 /**
  * Economy addon — exercises every config feature:
- *   server scope   : get / patch / set / onChange at root, group and leaf
- *   dimension scope: per-dim get/patch/set, onChange
- *   player scope   : per-player get/patch, onChange on join
+ *   accessor tree  : config.server.economy.currency.get() / .set() / .subscribe() at every depth
+ *   server scope   : get / patch / set / subscribe at root, group and leaf
+ *   dimension scope: per-dim for(dim), get/patch/set
+ *   player scope   : per-player for(player), subscribe on join
  *   cross-addon    : subscribe to Shop's config (test-addon-2)
  *   types          : export EconomyConfigDef so consumers can type cross-addon reads
  */
@@ -39,28 +40,28 @@ export interface EconomyRPC { getBalance(params: { player: string }): number }
 export const configDef = {
   server: {
     economy: {
-      startingBalance: { type: 'number' as const, default: 100, min: 0, max: 10000, step: 1, label: 'Starting Balance', widget: 'number-input' as const },
-      maxBalance: { type: 'number' as const, default: 99999, min: 1, max: 999999, step: 1, label: 'Max Balance', widget: 'number-input' as const },
+      startingBalance: { type: 'number' as const, default: 100, min: 0, max: 10000, step: 1, label: 'Starting Balance' },
+      maxBalance: { type: 'number' as const, default: 99999, min: 1, max: 999999, step: 1, label: 'Max Balance' },
       currency: { type: 'enum' as const, default: 'emerald' as const, options: ['emerald', 'gold', 'diamond'] as const, label: 'Currency' },
-      allowNegative: { type: 'boolean' as const, default: false, label: 'Allow Negative Balance', widget: 'toggle' as const },
+      allowNegative: { type: 'boolean' as const, default: false, label: 'Allow Negative Balance' },
     },
     display: {
-      prefix: { type: 'string' as const, default: '', maxLength: 8, label: 'Balance Prefix', widget: 'input' as const },
-      suffix: { type: 'string' as const, default: ' em', maxLength: 8, label: 'Balance Suffix', widget: 'input' as const },
-      showInChat: { type: 'boolean' as const, default: true, label: 'Show In Chat', widget: 'checkbox' as const },
+      prefix: { type: 'string' as const, default: '', maxLength: 8, label: 'Balance Prefix' },
+      suffix: { type: 'string' as const, default: ' em', maxLength: 8, label: 'Balance Suffix' },
+      showInChat: { type: 'boolean' as const, default: true, label: 'Show In Chat' },
     },
   },
   dimension: {
-    taxRate: { type: 'number' as const, default: 0.05, min: 0, max: 1, step: 0.01, label: 'Tax Rate', widget: 'slider' as const },
-    tradingEnabled: { type: 'boolean' as const, default: true, label: 'Trading Enabled', widget: 'toggle' as const },
+    taxRate: { type: 'number' as const, default: 0.05, min: 0, max: 1, step: 0.01, label: 'Tax Rate' },
+    tradingEnabled: { type: 'boolean' as const, default: true, label: 'Trading Enabled' },
   },
   player: {
     notify: {
-      onTransaction: { type: 'boolean' as const, default: true, label: 'Notify on Transaction', widget: 'toggle' as const },
-      onLogin: { type: 'boolean' as const, default: true, label: 'Notify on Login', widget: 'toggle' as const },
+      onTransaction: { type: 'boolean' as const, default: true, label: 'Notify on Transaction' },
+      onLogin: { type: 'boolean' as const, default: true, label: 'Notify on Login' },
     },
     displayFormat: { type: 'enum' as const, default: 'symbol' as const, options: ['symbol', 'full', 'short'] as const, label: 'Display Format' },
-    notes: { type: 'string' as const, default: '', maxLength: 100, label: 'Player Notes', widget: 'textarea' as const },
+    notes: { type: 'string' as const, default: '', maxLength: 100, label: 'Player Notes' },
   },
 } as const;
 
@@ -100,7 +101,7 @@ export function setupEconomy(config: Config<EconomyConfigDef>): void {
 
     // No namespace check: `core.state` is already scoped to this addon and hides the framework's
     // own keys, so this fires only for what the addon itself wrote.
-    core.state.onChange((change) => {
+    core.state.subscribe((change) => {
       const dpKey = `${SAVE_PREFIX}${change.key}`;
 
       if (change.deleted) {
@@ -121,6 +122,18 @@ export function setupEconomy(config: Config<EconomyConfigDef>): void {
     });
     core.state.set('currency', 'gold');
 
+    // Accessor tree — every node carries its own verbs, leaf or group
+    config.server.economy.currency.set('gold');
+    config.server.economy.startingBalance.set(120);
+    config.server.display.patch({ suffix: ' g' });
+
+    config.server.economy.currency.subscribe((next, prev) => {
+      console.warn(`[economy] currency ${String(prev)} → ${next}`);
+    });
+    config.server.economy.subscribe((economy) => {
+      console.warn(`[economy] group changed, balance now ${String(economy.startingBalance)}`);
+    });
+
     // patch — deep merge, only touched keys change
     config.server.patch({ economy: { startingBalance: 150 } });
 
@@ -133,7 +146,8 @@ export function setupEconomy(config: Config<EconomyConfigDef>): void {
     // Dimension scope: per-dimension override (unset keys fall back to the schema default)
     const nether = world.getDimension('nether');
 
-    config.dimension.patch(nether, { taxRate: 0.25, tradingEnabled: false });
+    config.dimension.for(nether).taxRate.set(0.25);
+    config.dimension.patch(nether, { tradingEnabled: false });
   });
 
   // ─── Player lifecycle: per-player config on join ──────────────────────────
@@ -141,14 +155,18 @@ export function setupEconomy(config: Config<EconomyConfigDef>): void {
   world.afterEvents.playerSpawn.subscribe(({ player, initialSpawn }) => {
     if (!initialSpawn) { return; }
 
-    // Read effective config: per-player override → schema default
-    const playerCfg = config.player.get(player);
+    // The player's own accessor tree — same shape as the server scope past `for()`
+    const playerCfg = config.player.for(player);
 
-    // Per-player patch
-    config.player.patch(player, { notes: `${player.name} joined` });
+    // Per-player write, at the leaf
+    playerCfg.notes.set(`${player.name} joined`);
 
-    if (playerCfg.notify.onLogin) {
-      player.sendMessage(`Balance: 0${config.server.get().display.suffix}`);
+    playerCfg.notify.onLogin.subscribe((next) => {
+      player.sendMessage(`Login notifications ${next ? 'on' : 'off'}`);
+    });
+
+    if (playerCfg.notify.onLogin.get()) {
+      player.sendMessage(`Balance: 0${config.server.display.suffix.get()}`);
     }
   });
 }
