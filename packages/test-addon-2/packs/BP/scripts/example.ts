@@ -13,7 +13,12 @@ interface EconomyRPC { getBalance(params: { player: string }): number }
 
 export const configDef = {
   server: {
+    // Named, so the button screen this root now renders shows "Pricing" rather than the key.
+    // Its sibling `bannedItems` is a list, which no longer forces this level into a form —
+    // both get a row, and the list gets its own editor.
     pricing: {
+      $label: 'Pricing',
+      $description: 'What a purchase costs and whether the shop is open at all.',
       taxRate: { type: 'number', default: 0.05, min: 0, max: 1, step: 0.01, label: 'Tax Rate', description: 'Tax applied to all purchases' },
       currency: { type: 'enum', default: 'emerald', options: ['emerald', 'gold', 'diamond'] as const, label: 'Currency' },
       shopEnabled: { type: 'boolean', default: true, label: 'Shop Enabled' },
