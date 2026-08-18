@@ -5,7 +5,7 @@
 > ⚠️ Beta Status: Active development. Breaking changes may occur until 1.0.0. Pin exact versions for stability.
 
 
-A modular collection of TypeScript packages for Minecraft Bedrock addon development, built for cross-addon compatibility. Every addon runs in its own isolated script realm — bedrock-core lets addons from different creators find each other and share data.
+A framework for Minecraft Bedrock addon development, built for cross-addon compatibility. Every addon runs in its own isolated script realm — bedrock-core lets addons from different creators find each other, call each other, and share state, settings and guides.
 
 Full documentation & guides: https://bedrock-core.drav.dev/
 

@@ -1,185 +1,86 @@
 # @bedrock-core/sync
 
-> **For framework / library developers.**  
-> If you're building a Bedrock addon, you don't need this package directly — use
-> [`@bedrock-core/server-runtime`](https://github.com/bedrock-core/server/tree/main/packages/server-runtime#readme) instead. `server-runtime` creates and
-> manages the one sync node for you; raw transport access is available via `core.node` when
-> you need it.
+![Logo](https://raw.githubusercontent.com/bedrock-core/server/main/assets/logo/title.png)
 
-Cross-addon transport for Minecraft Bedrock. Every behavior pack runs its scripts in its
-**own isolated QuickJS realm** — the only things that can cross between realms are script
-events and scoreboards. `@bedrock-core/sync` builds a clean layer on top of script events:
+> **For framework and library developers.**
+> If you are building a Bedrock addon, you do not need this package directly — use
+> [`@bedrock-core/server-runtime`](https://bedrock-core.drav.dev/docs/server/server-runtime)
+> instead. The runtime creates and manages the one sync node for you, and raw transport access is
+> available as `core.node` whenever you want it.
 
-- **Discovery** — find other bedrock-core nodes in the world (heartbeat, whois, TTL eviction)
-- **RPC** — call a named method on another node and await the response
-- **State** — a replicated key/value store every node mirrors locally; writes broadcast a delta
-
-> sync does **not** touch dynamic properties — they're pack-scoped and persistence is each
-> addon's own responsibility.
-
----
-
-## When to use this directly
-
-The typical cases:
-
-- You're **building a library or framework layer** on top of `sync` (like `server-runtime`
-  itself does).
-- You need **raw bus / discovery / state access** in an addon that already uses
-  `server-runtime` — use `core.node` for that, no extra install needed.
-- You're writing **GameTests** that spin up multiple isolated nodes in one realm to exercise
-  the protocol.
-
-You do **not** need to create a second `SyncNode` just to read another addon's state — the
-state store is globally shared-mutable, so `core.node.state.get('other_addon', 'key')` works
-from the one node you already have.
-
----
+Cross-addon transport for Minecraft Bedrock. Every behavior pack runs its scripts in its **own
+isolated QuickJS realm** — the only things that cross between realms are script events and
+scoreboards. `@bedrock-core/sync` builds a usable layer on top of script events so addons in
+separate realms can actually talk.
 
 ## Install
 
-```sh
+```bash
 yarn add @bedrock-core/sync
 ```
 
-`@minecraft/server` is a peer dependency (`>=2.8.0`) — it stays yours to pin, since the version
-you build against has to match the one your pack's `manifest.json` declares:
+`@minecraft/server` is a peer dependency (`>=2.8.0`) — it stays yours to pin, since the version you
+build against has to match the one your pack's `manifest.json` declares.
 
-```jsonc
-{
-  "dependencies": {
-    "@minecraft/server": "2.8.0"
-  }
-}
-```
+## What it gives you
 
----
+- **Discovery** — find the other bedrock-core nodes in the world, with heartbeats, a startup whois
+  so late loaders catch up, and TTL eviction for nodes that go quiet
+- **RPC** — call a named method on another node and await the reply. Requests always time out, so
+  an absent peer can never hang your code; a node may address itself, and that call is delivered
+  locally on the next tick
+- **State** — a replicated key/value store every node mirrors in full. Reads are local and
+  synchronous, writes broadcast a delta, conflicts resolve last-write-wins on a Lamport clock, and
+  `stateKey<T>()` makes a key's value type check at compile time
+- **Framing you do not have to think about** — payloads above the engine's frame limit are split
+  and reassembled transparently
 
-## Quick start
+sync does **not** touch dynamic properties. It is in-memory only; persistence is each addon's own
+responsibility (subscribe, write to your pack's dynamic properties, re-publish on load).
 
-Create **one** `SyncNode` for the process, call `start()` once on boot:
+## Usage
+
+Create **one** `SyncNode` for the realm and call `start()` once on boot:
 
 ```ts
-import { createSync } from '@bedrock-core/sync';
+import { createSync, stateKey } from '@bedrock-core/sync';
+
+const NS = 'mycoolitems';
+const SPAWN_RATE = stateKey<number>('spawnRate'); // typed key: get infers, set checks
 
 export const sync = createSync({
-  id: 'mycoolitems',    // unique, stable id (a-z0-9_) — transport address + default state namespace
+  id: NS,             // unique, stable id (a-z0-9_) — transport address + default state namespace
   version: '1.0.0',
-  meta: { /* opaque data peers see in PeerInfo.meta */ },
 });
 
-sync.start();
+sync.start(); // after this, sync.discovery / sync.rpc / sync.state are live
+
+sync.discovery.onPeerUp(peer => console.warn(`${peer.id} v${peer.version} joined`));
+
+sync.state.set(NS, SPAWN_RATE, 5);                     // value must be a number
+sync.state.subscribe(change => { /* persist your own namespace here */ });
+
+sync.rpc.onRequest('getSpawnRate', () => sync.state.get(NS, SPAWN_RATE));
+sync.rpc.request('economy', 'getBalance', { player: 'Steve' }).then(b => console.warn(b));
 ```
 
-After `start()`, `sync.discovery`, `sync.rpc`, and `sync.state` are live.
+Writes are open — any node may write any namespace — and timing is tick-based, so you will never
+get an RPC reply on the tick you sent it.
 
----
+## Documentation
 
-## Discovery
+- [sync](https://bedrock-core.drav.dev/docs/server/sync) — when to use it directly, `SyncNodeOptions`,
+  the `SyncNode` surface
+- [Discovery](https://bedrock-core.drav.dev/docs/server/sync/discovery) ·
+  [RPC](https://bedrock-core.drav.dev/docs/server/sync/rpc) ·
+  [State](https://bedrock-core.drav.dev/docs/server/sync/state)
+- [Protocol](https://bedrock-core.drav.dev/docs/server/sync/protocol) — the envelope, framing and
+  wire behavior
 
-```ts
-sync.discovery.onPeerUp(peer => {
-  console.warn(`${peer.id} v${peer.version} joined`);
-});
-sync.discovery.onPeerDown(peer => console.warn(`${peer.id} left`));
+sync is tested **in-game with GameTests**: several nodes in one realm share the real `system` bus,
+so a test can assert discovery, RPC and state convergence for real. See `packages/test-addon` and
+`packages/test-addon-2` in this repository.
 
-const peers = sync.discovery.peers;
-const economy = sync.discovery.getPeer('economy');
-```
+## License
 
-Addons load in undefined order; sync handles that automatically: each node re-announces on a
-heartbeat and broadcasts a whois on startup so late-loading nodes catch up. Peers that go
-quiet are evicted after a TTL.
-
----
-
-## RPC
-
-```ts
-// Expose a method:
-sync.rpc.onRequest('getBalance', async (params, from) => {
-  return lookupBalance((params as { player: string }).player);
-});
-
-// Call another node:
-const balance = await sync.rpc.request('economy', 'getBalance', { player: 'Steve' });
-```
-
-Requests always time out (default 5 s / 100 ticks), so an absent peer can never hang your code.
-
-A node may call **itself** (`request(sync.id, …)`) — self-addressed messages are delivered
-locally on the next tick rather than over the wire (the bus drops its own echoes, so a
-self-addressed message could never come back). This keeps a uniform "always go through RPC"
-model even when the target turns out to be the caller.
-
----
-
-## State
-
-State is replicated — every node keeps a full in-memory mirror. Reads are local and
-synchronous; writes broadcast a delta.
-
-```ts
-sync.state.set('mycoolitems', 'spawnRate', 5);
-const rate = sync.state.get('mycoolitems', 'spawnRate');      // 5
-const all  = sync.state.getNamespace('economy');              // { currency: 'gold', ... }
-
-sync.state.subscribe(({ ns, key, value, deleted }) => { /* … */ });
-sync.state.delete('mycoolitems', 'spawnRate');
-```
-
-**Typed keys.** Plain string keys read as `unknown`. Declare a key with `stateKey<T>()` and
-`get` infers the value type while `set` type-checks it (a compile-time assertion only — peers
-are not validated):
-
-```ts
-import { stateKey } from '@bedrock-core/sync';
-
-const SPAWN_RATE = stateKey<number>('spawnRate');
-sync.state.set('mycoolitems', SPAWN_RATE, 5);                 // value must be number
-const rate = sync.state.get('mycoolitems', SPAWN_RATE);       // number | undefined
-```
-
-**Writes are open** — any node may write any namespace (shared-mutable). Conflicts resolve
-last-write-wins on a Lamport clock. A node answers late-join snapshot requests for its
-`ownedNamespaces` (default `[id]`).
-
-**Persistence is the addon's job.** sync is in-memory only. To persist, call
-`subscribe`, write to your pack's own dynamic properties, and re-publish on load (defer with
-`system.run` — dynamic properties can't be touched during early execution):
-
-```ts
-import { system, world } from '@minecraft/server';
-
-system.run(() => {
-  const NS = 'mycoolitems';
-  const saved = world.getDynamicProperty(`${NS}:save`);
-  if (typeof saved === 'string') {
-    for (const [k, v] of Object.entries(JSON.parse(saved) as Record<string, unknown>)) {
-      sync.state.set(NS, k, v);
-    }
-  }
-  sync.state.subscribe(change => {
-    if (change.ns !== NS) return;
-    world.setDynamicProperty(`${NS}:save`, JSON.stringify(sync.state.getNamespace(NS)));
-  });
-});
-```
-
----
-
-## Things to know
-
-- **One node per realm.** Creating multiple `SyncNode`s with different ids in one realm is
-  only useful for in-realm testing — use `server-runtime` and `core.node` in production addons.
-- **Timing is tick-based.** Messages flush over ticks; you will never get an RPC reply on the
-  same tick you sent.
-- **Large payloads are fine.** Frames above the engine size limit are split and reassembled transparently.
-
-## Testing
-
-sync is tested **in-game with GameTests**. Several nodes in one realm all share the real
-`system` bus, so a test can create multiple `SyncNode`s and assert discovery, RPC and state
-convergence — see
-[`packages/test-addon`](https://github.com/bedrock-core/server/tree/main/packages/test-addon) and
-[`packages/test-addon-2`](https://github.com/bedrock-core/server/tree/main/packages/test-addon-2).
+MIT

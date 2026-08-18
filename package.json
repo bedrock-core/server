@@ -1,7 +1,7 @@
 {
 	"name": "@bedrock-core/server-monorepo",
 	"version": "0.1.0",
-	"description": "Monorepo root for the @bedrock-core/server packages — modular TypeScript packages for cross-addon compatible Minecraft Bedrock development",
+	"description": "Monorepo root for the @bedrock-core/server packages — a framework for cross-addon compatible Minecraft Bedrock development",
 	"keywords": [
 		"minecraft",
 		"bedrock",
