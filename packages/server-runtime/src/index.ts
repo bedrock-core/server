@@ -81,7 +81,7 @@ export type {
   ConfigLeafAccessor,
   NodeValue,
 } from './config/scopes';
-export { RESERVED_KEYS, validateConfigSchema } from './config/schema';
+export { RESERVED_KEYS, flattenGroups, flattenSchema, isGroupMetaKey, validateConfigSchema } from './config/schema';
 export type {
   ConfigDefinition,
   ConfigEntry,
@@ -91,8 +91,12 @@ export type {
   StringEntry,
   EnumEntry,
   ListEntry,
+  MultiselectEntry,
   FlatSchema,
+  FlatGroups,
+  GroupMeta,
   SerializedEntry,
+  SerializedGroup,
   SchemaToValue,
   DotPath,
   PathValue,

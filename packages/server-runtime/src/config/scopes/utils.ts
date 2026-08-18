@@ -1,9 +1,13 @@
-import type { ConfigValue, FlatSchema, SchemaNode } from '../schema';
-import { isEntry } from '../schema';
+import type { ConfigValue, FlatSchema, SchemaGroup } from '../schema';
+import { childEntries, childNode, isEntry } from '../schema';
 import type { ChangeEmitter } from './change-emitter';
 
-/** A schema subtree: group keys → nested groups or leaf entries. */
-export type SchemaTree = Record<string, SchemaNode>;
+/**
+ * A schema subtree: group keys → nested groups or leaf entries, plus the group's own
+ * `$label`/`$description`. Walk it with `childEntries`/`childNode`, never `Object.entries` —
+ * those are what drop the display strings back out.
+ */
+export type SchemaTree = SchemaGroup;
 
 /** Flat dot-path → stored value view, as kept by the scopes. */
 export type FlatValues = ReadonlyMap<string, ConfigValue>;
@@ -147,7 +151,7 @@ export function buildNestedObject(flat: Record<string, ConfigValue>, schema?: Fl
 
     const leaf = parts[parts.length - 1];
 
-    if (schema?.[path]?.type === 'list' && typeof value === 'string') {
+    if (isArrayValued(schema?.[path]?.type) && typeof value === 'string') {
       obj[leaf] = parseListValue(value);
     } else {
       obj[leaf] = value;
@@ -159,11 +163,22 @@ export function buildNestedObject(flat: Record<string, ConfigValue>, schema?: Fl
 
 // ─── Tree reconstruction (shared by both config scopes) ────────────────────────
 
-/** Resolve one leaf: stored value → schema default; list entries parse back to arrays. */
+/**
+ * The entry types whose value is an ARRAY, and so travels as that array's JSON.
+ *
+ * A stored value is one of `ConfigValue`'s three scalars, so both of these round-trip through a
+ * string — the parse back into an array has to key off the schema, since the stored form of an
+ * empty list and the stored form of the literal text `[]` are the same two characters.
+ */
+function isArrayValued(type: string | undefined): boolean {
+  return type === 'list' || type === 'multiselect';
+}
+
+/** Resolve one leaf: stored value → schema default; array-valued entries parse back to arrays. */
 function resolveLeaf(path: string, flatSchema: FlatSchema, values: FlatValues): unknown {
   const raw = values.get(path) ?? flatSchema[path]?.default;
 
-  if (flatSchema[path]?.type === 'list' && typeof raw === 'string') {
+  if (isArrayValued(flatSchema[path]?.type) && typeof raw === 'string') {
     return parseListValue(raw);
   }
 
@@ -179,7 +194,7 @@ export function buildTreeValue(
 ): Record<string, unknown> {
   const result: Record<string, unknown> = {};
 
-  for (const [key, node] of Object.entries(tree)) {
+  for (const [key, node] of childEntries(tree)) {
     const path = prefix ? `${prefix}.${key}` : key;
 
     if (isEntry(node)) {
@@ -206,7 +221,7 @@ export function valueAtPath(
   let prefix = '';
 
   for (let i = 0; i < parts.length - 1; i++) {
-    const node = subtree[parts[i]];
+    const node = childNode(subtree, parts[i]);
 
     if (!node || isEntry(node)) { return undefined; }
 
@@ -215,7 +230,7 @@ export function valueAtPath(
   }
 
   const last = parts[parts.length - 1];
-  const node = subtree[last];
+  const node = childNode(subtree, last);
 
   if (!node) { return undefined; }
 

@@ -58,6 +58,8 @@ import {
   type ServerScopeSchema,
   type DimensionScopeSchema,
   type PlayerScopeSchema,
+  type FlatGroups,
+  flattenGroups,
   flattenSchema,
   validateConfigSchema,
 } from './schema';
@@ -70,7 +72,7 @@ import {
   savePlayerValue,
   loadedDimensionIds,
 } from './persistence';
-import { broadcastSchema, CONFIG_SCHEMA_KEY } from './broadcast';
+import { broadcastGroups, broadcastSchema, CONFIG_GROUPS_KEY, CONFIG_SCHEMA_KEY } from './broadcast';
 import { ServerConfigScope, EntityConfigScope, type ServerConfigTree } from './scopes';
 import { buildNestedObject, flattenObject } from './scopes/utils';
 import { registerConfigRpc } from './rpc';
@@ -158,6 +160,16 @@ export class RemoteConfigAccessor {
   /** Schema with `server.`/`dimension.`/`player.` prefixes on every key. Used by UI to determine scope. */
   get scopedSchema(): FlatSchema {
     return this._node.state.get(this._addonId, CONFIG_SCHEMA_KEY) ?? {};
+  }
+
+  /**
+   * Group display strings with the same scope prefixes {@link scopedSchema} carries.
+   *
+   * Empty for an addon that names no group, and for one running a runtime that predates the
+   * key — both mean the same thing to a reader: fall back to the key-derived title.
+   */
+  get scopedGroups(): FlatGroups {
+    return this._node.state.get(this._addonId, CONFIG_GROUPS_KEY) ?? {};
   }
 
   /** Unprefixed flat schema, derived from {@link scopedSchema} by stripping the scope segment. */
@@ -290,6 +302,10 @@ export class ConfigRegistry {
     const serverFlat = flattenSchema(serverTree);
     const dimensionFlat = flattenSchema(dimensionTree);
     const playerFlat = flattenSchema(playerTree);
+
+    const serverGroups = flattenGroups(serverTree);
+    const dimensionGroups = flattenGroups(dimensionTree);
+    const playerGroups = flattenGroups(playerTree);
 
     const serverValues = new Map<string, ConfigValue>(
       Object.entries(serverFlat).map(([k, e]) => [k, e.default]),
@@ -440,6 +456,7 @@ export class ConfigRegistry {
       }
 
       broadcastSchema(this._node.state, this._addonId, serverFlat, dimensionFlat, playerFlat);
+      broadcastGroups(this._node.state, this._addonId, serverGroups, dimensionGroups, playerGroups);
     });
 
     // ─── Player lifecycle ────────────────────────────────────────────────────────

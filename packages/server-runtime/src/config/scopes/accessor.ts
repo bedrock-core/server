@@ -23,15 +23,15 @@
  * entity's tree share one implementation and behave identically.
  */
 import type { Unsubscribe } from '@bedrock-core/sync';
-import type { DeepPartial, DotPath, PathValue, SchemaNode, SchemaToValue } from '../schema';
-import { isEntry } from '../schema';
+import type { ChildKeys, DeepPartial, DotPath, PathValue, SchemaToValue } from '../schema';
+import { childEntries, isEntry } from '../schema';
 import type { ChangeListener } from './change-emitter';
 import type { SchemaTree } from './utils';
 
 // ─── Node types ────────────────────────────────────────────────────────────────
 
 /** Structural shape of a schema leaf — the compile-time mirror of the runtime `isEntry` check. */
-type LeafEntry = { type: 'boolean' | 'number' | 'string' | 'enum' | 'list' };
+type LeafEntry = { type: 'boolean' | 'number' | 'string' | 'enum' | 'list' | 'multiselect' };
 
 /**
  * The value type of **one** schema node. Defers to {@link SchemaToValue} by wrapping the node in
@@ -60,13 +60,24 @@ export interface ConfigGroupAccessor<S> {
   subscribe<P extends DotPath<S>>(path: P, listener: ChangeListener<PathValue<S, P>>): Unsubscribe;
 }
 
-/** One accessor node per schema key, keyed exactly as the schema is. */
-export type ConfigChildren<S> = { [K in keyof S & string]: ConfigNode<S[K]> };
+/**
+ * One accessor node per schema key, keyed exactly as the schema is — minus a group's own
+ * `$label`/`$description`, which are strings describing the node rather than nodes of their own.
+ */
+export type ConfigChildren<S> = { [K in ChildKeys<S>]: ConfigNode<S[K]> };
 
-/** A node of the tree: a leaf accessor, or a group's verbs plus its own children. */
+/**
+ * A node of the tree: a leaf accessor, or a group's verbs plus its own children.
+ *
+ * The group arm tests `Record<string, unknown>` rather than `Record<string, SchemaNode>`: a
+ * group that names itself holds `$label: string` alongside its children, which is not a
+ * `SchemaNode`, and the stricter test collapsed every such group — and everything under it —
+ * to `never`. Anything reaching this arm has already failed the leaf test, so "object" is as
+ * precise as the distinction needs to be.
+ */
 export type ConfigNode<N>
   = N extends LeafEntry ? ConfigLeafAccessor<N>
-    : N extends Record<string, SchemaNode> ? ConfigGroupAccessor<N> & ConfigChildren<N>
+    : N extends Record<string, unknown> ? ConfigGroupAccessor<N> & ConfigChildren<N>
       : never;
 
 /**
@@ -113,7 +124,7 @@ export function buildAccessorChildren(
 ): Record<string, unknown> {
   const children: Record<string, unknown> = {};
 
-  for (const [key, node] of Object.entries(tree)) {
+  for (const [key, node] of childEntries(tree)) {
     const path = prefix ? `${prefix}.${key}` : key;
 
     children[key] = isEntry(node)
