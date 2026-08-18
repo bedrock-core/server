@@ -28,7 +28,8 @@
 		}
 	},
 	"files": [
-		"src/**/*"
+		"src/**/*",
+		"!src/**/__type-tests__/**"
 	],
 	"scripts": {
 		"build": "tsc -p tsconfig.json",
