@@ -27,6 +27,9 @@
 			"import": "./src/index.ts"
 		}
 	},
+	"publishConfig": {
+		"access": "public"
+	},
 	"files": [
 		"src/**/*",
 		"!src/**/__type-tests__/**"
