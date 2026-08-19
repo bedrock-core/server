@@ -42,13 +42,14 @@ __metadata:
   languageName: node
   linkType: soft
 
-"@bedrock-core/i18n@portal:../ui/packages/i18n::locator=%40bedrock-core%2Fserver-monorepo%40workspace%3A.":
-  version: 0.0.0-use.local
-  resolution: "@bedrock-core/i18n@portal:../ui/packages/i18n::locator=%40bedrock-core%2Fserver-monorepo%40workspace%3A."
+"@bedrock-core/i18n@npm:^0.1.0":
+  version: 0.1.0
+  resolution: "@bedrock-core/i18n@npm:0.1.0"
   peerDependencies:
     "@minecraft/server": ">=2.8.0"
+  checksum: 10c0/b79f6d71a001831d7fc481a3a080e52cbd3d826646dd497907714dcf03750fbbf8f175508a2704502a01bf0523103016c76fd34527584b680bb7ee2e4a99a6d4
   languageName: node
-  linkType: soft
+  linkType: hard
 
 "@bedrock-core/navigation@portal:../ui/packages/navigation::locator=%40bedrock-core%2Fserver-monorepo%40workspace%3A.":
   version: 0.0.0-use.local
