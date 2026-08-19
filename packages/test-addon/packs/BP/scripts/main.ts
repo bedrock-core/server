@@ -26,6 +26,7 @@ const config = core.register({
   creatorName: i18n.key($ => $.meta.creator),
   version: '1.0.0',
   description: i18n.key($ => $.meta.description),
+  icon: 'textures/ui/economy/icon',
   translations: bundle,
   guide: guides,
   config: configDef,
