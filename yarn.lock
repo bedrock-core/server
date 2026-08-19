@@ -75,6 +75,8 @@ __metadata:
   dependencies:
     "@changesets/changelog-github": "npm:^0.7.0"
     "@changesets/cli": "npm:^2.31.0"
+    "@eslint/js": "npm:^10.0.1"
+    "@eslint/json": "npm:^2.0.0"
     "@stylistic/eslint-plugin": "npm:^5.10.0"
     "@types/node": "npm:^26.0.1"
     concurrently: "npm:^10.0.3"
