@@ -9,4 +9,4 @@
  * - `@bedrock-core/config` renders it as the synthetic bedrock-core entry in the addon list.
  * - {@link HostElection} elects the highest version present as the UI host.
  */
-export const RUNTIME_VERSION = '0.0.0';
+export const RUNTIME_VERSION = '0.1.0';
