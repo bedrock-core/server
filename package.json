@@ -50,7 +50,7 @@
 		"lint": "eslint .",
 		"changeset": "changeset",
 		"version-packages": "changeset version && node scripts/sync-runtime-version.mjs",
-		"release": "yarn lint:libs && yarn build:libs && yarn workspaces foreach -A --no-private npm publish --tolerate-republish && changeset tag"
+		"release": "yarn lint:libs && yarn build:libs && node scripts/publish-tarballs.mjs && changeset tag"
 	},
 	"devDependencies": {
 		"@changesets/changelog-github": "^0.7.0",

@@ -30,6 +30,7 @@ concurrency: ${{ github.workflow }}-${{ github.ref }}
 permissions:
   contents: write        # push the version-bump commit/branch, tags and releases
   pull-requests: write   # open and update the "Version Packages" PR
+  id-token: write        # OIDC for npm trusted publishing — no npm token anywhere
 
 jobs:
   release:
@@ -52,6 +53,11 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
           scope: '@bedrock-core'
 
+      # Trusted publishing needs the OIDC exchange in the npm CLI, which shipped in
+      # npm 11.5.1 — newer than what the runner's Node bundles.
+      - name: Update npm for trusted publishing
+        run: npm install -g npm@latest
+
       - name: Install publishable libraries only
         run: yarn workspaces focus @bedrock-core/server-monorepo @bedrock-core/server @bedrock-core/sync @bedrock-core/server-runtime
 
@@ -63,8 +69,7 @@ jobs:
           commit: 'chore(release): version packages'
           title: 'chore(release): version packages'
         env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-          # setup-node writes an .npmrc keyed on NODE_AUTH_TOKEN, not NPM_TOKEN — without
-          # this every publish 401s. Yarn reads NPM_TOKEN, npm reads NODE_AUTH_TOKEN; set both.
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          # No npm token: publishes authenticate via OIDC trusted publishing (the
+          # id-token permission above + a trusted publisher configured per package
+          # on npmjs.com pointing at this repo and workflow file).
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
