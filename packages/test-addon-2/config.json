@@ -12,7 +12,7 @@
 		"filterDefinitions": {
 			"bundler": {
 				"url": "github.com/bedrock-core/regolith-filters",
-				"version": "1.1.1"
+				"version": "1.1.2"
 			},
 			"guides": {
 				"runWith": "nodejs",
@@ -21,6 +21,10 @@
 			"i18n": {
 				"runWith": "nodejs",
 				"script": "../../../regolith-filters/i18n/main.js"
+			},
+			"manifest": {
+				"runWith": "nodejs",
+				"script": "../../../regolith-filters/manifest/main.js"
 			}
 		},
 		"formatVersion": "1.4.0",
@@ -32,6 +36,38 @@
 					"target": "development"
 				},
 				"filters": [
+					{
+						"filter": "manifest"
+					},
+					{
+						"filter": "guides",
+						"settings": {
+							"namespace": "drav0011_shop"
+						}
+					},
+					{
+						"filter": "i18n"
+					},
+					{
+						"filter": "bundler",
+						"settings": {
+							"debug": true
+						}
+					}
+				]
+			},
+			"build-test": {
+				"export": {
+					"build": "standard",
+					"bpPath": "./build/test/BP",
+					"readOnly": false,
+					"rpPath": "./build/test/RP",
+					"target": "exact"
+				},
+				"filters": [
+					{
+						"filter": "manifest"
+					},
 					{
 						"filter": "guides",
 						"settings": {

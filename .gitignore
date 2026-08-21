@@ -55,3 +55,13 @@ lerna-debug.log*
 .cache
 
 TODO
+# BDS runner (binary cache, server tree, run logs)
+.bds/
+
+# Addon build artifacts (each addon also ignores its own /build)
+packages/*/build/
+
+# …but the parser's fixtures are real BDS transcripts and must be committed: the
+# report parser is developed against real engine output, not hand-written samples.
+!packages/bds-runner/src/**/fixtures/
+!packages/bds-runner/src/**/fixtures/*.log

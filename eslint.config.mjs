@@ -130,5 +130,17 @@ export default defineConfig([
       '@typescript-eslint/naming-convention': 'off',
     },
   },
+
+  // The BDS runner is a Node tool, not pack code, and it lives on three untyped boundaries:
+  // manifests read off disk, the BDS-Versions index read off the network, and level.dat read
+  // through prismarine-nbt. An assertion at those boundaries states the shape the parser was
+  // written against; a type guard would restate the same unverified claim with more ceremony.
+  // Everything downstream of them is ordinary typed code and stays under the rule.
+  {
+    files: ['packages/bds-runner/**/*.ts'],
+    rules: {
+      '@typescript-eslint/no-unsafe-type-assertion': 'off',
+    },
+  },
 ]);
 

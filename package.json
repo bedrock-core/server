@@ -24,6 +24,7 @@
 	"type": "module",
 	"packageManager": "yarn@4.9.3",
 	"workspaces": [
+		"packages/bds-runner",
 		"packages/server",
 		"packages/sync",
 		"packages/server-runtime",
@@ -48,23 +49,30 @@
 		"prepack": "yarn build",
 		"watch": "yarn install && nodemon",
 		"lint": "eslint .",
+		"test": "yarn workspaces foreach -ptA run test",
+		"test:mc": "yarn workspaces foreach -A --jobs=1 run build:test && bc-bds run --packs packages/test-addon/build/test --packs packages/test-addon-2/build/test --tag core --expect-registered 6",
+		"bds:fetch": "yarn workspace @bedrock-core/bds-runner run fetch",
+		"bds:where": "yarn workspace @bedrock-core/bds-runner run where",
 		"changeset": "changeset",
-		"version-packages": "changeset version && node scripts/sync-runtime-version.mjs",
+		"version-packages": "changeset version && node scripts/sync-meta-version.mjs && node scripts/sync-runtime-version.mjs",
 		"release": "yarn lint:libs && yarn build:libs && node scripts/publish-tarballs.mjs && changeset tag"
 	},
 	"devDependencies": {
+		"@bedrock-core/bds-runner": "workspace:^",
 		"@changesets/changelog-github": "^0.7.0",
 		"@changesets/cli": "^2.31.0",
 		"@eslint/js": "^10.0.1",
 		"@eslint/json": "^2.0.0",
 		"@stylistic/eslint-plugin": "^5.10.0",
 		"@types/node": "^26.0.1",
+		"@vitest/coverage-v8": "^4.1.10",
 		"concurrently": "^10.0.3",
 		"eslint": "^10.5.0",
 		"globals": "^17.7.0",
 		"jiti": "^2.7.0",
 		"nodemon": "^3.1.14",
 		"typescript": "^6.0.3",
-		"typescript-eslint": "^8.62.0"
+		"typescript-eslint": "^8.62.0",
+		"vitest": "^4.1.10"
 	}
 }

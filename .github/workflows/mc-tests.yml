@@ -1,0 +1,100 @@
+# The slow gate: builds the test addons with Regolith and runs their GameTests on a real Bedrock
+# Dedicated Server. Kept off every-push because it downloads a ~200 MB server and takes minutes;
+# opt in with the `run-mc-tests` label on a PR, or let it run on main.
+#
+# Three repos are checked out side by side, the same arrangement as the release rehearsal: this
+# repo's `portal:` resolutions need a sibling `ui`, and the addons' Regolith config runs the guides,
+# i18n and manifest filters from a sibling `regolith-filters`.
+name: GameTests (BDS)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [labeled, synchronize]
+  workflow_dispatch:
+
+concurrency:
+  group: mc-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  REGOLITH_VERSION: '1.8.0'
+
+jobs:
+  gametest:
+    if: >-
+      github.event_name != 'pull_request' ||
+      contains(github.event.pull_request.labels.*.name, 'run-mc-tests')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    defaults:
+      run:
+        working-directory: server-public
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: server-public
+
+      - uses: actions/checkout@v4
+        with:
+          repository: bedrock-core/ui
+          path: ui
+
+      - uses: actions/checkout@v4
+        with:
+          repository: bedrock-core/regolith-filters
+          path: regolith-filters
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: yarn
+          cache-dependency-path: server-public/yarn.lock
+
+      - run: corepack enable
+
+      - run: yarn install --immutable
+
+      - name: Install Regolith
+        run: |
+          curl -sSL -o regolith.tar.gz \
+            "https://github.com/Bedrock-OSS/regolith/releases/download/${REGOLITH_VERSION}/regolith-${REGOLITH_VERSION}-linux-amd64.tar.gz"
+          tar xzf regolith.tar.gz
+          sudo install regolith /usr/local/bin/
+          regolith --version
+
+      - name: Read the pinned server version
+        id: bds
+        run: echo "version=$(jq -r .version packages/bds-runner/bds-version.json)" >> "$GITHUB_OUTPUT"
+
+      # Keyed on the pinned version alone, not on a file hash: editing the note in bds-version.json
+      # must not invalidate a 200 MB download.
+      - name: Cache Bedrock Dedicated Server
+        uses: actions/cache@v4
+        with:
+          path: server-public/.bds/cache
+          key: bds-${{ runner.os }}-${{ steps.bds.outputs.version }}
+
+      - run: yarn bds:fetch
+
+      # Installs the url-pinned bundler and, for the filters run from the sibling checkout, their
+      # npm dependencies — Regolith does that for local-script filters too.
+      - run: yarn regolith-install
+
+      # Both addons are built and deployed into one world: the last test asserts that the Shop pack
+      # is registered with the live runtime, so it can only pass with both installed.
+      - name: GameTests
+        run: yarn test:mc
+
+      # The server console is the only debugging surface for a CI failure, so keep it either way.
+      - name: Upload server logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bds-logs
+          path: server-public/.bds/logs/**
+          if-no-files-found: warn
+          retention-days: 14

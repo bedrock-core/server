@@ -9,7 +9,6 @@ import bundle from '@bedrock-core/generated/i18n';
 import { createI18n } from '@bedrock-core/i18n';
 import guides from '@bedrock-core/generated/guides';
 import { configDef, setupEconomy } from './example';
-import './tests';
 
 // The addon's typed verbs over its resources (packs/data/i18n). Creating the instance
 // also registers it as the default translation source for any UI this addon renders.
