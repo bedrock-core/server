@@ -25,6 +25,10 @@
 			"manifest": {
 				"runWith": "nodejs",
 				"script": "../../../regolith-filters/manifest/main.js"
+			},
+			"ui-compile": {
+				"runWith": "nodejs",
+				"script": "../../../regolith-filters/ui-compile/main.js"
 			}
 		},
 		"formatVersion": "1.4.0",
@@ -47,6 +51,9 @@
 					},
 					{
 						"filter": "i18n"
+					},
+					{
+						"filter": "ui-compile"
 					},
 					{
 						"filter": "bundler",
@@ -76,6 +83,9 @@
 					},
 					{
 						"filter": "i18n"
+					},
+					{
+						"filter": "ui-compile"
 					},
 					{
 						"filter": "bundler",

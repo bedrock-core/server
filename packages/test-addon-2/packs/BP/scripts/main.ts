@@ -8,6 +8,7 @@ import { ui } from '@bedrock-core/config';
 import bundle from '@bedrock-core/generated/i18n';
 import { createI18n } from '@bedrock-core/i18n';
 import guides from '@bedrock-core/generated/guides';
+import { setupCrafting } from './container/crafting';
 import { configDef, setupShop } from './example';
 
 // The addon's typed verbs over its resources (packs/data/i18n). Creating the instance
@@ -36,6 +37,8 @@ core.register({
 });
 
 setupShop();
+// The Shop's crafting table: a compiled container screen, served over an entity.
+setupCrafting();
 // Mount the shared config UI — command registration is first-wins across addons, so with
 // several bedrock-core addons installed exactly one realm serves the UI for all of them.
 ui(core);

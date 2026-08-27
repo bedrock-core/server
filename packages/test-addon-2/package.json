@@ -14,9 +14,11 @@
 	"dependencies": {
 		"@bedrock-core/config": "*",
 		"@bedrock-core/i18n": "*",
+		"@bedrock-core/ore-styled": "*",
 		"@bedrock-core/server-runtime": "workspace:^",
 		"@bedrock-core/sync": "workspace:^",
 		"@bedrock-core/ui": "^0.9.1",
+		"@bedrock-core/ui-compile": "*",
 		"@minecraft/server": "2.8.0",
 		"@minecraft/server-ui": "2.1.0",
 		"typescript": "^6.0.3"
