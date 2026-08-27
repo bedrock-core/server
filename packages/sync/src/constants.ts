@@ -1,7 +1,25 @@
 /** Protocol-wide constants shared by every layer. */
 
 /** Bumped on any breaking change to the envelope or frame wire format. */
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
+
+/**
+ * Leading character of a script-event message, saying which shape follows. See `wire.ts` for what
+ * each one carries and why a one-piece message no longer travels inside a frame.
+ */
+export const WireTag = {
+
+  /** The rest of the message is one JSON envelope. */
+  Envelope: '0',
+
+  /** The rest is one frame of an envelope too large to send whole. */
+  Chunk: '1',
+
+  /** The rest is a JSON array of envelopes packed into a single message. */
+  Batch: '2',
+} as const;
+
+export type WireTag = typeof WireTag[keyof typeof WireTag];
 
 /** The single script-event namespace all bedrock-core traffic flows through. */
 export const BUS_NAMESPACE = 'bedrock-core';

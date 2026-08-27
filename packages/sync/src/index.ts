@@ -40,4 +40,4 @@ export type { SnapshotEntry, StateChange, StateChangeListener, StateKey, StateOp
 
 export type { Unsubscribe } from './bus';
 export type { Envelope } from './envelope';
-export { MessageType, PROTOCOL_VERSION } from './constants';
+export { MAX_MESSAGE, MessageType, PROTOCOL_VERSION } from './constants';

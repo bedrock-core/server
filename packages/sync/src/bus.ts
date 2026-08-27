@@ -2,16 +2,19 @@
  * The message bus: the one transport every higher layer builds on.
  *
  * Responsibilities:
- *  - encode/decode {@link Envelope}s and split/reassemble them into wire {@link Frame}s;
- *  - route all outbound traffic through the {@link OutboundQueue} (rate limiting);
+ *  - encode/decode {@link Envelope}s, sending one whole where it fits and splitting it into wire
+ *    {@link Frame}s where it does not;
+ *  - route all outbound traffic through the {@link OutboundQueue}, which rate-limits it and packs
+ *    small messages together;
  *  - on receive, drop the node's own echoes (matched by instance id, not src, so a colliding
  *    twin is still heard) and anything addressed elsewhere, then dispatch by message type.
  */
 import { system, type ScriptEventCommandMessageAfterEvent } from '@minecraft/server';
-import { Reassembler, decodeFrame, splitIntoFrames } from './chunk';
+import { Reassembler, splitIntoFrames } from './chunk';
 import { BUS_CHANNEL, BUS_NAMESPACE, MAX_MESSAGE, PROTOCOL_VERSION } from './constants';
 import { type Envelope, decodeEnvelope, encodeEnvelope } from './envelope';
 import { OutboundQueue } from './queue';
+import { decodeWire, tagChunk } from './wire';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type Unsubscribe = (...args: any[]) => void;
@@ -53,7 +56,7 @@ export class Bus {
     this._selfId = selfId;
     this._instanceId = options.instanceId ?? `${system.currentTick.toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
     this._maxMessage = options.maxMessage ?? MAX_MESSAGE;
-    this._queue = new OutboundQueue({ channel: BUS_CHANNEL });
+    this._queue = new OutboundQueue({ channel: BUS_CHANNEL, maxMessage: this._maxMessage });
   }
 
   get selfId(): string {
@@ -64,7 +67,7 @@ export class Bus {
     return this._instanceId;
   }
 
-  /** Pending outbound message count (inspection helper). */
+  /** Pending outbound entries, before any packing (inspection helper). */
   get queueSize(): number {
     return this._queue.size;
   }
@@ -121,9 +124,20 @@ export class Bus {
       return mid;
     }
 
-    const frames = splitIntoFrames(encodeEnvelope(envelope), mid, this._maxMessage);
+    const encoded = encodeEnvelope(envelope);
 
-    for (const frame of frames) { this._queue.enqueue(frame); }
+    // The wire tag is part of the message, so both branches get one character less than the cap.
+    // An envelope that fits goes whole and may be packed with its neighbours; only one that does
+    // not is split, and its frames are each a message of their own.
+    if (encoded.length + 1 <= this._maxMessage) {
+      this._queue.enqueueEnvelope(encoded);
+
+      return mid;
+    }
+
+    for (const frame of splitIntoFrames(encoded, mid, this._maxMessage - 1)) {
+      this._queue.enqueueStandalone(tagChunk(frame));
+    }
 
     return mid;
   }
@@ -158,20 +172,31 @@ export class Bus {
   private handleScriptEvent(event: ScriptEventCommandMessageAfterEvent): void {
     if (event.id !== BUS_CHANNEL) { return; }
 
-    const frame = decodeFrame(event.message);
+    const wire = decodeWire(event.message);
 
-    if (!frame) { return; }
+    if (!wire) { return; }
 
-    const payload = this._reassembler.accept(frame, system.currentTick);
+    if (wire.kind === 'envelopes') {
+      for (const envelope of wire.envelopes) { this.receive(envelope); }
+
+      return;
+    }
+
+    const payload = this._reassembler.accept(wire.frame, system.currentTick);
 
     if (payload === undefined) { return; }
 
     const envelope = decodeEnvelope(payload);
 
-    if (!envelope) { return; }
+    if (envelope) { this.receive(envelope); }
+  }
 
-    // Drop our own echoes (matched by instance id, so a same-src twin is still delivered).
-    // Self-addressed messages never reach here — `send` loops them back locally.
+  /**
+   * Deliver an envelope that arrived over the wire, dropping our own echoes — matched by
+   * instance id, so a same-src twin is still heard. Self-addressed messages never reach here;
+   * `send` loops those back locally.
+   */
+  private receive(envelope: Envelope): void {
     if (envelope.iid === this._instanceId) { return; }
 
     this.dispatch(envelope);

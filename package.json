@@ -34,6 +34,7 @@
 	"resolutions": {
 		"@bedrock-core/ui": "portal:../ui",
 		"@bedrock-core/ui-runtime": "portal:../ui/packages/ui-runtime",
+		"@bedrock-core/ui-compile": "portal:../ui/packages/ui-compile",
 		"@bedrock-core/flexbox": "portal:../ui/packages/flexbox",
 		"@bedrock-core/navigation": "portal:../ui/packages/navigation",
 		"@bedrock-core/ore-styled": "portal:../ui/packages/ore-styled",
@@ -50,7 +51,10 @@
 		"watch": "yarn install && nodemon",
 		"lint": "eslint .",
 		"test": "yarn workspaces foreach -ptA run test",
+		"bench": "yarn workspace @bedrock-core/sync run bench",
 		"test:mc": "yarn workspaces foreach -A --jobs=1 run build:test && bc-bds run --packs packages/test-addon/build/test --packs packages/test-addon-2/build/test --tag core --expect-registered 6",
+		"test:mc:bench": "yarn workspaces foreach -A --jobs=1 run build:test && bc-bds run --packs packages/test-addon/build/test --packs packages/test-addon-2/build/test --tag bench --expect-registered 5 --idle 120 && node scripts/bench-report.mjs",
+		"bench:report": "node scripts/bench-report.mjs",
 		"bds:fetch": "yarn workspace @bedrock-core/bds-runner run fetch",
 		"bds:where": "yarn workspace @bedrock-core/bds-runner run where",
 		"changeset": "changeset",

@@ -3,8 +3,10 @@
  * realm (they talk over the real `system` bus); the last asserts the separate "Shop" pack
  * (test-addon-2) is present, so it only passes when both addons are installed.
  *
- * Run in-game: `/gametest runset core` (or `/gametest run core:<name>`).
+ * Run in-game: `/gametest runset core` (or `/gametest run core:<name>`). The `bench` tag in
+ * `./bench` is registered alongside them but runs only when asked for by name.
  */
+import './bench';
 import { type Test, register } from '@minecraft/server-gametest';
 import { Runtime, core } from '@bedrock-core/server-runtime';
 

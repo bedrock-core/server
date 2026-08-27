@@ -37,11 +37,10 @@ export function encodeEnvelope(envelope: Envelope): string {
 }
 
 /**
- * Parse an envelope from its wire string. Returns `undefined` for malformed JSON, a
- * structurally invalid envelope, or a mismatched protocol version — callers ignore those
- * rather than throwing, so one bad sender can never crash a listener.
+ * Structural check for a parsed envelope, including its protocol version. Exported because a
+ * batched message arrives as an array of already-parsed objects rather than as JSON text.
  */
-function isEnvelope(value: unknown): value is Envelope {
+export function isEnvelope(value: unknown): value is Envelope {
   if (typeof value !== 'object' || value === null) { return false; }
 
   if (!('v' in value && 'src' in value && 'iid' in value && 'type' in value && 'mid' in value)) { return false; }
@@ -59,6 +58,11 @@ function isEnvelope(value: unknown): value is Envelope {
   );
 }
 
+/**
+ * Parse an envelope from its wire string. Returns `undefined` for malformed JSON, a structurally
+ * invalid envelope, or a mismatched protocol version — callers ignore those rather than throwing,
+ * so one bad sender can never crash a listener.
+ */
 export function decodeEnvelope(json: string): Envelope | undefined {
   let parsed: unknown;
 

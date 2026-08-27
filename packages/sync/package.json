@@ -36,6 +36,9 @@
 	],
 	"scripts": {
 		"build": "tsc -p tsconfig.json",
+		"typecheck": "tsc -p tsconfig.bench.json",
+		"test": "vitest run",
+		"bench": "vitest bench --run",
 		"lint": "eslint ."
 	},
 	"devDependencies": {
@@ -43,7 +46,8 @@
 		"@stylistic/eslint-plugin": "^5.10.0",
 		"eslint": "^10.5.0",
 		"typescript": "^6.0.3",
-		"typescript-eslint": "^8.62.0"
+		"typescript-eslint": "^8.62.0",
+		"vitest": "^4.1.10"
 	},
 	"peerDependencies": {
 		"@minecraft/server": ">=2.8.0"
