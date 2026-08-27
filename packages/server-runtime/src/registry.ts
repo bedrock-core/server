@@ -7,8 +7,22 @@
  * A collision (two addons with the same namespace) is surfaced via
  * {@link Registry.onNamespaceCollision} and logged. Dependencies are declared and matched
  * by namespace and are soft: a missing one warns but never blocks.
+ *
+ * An addon whose transport is too far from this one's to negotiate is not a registry entry — there
+ * is no manifest to read without a conversation — but it is not silence either.
+ * {@link Registry.incompatible} lists what was heard and could not be reached, so the addon list
+ * can show a row saying so instead of leaving one out.
  */
-import type { CollisionInfo, Discovery, PeerInfo, Unsubscribe } from '@bedrock-core/sync';
+import {
+  PROTOCOL_MAX,
+  PROTOCOL_MIN,
+  type CollisionInfo,
+  type Discovery,
+  type IncompatibleListener,
+  type IncompatiblePeer,
+  type PeerInfo,
+  type Unsubscribe,
+} from '@bedrock-core/sync';
 import { addonNamespace, type AddonManifest, manifestFromPeer, runtimeVersionFromPeer } from './manifest';
 import { RUNTIME_VERSION } from './runtime-version';
 
@@ -28,6 +42,7 @@ export class Registry {
   private readonly _onRegister = new Set<AddonListener>();
   private readonly _onUnregister = new Set<AddonListener>();
   private readonly _onCollision = new Set<CollisionListener>();
+  private readonly _onIncompatible = new Set<IncompatibleListener>();
   private readonly _onDepsSatisfied = new Set<() => void>();
   private readonly _disposers: Unsubscribe[] = [];
   private _depsSatisfied: boolean;
@@ -46,6 +61,7 @@ export class Registry {
       this._discovery.onPeerUp(peer => this.handlePeerUp(peer)),
       this._discovery.onPeerDown(peer => this.handlePeerDown(peer)),
       this._discovery.onCollision(info => this.handleCollision(info)),
+      this._discovery.onIncompatible(peer => this.handleIncompatible(peer)),
     );
 
     const missing = this.missingDependencies();
@@ -93,6 +109,23 @@ export class Registry {
 
     return (): void => {
       this._onUnregister.delete(listener);
+    };
+  }
+
+  /**
+   * Addons heard on the bus that this build cannot talk to, because the protocol ranges the two
+   * were built with do not overlap. Present in the world, absent from {@link Registry.all}.
+   */
+  incompatible(): IncompatiblePeer[] {
+    return this._discovery.incompatiblePeers;
+  }
+
+  /** Notified the first time an unreachable addon is heard. Returns an unsubscribe function. */
+  onIncompatible(listener: IncompatibleListener): Unsubscribe {
+    this._onIncompatible.add(listener);
+
+    return (): void => {
+      this._onIncompatible.delete(listener);
     };
   }
 
@@ -147,6 +180,15 @@ export class Registry {
     for (const listener of this._onUnregister) { listener(addon); }
 
     this.evaluateDependencies();
+  }
+
+  private handleIncompatible(peer: IncompatiblePeer): void {
+    console.warn(
+      `[bedrock-core] '${peer.id}' speaks sync protocol ${peer.pmin}-${peer.pmax}, this addon speaks `
+      + `${PROTOCOL_MIN}-${PROTOCOL_MAX}; the two cannot talk. Update whichever is older.`,
+    );
+
+    for (const listener of this._onIncompatible) { listener(peer); }
   }
 
   private handleCollision(info: CollisionInfo): void {

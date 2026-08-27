@@ -11,6 +11,9 @@
  * dozen nodes heartbeating spends one slot per flush instead of a dozen, and a burst of state
  * deltas costs slots proportional to its size rather than to its count.
  *
+ * Packing is conditional: it produces a shape only a reader that knows the batch tag can parse, so
+ * the bus switches it off for as long as a peer that predates the tag is live (see `setPacking`).
+ *
  * Chunks are never packed. An envelope is only split when it fills a message on its own, so there
  * is nothing left over to pack it with, and frames of one group must stay in the queue's order.
  */
@@ -42,6 +45,7 @@ export class OutboundQueue {
   private readonly _flushIntervalTicks: number;
   private readonly _maxMessage: number;
   private readonly _pending: Pending[] = [];
+  private _packing = true;
   private _handle: number | undefined;
   private _dropped = 0;
 
@@ -60,6 +64,17 @@ export class OutboundQueue {
   /** Messages dropped because a send threw (inspection helper). */
   get dropped(): number {
     return this._dropped;
+  }
+
+  /**
+   * Allow or forbid packing several envelopes into one message.
+   *
+   * A packed message is a shape only a reader that knows the batch tag can parse, so the bus turns
+   * this off while any live peer is too old to read one. A lone envelope is still tagged and sent;
+   * only the packing stops.
+   */
+  setPacking(enabled: boolean): void {
+    this._packing = enabled;
   }
 
   /** Begin the periodic flush loop. Idempotent. */
@@ -121,6 +136,8 @@ export class OutboundQueue {
 
       parts.push(next.text);
       this._pending.shift();
+
+      if (!this._packing) { break; }
     }
 
     return encodeBatch(parts);

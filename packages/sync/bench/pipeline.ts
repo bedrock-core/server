@@ -8,7 +8,7 @@
  * what crosses the wire.
  */
 import { Reassembler, splitIntoFrames } from '../src/chunk';
-import { PROTOCOL_VERSION } from '../src/constants';
+import { PROTOCOL_MAX } from '../src/constants';
 import { type Envelope, decodeEnvelope, encodeEnvelope } from '../src/envelope';
 import { batchLength, decodeWire, encodeBatch, tagChunk } from '../src/wire';
 
@@ -21,7 +21,7 @@ export const MESSAGE_ID = `${INSTANCE_ID}/1`;
 /** Build the envelope `Bus.send` would build for a broadcast of `data`. */
 export function envelopeFor(data: unknown, mid = MESSAGE_ID): Envelope {
   return {
-    v: PROTOCOL_VERSION,
+    v: PROTOCOL_MAX,
     src: 'benchmark',
     iid: INSTANCE_ID,
     type: 'state-delta',

@@ -28,6 +28,8 @@ export type {
   CollisionInfo,
   CollisionListener,
   DiscoveryOptions,
+  IncompatibleListener,
+  IncompatiblePeer,
   PeerInfo,
   PeerListener,
 } from './discovery';
@@ -40,4 +42,5 @@ export type { SnapshotEntry, StateChange, StateChangeListener, StateKey, StateOp
 
 export type { Unsubscribe } from './bus';
 export type { Envelope } from './envelope';
-export { MAX_MESSAGE, MessageType, PROTOCOL_VERSION } from './constants';
+export { Cap, MAX_MESSAGE, MessageType, PROTOCOL_MAX, PROTOCOL_MIN, SELF_CAPS } from './constants';
+export { capsFor, negotiateProtocol } from './negotiate';

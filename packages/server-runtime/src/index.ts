@@ -57,6 +57,8 @@ export { addonNamespace, validateManifest } from './manifest';
 export type { AddonManifest, ManifestMeta } from './manifest';
 
 export type { TypedClient, RPCHandlerMap } from '@bedrock-core/sync';
+export type { IncompatibleListener, IncompatiblePeer } from '@bedrock-core/sync';
+export { PROTOCOL_MAX, PROTOCOL_MIN } from '@bedrock-core/sync';
 
 export { TranslationsRegistry } from './translations';
 export type { TranslationsChangeListener } from './translations';
