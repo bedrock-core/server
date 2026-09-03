@@ -53,7 +53,8 @@
 						"filter": "i18n"
 					},
 					{
-						"filter": "ui-compile"
+						"filter": "ui-compile",
+						"settings": { "screens": ["@bedrock-core/config/compiled"] }
 					},
 					{
 						"filter": "bundler",
@@ -85,7 +86,8 @@
 						"filter": "i18n"
 					},
 					{
-						"filter": "ui-compile"
+						"filter": "ui-compile",
+						"settings": { "screens": ["@bedrock-core/config/compiled"] }
 					},
 					{
 						"filter": "bundler",

@@ -58,7 +58,8 @@
 					{
 						"filter": "ui-compile",
 						"settings": {
-							"namespace": "drav0011_economy"
+							"namespace": "drav0011_economy",
+							"screens": ["@bedrock-core/config/compiled"]
 						}
 					},
 					{
@@ -97,7 +98,8 @@
 					{
 						"filter": "ui-compile",
 						"settings": {
-							"namespace": "drav0011_economy"
+							"namespace": "drav0011_economy",
+							"screens": ["@bedrock-core/config/compiled"]
 						}
 					},
 					{
@@ -139,7 +141,8 @@
 					{
 						"filter": "ui-compile",
 						"settings": {
-							"namespace": "drav0011_economy"
+							"namespace": "drav0011_economy",
+							"screens": ["@bedrock-core/config/compiled"]
 						}
 					},
 					{
