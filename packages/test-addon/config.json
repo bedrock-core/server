@@ -16,15 +16,19 @@
 			},
 			"guides": {
 				"runWith": "nodejs",
-				"script": "../../../regolith-filters/guides/main.js"
+				"script": "../../../regolith-filters/guides/main.ts"
 			},
 			"i18n": {
 				"runWith": "nodejs",
-				"script": "../../../regolith-filters/i18n/main.js"
+				"script": "../../../regolith-filters/i18n/main.ts"
 			},
 			"manifest": {
 				"runWith": "nodejs",
-				"script": "../../../regolith-filters/manifest/main.js"
+				"script": "../../../regolith-filters/manifest/main.ts"
+			},
+			"ui-compile": {
+				"runWith": "nodejs",
+				"script": "../../../regolith-filters/ui-compile/main.ts"
 			}
 		},
 		"formatVersion": "1.4.0",
@@ -47,6 +51,12 @@
 					},
 					{
 						"filter": "i18n",
+						"settings": {
+							"namespace": "drav0011_economy"
+						}
+					},
+					{
+						"filter": "ui-compile",
 						"settings": {
 							"namespace": "drav0011_economy"
 						}
@@ -85,6 +95,12 @@
 						}
 					},
 					{
+						"filter": "ui-compile",
+						"settings": {
+							"namespace": "drav0011_economy"
+						}
+					},
+					{
 						"filter": "bundler",
 						"settings": {
 							"debug": true,
@@ -116,6 +132,12 @@
 					},
 					{
 						"filter": "i18n",
+						"settings": {
+							"namespace": "drav0011_economy"
+						}
+					},
+					{
+						"filter": "ui-compile",
 						"settings": {
 							"namespace": "drav0011_economy"
 						}

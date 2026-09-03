@@ -8,7 +8,12 @@ import { ui } from '@bedrock-core/config';
 import bundle from '@bedrock-core/generated/i18n';
 import { createI18n } from '@bedrock-core/i18n';
 import guides from '@bedrock-core/generated/guides';
+import { guideReference } from '@bedrock-core/guides';
 import { configDef, setupEconomy } from './example';
+import './probe-s4';
+// The compiled screens — the guide's pages among them — registered by the
+// module the ui-compile filter generates.
+import '@bedrock-core/generated/ui';
 
 // The addon's typed verbs over its resources (packs/data/i18n). Creating the instance
 // also registers it as the default translation source for any UI this addon renders.
@@ -28,6 +33,9 @@ const config = core.register({
   icon: 'textures/ui/economy/icon',
   translations: bundle,
   guide: guides,
+  // The same guide as compiled screens, reduced to what the host needs to
+  // present it with native forms: every client already holds the pages.
+  guideReference: guideReference('drav0011_economy'),
   config: configDef,
 });
 
