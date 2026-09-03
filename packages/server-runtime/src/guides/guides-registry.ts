@@ -19,10 +19,18 @@
  */
 import { stateKey } from '@bedrock-core/sync';
 import type { State, Unsubscribe } from '@bedrock-core/sync';
-import type { GuideManifest } from './types';
+import type { GuideManifest, GuideReference } from './types';
 
 /** State key an addon publishes its compiled manifest under (namespace = the addon's namespace). */
 const GUIDE_MANIFEST_STATE_KEY = stateKey<GuideManifest>('core-guide/manifest');
+
+/**
+ * State key an addon publishes its guide REFERENCE under: what the elected
+ * host needs to show the addon's compiled guide with native forms alone. An
+ * addon whose guide compiles publishes this beside, or instead of, the
+ * manifest — a host that finds it presents from it and renders nothing.
+ */
+const GUIDE_REFERENCE_STATE_KEY = stateKey<GuideReference>('core-guide/reference');
 
 export type GuidesChangeListener = () => void;
 
@@ -41,7 +49,7 @@ export class GuidesRegistry {
   start(): void {
     this._disposers.push(
       this._state.subscribe((change) => {
-        if (change.key !== GUIDE_MANIFEST_STATE_KEY) { return; }
+        if (change.key !== GUIDE_MANIFEST_STATE_KEY && change.key !== GUIDE_REFERENCE_STATE_KEY) { return; }
 
         this._addons = undefined;
         this.emitChange();
@@ -65,6 +73,27 @@ export class GuidesRegistry {
     this._state.set(this._addonId, GUIDE_MANIFEST_STATE_KEY, manifest);
   }
 
+  /**
+   * Publish this addon's guide reference — `guideReference(ns)` from
+   * `@bedrock-core/guides`, once its compiled screens are registered — so
+   * peers can present the guide from it. Usually declared up front via
+   * `core.register({ guideReference })`; call directly to publish late or replace it.
+   */
+  provideReference(reference: GuideReference): void {
+    this._state.set(this._addonId, GUIDE_REFERENCE_STATE_KEY, reference);
+  }
+
+  /** The reference another addon published, or `undefined`. Local-mirror read, shallow-guarded. */
+  referenceOf(addonId: string): GuideReference | undefined {
+    const value = this._state.get(addonId, GUIDE_REFERENCE_STATE_KEY);
+
+    if (typeof value !== 'object' || value === null) { return undefined; }
+
+    if (!('ns' in value) || !('pages' in value)) { return undefined; }
+
+    return value;
+  }
+
   /** This addon's own manifest, or `undefined` if it hasn't published one. */
   own(): GuideManifest | undefined {
     return this.of(this._addonId);
@@ -82,7 +111,7 @@ export class GuidesRegistry {
     const addons: string[] = [];
 
     for (const ns of this._state.namespaces()) {
-      if (this.manifestFor(ns) !== undefined) { addons.push(ns); }
+      if (this.has(ns)) { addons.push(ns); }
     }
 
     this._addons = addons;
@@ -90,9 +119,9 @@ export class GuidesRegistry {
     return addons;
   }
 
-  /** Whether the given addon published a guide manifest. */
+  /** Whether the given addon published a guide — a manifest to render, or a reference to present. */
   has(addonId: string): boolean {
-    return this.manifestFor(addonId) !== undefined;
+    return this.manifestFor(addonId) !== undefined || this.referenceOf(addonId) !== undefined;
   }
 
   /** Notified when any addon's published guide changes (coarse — re-read via `of`/`addonsWithGuides`). */

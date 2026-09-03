@@ -23,7 +23,7 @@ import type { I18nBundle } from '@bedrock-core/i18n';
 import { TranslationsRegistry } from './translations';
 import { GuidesRegistry } from './guides/guides-registry';
 import { HostElection } from './host';
-import type { GuideManifest } from './guides/types';
+import type { GuideManifest, GuideReference } from './guides/types';
 import type { Rpc } from '@bedrock-core/sync';
 
 /**
@@ -50,6 +50,14 @@ export interface RegisterOptions<I extends ConfigDefinition = ConfigDefinition> 
 
   /** This addon's compiled guide manifest (`@bedrock-core/generated/guides`), published for the elected host to render. */
   guide?: GuideManifest;
+
+  /**
+   * This addon's guide as a reference (`guideReference(ns)` from `@bedrock-core/guides`),
+   * published for the elected host to present with native forms — every client already
+   * holds the compiled screens in the pack. Beside `guide` while hosts that only render
+   * manifests are around; instead of it once they are not.
+   */
+  guideReference?: GuideReference;
 
   /** This addon's config schema. When given, `register()` returns the typed scope accessors. */
   config?: I;
@@ -193,6 +201,8 @@ export class Runtime {
     if (options.translations) { translations.provide(options.translations); }
 
     if (options.guide) { guides.provideManifest(options.guide); }
+
+    if (options.guideReference) { guides.provideReference(options.guideReference); }
 
     return options.config ? config.define(options.config) : undefined;
   }

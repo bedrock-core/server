@@ -66,7 +66,7 @@ export type { I18nBundle, TranslationResolver } from '@bedrock-core/i18n';
 
 export { GuidesRegistry } from './guides/guides-registry';
 export type { GuidesChangeListener } from './guides/guides-registry';
-export type { GuideManifest } from './guides/types';
+export type { GuideManifest, GuideReference } from './guides/types';
 
 export { ConfigRegistry } from './config/config-registry';
 export type { Config, ConfigAccessOptions, LocalConfigScopes, RemoteConfigAccessor, TypedRemoteConfig } from './config/config-registry';

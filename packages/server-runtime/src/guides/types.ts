@@ -24,3 +24,18 @@ export interface GuideManifest {
   /** Page id → page data. `Record<PageId, GuidePageData>` to the renderer. */
   pages: unknown;
 }
+
+/**
+ * What the runtime knows about a guide REFERENCE: a compiled guide reduced to
+ * what presenting it needs — per screen a compiled title, the entry values
+ * and where each press leads — and nothing of what it says, which the pack on
+ * every client already holds. The same storage contract as the manifest: the
+ * renderer (`@bedrock-core/guides`) owns the real shape and presents from it.
+ */
+export interface GuideReference {
+  v: 1;
+  /** The owning addon's namespace. */
+  ns: string;
+  /** Page id → screen reference. `Record<PageId, GuideScreenReference>` to the renderer. */
+  pages: unknown;
+}
