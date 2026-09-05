@@ -17,29 +17,51 @@ replicated LWW key/value store is exactly what `State` is.
 ## Old → new
 
 ```ts
-// before
+// before — string keys, one flat namespace, a change-listener firehose
 core.state.set(SPAWN_RATE, 5);
 core.node.state.get('os_shop', STOCK);
 core.state.subscribe(change => persistMyNamespace());
 
-// after
-core.shared.set(SPAWN_RATE, 5);                        // your namespace, as before
-core.shared.of('os_shop').get(STOCK);                  // any namespace, read
-core.shared.subscribe(change => …);                    // your namespace, local or remote — as before
-core.shared.of('os_shop').subscribe(change => …);      // a peer's namespace
-core.shared.set(HIGH_SCORE, 0, { open: true });        // anyone may write this one
-core.shared.set(ACTIVE_EVENT, 'harvest', { persist: true });  // survives restart
+// after — declare the shape once, get a typed tree; every node is an observable
+const shared = core.register({
+  // …identity…
+  shared: {
+    spawnRate: 5,
+    highScore: open(0),                                   // anyone may write this one
+    event: persisted({ name: 'none', active: false }),    // this branch survives restart
+  },
+});
 
-const stock = core.shared.of('os_shop').key<number>(STOCK);   // ReadonlyObservable<number | undefined>
-const rate  = core.shared.key(SPAWN_RATE);                    // Observable — set() writes and broadcasts
+shared.spawnRate.set(6);                                  // writes, broadcasts
+shared.event.active.subscribe(on => …);                   // a leaf
+shared.event.subscribe(event => …);                       // a branch — fires when any child changes
+shared.subscribe(all => …);                               // the whole namespace
+
+const shop = core.shared.of<ShopShared>('os_shop');       // a peer's tree — read-only, or undefined until it announces
+shop?.stock.get();
+shop?.stock.subscribe(n => …);
+shop?.sale.subscribe(sale => …);                          // any branch, any leaf
 ```
 
-The last two lines are the unification with [01-observable](./01-observable.md): **a shared key is
-an observable.** `useObservable(core.shared.of(ns).key(K))` and `computed(…, [rate])` work with no
-glue, and a peer's key is read-only at the type level — the same rule the mirror enforces at runtime.
+Exactly the accessor tree config already has: materialized once from the declared shape, every
+node — root, branch, leaf — carrying `get` / `subscribe`, leaves and own branches also `set` /
+`patch`. No accessor functions, no string keys, autocomplete to the leaf.
 
-`ScopedState`'s rules carry over: your namespace is pre-filled, the `core-` prefix is reserved for
-the framework, `getNamespace()` returns only what you wrote.
+- **Own tree** comes back from `register()` (and as `core.shared` afterwards), built from the
+  `shared` object: its values are the initial values, its nesting the keys. Nested paths flatten to
+  dotted mirror keys (`event.active`), the same way config flattens.
+- **A peer's tree** is `core.shared.of<Def>(ns)`. The peer announces its shape (key paths, no
+  values — a few dozen bytes under `core-shared/shape`) when it registers, so the tree is
+  materialized from that and `Def` is the compile-time view over it — the same arrangement as
+  `core.config.of<Def>(ns)` and its published schema. `undefined` until the peer is in the world.
+- **Every node is an observable** ([01-observable](./01-observable.md)): `useObservable(shop.stock)`,
+  `computed(…, [shared.event.active])`, `toNative(shared.spawnRate)` — no glue. A peer's nodes are
+  `ReadonlyObservable` at the type level, the rule the mirror enforces at runtime.
+- **`open()` and `persisted()` mark a leaf or a whole branch** in the declaration; both are inherited
+  downward. Nothing else on this page changes.
+
+The `core-` prefix stays reserved for the framework, and the raw namespace — framework keys
+included — stays reachable at `core.node.state`.
 
 ## Who may write — *Decided*
 
@@ -50,9 +72,9 @@ Lamport clock deciding what the disk believes.
 - **Default: owner-only.** A mirror applies a delta for namespace `ns` only when the delta's
   `src === ns`. Anything else is dropped with one debug log line. Sync deltas already carry `src`,
   so this is a filter in the apply path, not a protocol change.
-- **`open: true` per key.** The owner marks a key writable by anyone; the flag travels in the
-  owner's own entry and mirrors honor non-owner deltas for that key. For the shared counter, the
-  lobby vote, the thing that genuinely has many writers. LWW as today.
+- **`open()` per leaf or branch.** The owner marks it writable by anyone in the declaration; the
+  flag travels in the owner's own entry and mirrors honor non-owner deltas for those keys. For the
+  shared counter, the lobby vote, the thing that genuinely has many writers. LWW as today.
 - This is robustness against a *buggy* peer, not security: a hostile pack can forge `src`
   ([07-trust-model](./07-trust-model.md)). The filter makes the common mistake impossible, no more.
 
@@ -61,7 +83,7 @@ Wire impact: one optional field on the entry. Stays inside the current `PROTOCOL
 
 ## `persist` — *Decided*
 
-`persist: true` on a key writes its value through db's world host on every change
+`persisted()` on a leaf or branch writes its value through db's world host on every change
 (`core-shared:<ns>:<key>`) and re-publishes on boot, before discovery, so a late-joining peer's
 first snapshot already has it. This closes the sync README's standing "persistence is each addon's
 own responsibility" for the values that live here. The owner persists; a peer's mirror never does.

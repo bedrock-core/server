@@ -29,7 +29,7 @@ does: a shared mirror. Each is its own package; all of them ride
 | Concern | Package · surface | You own it | Lives in | Survives restart | Who writes |
 | --- | --- | --- | --- | --- | --- |
 | **Observable** | `@bedrock-core/observable` · `observable` | yes | memory | no | you |
-| **Shared** | `@bedrock-core/sync` · `core.shared` | your namespace | every realm's mirror | with `persist` | you; others on `open` keys |
+| **Shared** | `@bedrock-core/sync` · `core.shared` | your namespace | every realm's mirror | with `persisted()` | you; others on `open()` branches |
 | **DB** | `@bedrock-core/db` · `core.db` | yes | your dynamic properties | yes | you |
 | **Query** | `@bedrock-core/query` · `core.query` | **a peer** | your cache | no | the owner, via `mutate` |
 
@@ -40,7 +40,7 @@ Rule for surfaces: `core.X` needs the mesh; a plain import is pure.
 | Page | One line |
 | --- | --- |
 | [01-observable](./01-observable.md) | The reactive primitive: `observable` / `computed` / `batch`, synchronous scheduling, the `useObservable` hook, the `toNative` DDUI bridge |
-| [02-shared](./02-shared.md) | `core.state` renamed: owner-only writes with `open` keys, `persist`, what the framework announces here |
+| [02-shared](./02-shared.md) | `core.state` renamed: a typed accessor tree per namespace, owner-only writes with `open()` branches, `persisted()`, what the framework announces here |
 | [03-db](./03-db.md) | Persisted documents: the capability-probing host resolver, document schema and migrations, block documents, validity, static `accept`/`require` checks |
 | [04-query](./04-query.md) | A peer's data as a cache with a lifecycle: typed keys, `core.query.*` client, `useQuery` / `useMutation`, invalidation through the mirror, optimistic `mutate` |
 | [05-config](./05-config.md) | Config re-based on db: schema migrations, what changes and what does not |
