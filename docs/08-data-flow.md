@@ -1,0 +1,127 @@
+# 08 — Data flow
+
+Every place a value can be seen, and every edge it can travel. One rule holds the picture
+together: **exactly one concern owns each value, and every other place it appears is a view.**
+
+## The map
+
+```mermaid
+flowchart TB
+    subgraph owner["Owner realm — the addon that declared the data"]
+        st1["observable<br/>observable · computed"]
+        cfg["config accessor tree<br/>sync · typed · scalars"]
+        col["db collections<br/>sync · typed · documents"]
+        sh1["shared mirror<br/>own namespace + announcements"]
+        ui1["screens<br/>useObservable"]
+    end
+
+    subgraph peer["Peer realm — any other bedrock-core addon"]
+        q["query cache<br/>data · status · staleness"]
+        sh2["shared mirror<br/>read any · write own or open"]
+        st2["observable"]
+        ui2["screens<br/>useObservable"]
+    end
+
+    bus{{"script-event bus<br/>@bedrock-core/sync — the only channel"}}
+
+    subgraph dp["Persistence — dynamic properties"]
+        wdp[("world DPs")]
+        edp[("entity · player DPs")]
+        bdp[("block-entity DPs")]
+        sdp[("container-slot DPs")]
+    end
+
+    ui1 -->|"useObservable"| st1
+    ui1 -->|"useObservable"| cfg
+    ui1 -->|"useObservable"| col
+    cfg -->|"is a"| col
+
+    col -->|"own host, write-through"| edp
+    col -->|"own host, write-through"| bdp
+    col -->|"own host, write-through"| sdp
+    col -->|"proxied host"| wdp
+    sh1 -->|"persist: true, via world host"| wdp
+
+    cfg -->|"schema, once at register"| sh1
+    col -->|"shared: true — warm value or version stamp"| sh1
+
+    sh1 <-->|"deltas, owner-filtered"| bus
+    bus <-->|"deltas"| sh2
+    sh2 -->|"warm read · invalidation"| q
+    q -.->|"RPC read · mutate, next tick"| bus
+    bus -.->|"served + authorized by the owner"| col
+
+    ui2 -->|"useObservable"| q
+    ui2 -->|"useObservable"| st2
+    sh2 -->|"of(ns).get"| ui2
+```
+
+## Where a value can be seen
+
+| Place | Concern | Sync | Survives restart | Peers see it | Authoritative? |
+| --- | --- | --- | --- | --- | --- |
+| an **observable** | observable | yes | no | no | yes, for what it holds |
+| the **config accessor tree** | db (config is a collection) | yes | via DPs | via query | yes |
+| a **db document** | db | yes | via DPs | via query | **yes** |
+| the **shared mirror**, own namespace | shared | yes | with `persist` | yes, locally | yes |
+| the **shared mirror**, a peer's namespace | shared | yes | no | — | **no** — a copy; writes dropped unless `open` |
+| a **query** | query | yes (cached) | no | — | **no** — a cache with a status |
+| **dynamic properties** | persistence | yes | **yes** | any pack that guesses the key | the bytes |
+| `core.node.state` | transport | yes | no | yes | raw mirror, framework keys included |
+| the **bus** | transport | next tick | no | yes | no |
+
+Deliberately absent: scoreboards (commands and JSON UI reach; nothing here uses them), and any
+copy of a peer's *documents* other than a query cache.
+
+## The transfers
+
+### 1. Value → dynamic property (persistence)
+
+Config and db write through on change, 17 µs a write ([S2](./spikes/S2-dynamic-property-costs.md)).
+Which DP depends on the resolved host ([03-db](./03-db.md#where-a-document-can-live--capability-not-declaration)).
+`shared` keys marked `persist` take the world host.
+
+### 2. Announcement → mirror (discovery, push)
+
+Small, static, owner-written: config schema, i18n bundles, guides, feature flags, host election.
+Broadcast once; every realm mirrors; a UI builds a form for a peer with no round trip.
+
+### 3. Owner write → peer caches (invalidation or warm value)
+
+When a db document changes, db publishes under `core-db/<ns>/<collection>/<key>`: a version stamp
+by default, the derived value when the collection is `shared`. Every query for that key goes stale
+the same tick — or, warm, simply *has* the new value. This one edge replaces the interest
+protocol, the `project` bridge and polling.
+
+### 4. Peer → owner (RPC pull and mutate)
+
+A query that is stale, or a `mutate`, is a request to the owner; the reply arrives next tick, is
+authorized by actor, and is authoritative. The owner serves; nothing else does.
+
+## One peer write, end to end
+
+```mermaid
+sequenceDiagram
+    participant U as screen in a peer realm
+    participant Q as query cache
+    participant B as bus
+    participant O as owner's db
+    participant D as dynamic property
+    participant M as every mirror
+
+    U->>Q: mutate(patch, actorId)
+    Q->>Q: apply optimistically, fetchStatus fetching
+    Q->>B: RPC core:db.patch
+    B->>O: next tick
+    O->>O: denyReason(actor) · schema · validity gate
+    O->>D: write-through
+    O->>O: observable notifies local subscribers
+    O->>B: publish stamp or warm value
+    B->>M: delta
+    O->>B: RPC reply with the authoritative document
+    B->>Q: replace cache, status success — or roll back, status error
+    Q->>U: useObservable re-renders
+```
+
+Every hop is tick-bounded and appears in the content log under the owner's namespace. A local
+write is the same picture with the bus removed: authorize, persist, notify, publish.
