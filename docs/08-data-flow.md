@@ -40,7 +40,7 @@ flowchart TB
     col -->|"own host, write-through"| bdp
     col -->|"own host, write-through"| sdp
     col -->|"proxied host"| wdp
-    sh1 -->|"persist: true, via world host"| wdp
+    sh1 -->|"persisted(), via world host"| wdp
 
     cfg -->|"schema, once at register"| sh1
     col -->|"shared: true — warm value or version stamp"| sh1
