@@ -15,7 +15,8 @@ enumeration, `Vector3`, `setDynamicProperties`, byte budget by ladder, 1 000× c
 | `Dimension` | **none** — no method, no `getComponent` | — | — | — | — | proxy required |
 | `ItemStack`, constructed `minecraft:stone` | direct methods present | — | — | — | — | **write throws** `UnsupportedFunctionalityError: Cannot set dynamic properties on stackable items` |
 | `ItemStack` from `slot.getItem()` (non-stackable) | direct | **`undefined`** — the write landed on a copy | yes (on the copy) | yes | 32 767 | 12 µs / 2 µs |
-| `ContainerSlot` (slot 0) | direct | **sticks** | yes | yes | 32 767, throws | **327 µs** / 2 µs |
+| `ContainerSlot` holding a **non-stackable** item | direct | **sticks** | yes | yes | 32 767, throws | **327 µs** / 2 µs |
+| `ContainerSlot` holding a **stackable** item (the mined probe block) | direct methods present | — | — | — | — | **write throws** `Cannot set dynamic properties on stackable items` — the live slot too, not only the copy |
 | Block with `minecraft:block_entity` | component `get` / `set` / `totalByteCount` — reproduced here and in [S4](./S4-block-documents.md) | **sticks** | **no** | no | 900 chars ok, **throws at 1 000** | 11 µs / 1 µs |
 | vanilla block (`minecraft:stone`) | **none** — no `minecraft:dynamic_properties` component | — | — | — | — | proxy required |
 
@@ -68,8 +69,18 @@ input, but is not present in the Schema`. Removing the reference fixed it. Rule 
 a `core:store_block`-style component the build injects must always be registered by the runtime, or
 every accepted block type disappears from the world.
 
-## Still open
+## The mined block-entity item (`place` → break → `item`)
 
-- `/drav0011_economy:abi place` then `item` — the mined block-entity item: does
-  `block_actor_dynamic_properties` carry the block's document into the drop, and can it be read
-  back from a live slot?
+| Question | Answer |
+| --- | --- |
+| `block_actor_dynamic_properties` on the drop | **present, empty** — `carried=undefined`, 0 bytes. The document does **not** travel into the drop by default; that is what the `carry_over_block_entity_data` loot function (1.26.40) exists for, and the probe block declared no loot table |
+| write to the drop's `ItemStack` | throws — stackable |
+| write to the **live `ContainerSlot`** holding it | **throws** — stackable. The slot ABI is not a host for stackable items at all |
+
+Consequence: a `ContainerSlot` is a host only when its item is non-stackable (`maxAmount === 1`).
+The static capability record for `ContainerSlot` is `own: boolean` — the instance decides, exactly
+as a block's type does — and the resolver checks `slot.getItem()?.maxAmount === 1` before
+offering the slot as a host. Carrying a block document into its drop is opt-in via the loot
+function and stays outside the store until someone needs it.
+
+**S5 is complete.** The probe (`probe-abi.ts`, `blocks/s4_probe.json`) is deleted.
