@@ -36,6 +36,8 @@ export type Resolution
   = | {
     ok: true;
     kind: TargetKind;
+    /** The block or entity type, a slot's item type, a dimension's id, `world`. */
+    typeId: string;
     typeKey: string;
     identity: string;
     host: DpHost;
@@ -171,17 +173,33 @@ function identityOf(target: Record<string, unknown>, kind: TargetKind): string {
   }
 }
 
-function typeKeyOf(target: Record<string, unknown>, kind: TargetKind): string {
+function typeIdOf(target: Record<string, unknown>, kind: TargetKind): string {
   switch (kind) {
     case 'block':
     case 'entity':
-      return `${kind}:${str(target, 'typeId') ?? '?'}`;
+      return str(target, 'typeId') ?? '?';
 
     case 'slot': {
       const item = typeof target.getItem === 'function' ? target.getItem() : undefined;
 
-      return `slot:${isRecord(item) ? str(item, 'typeId') ?? '?' : 'empty'}`;
+      return isRecord(item) ? str(item, 'typeId') ?? '?' : 'empty';
     }
+
+    case 'dimension':
+      return str(target, 'id') ?? '?';
+
+    default:
+      return kind;
+  }
+}
+
+/** The cache key for a resolver decision: per type where the type decides, one per kind otherwise. */
+function typeKeyOf(kind: TargetKind, typeId: string): string {
+  switch (kind) {
+    case 'block':
+    case 'entity':
+    case 'slot':
+      return `${kind}:${typeId}`;
 
     default:
       return kind;
@@ -199,10 +217,11 @@ export function createResolver(options: ResolverOptions): Resolver {
 
   const refuse = (kind: TargetKind, reason: string): Resolution => ({ ok: false, kind, reason });
 
-  const accept = (kind: TargetKind, typeKey: string, identity: string, host: DpHost): Resolution => ({
+  const accept = (kind: TargetKind, typeId: string, identity: string, host: DpHost): Resolution => ({
     ok: true,
     kind,
-    typeKey,
+    typeId,
+    typeKey: typeKeyOf(kind, typeId),
     identity,
     host,
     prefixFor: (collection: string): string => {
@@ -232,7 +251,8 @@ export function createResolver(options: ResolverOptions): Resolver {
     }
 
     const identity = identityOf(target, kind);
-    const typeKey = typeKeyOf(target, kind);
+    const typeId = typeIdOf(target, kind);
+    const typeKey = typeKeyOf(kind, typeId);
 
     if (kind === 'slot') {
       const item = typeof target.getItem === 'function' ? target.getItem() : undefined;
@@ -249,18 +269,18 @@ export function createResolver(options: ResolverOptions): Resolver {
     const cached = decisions.get(typeKey);
 
     if (cached === 'direct' && isDirectDp(target)) {
-      return accept(kind, typeKey, identity, directHost(target, { readableWhenUnloaded: kind === 'world' }));
+      return accept(kind, typeId, identity, directHost(target, { readableWhenUnloaded: kind === 'world' }));
     }
 
     if (cached === 'proxied') {
-      return accept(kind, typeKey, identity, proxied(kind, identity));
+      return accept(kind, typeId, identity, proxied(kind, identity));
     }
 
     // Direct ABI first: it wins where both are present (a block item has the component too).
     if (isDirectDp(target)) {
       decisions.set(typeKey, 'direct');
 
-      return accept(kind, typeKey, identity, directHost(target, { readableWhenUnloaded: kind === 'world' }));
+      return accept(kind, typeId, identity, directHost(target, { readableWhenUnloaded: kind === 'world' }));
     }
 
     // Component ABI: probe, and never cache a throw — an unloaded chunk throws here.
@@ -276,13 +296,13 @@ export function createResolver(options: ResolverOptions): Resolver {
       if (isComponentDp(component)) {
         decisions.set(typeKey, 'component');
 
-        return accept(kind, typeKey, identity, componentHost(component));
+        return accept(kind, typeId, identity, componentHost(component));
       }
     }
 
     decisions.set(typeKey, 'proxied');
 
-    return accept(kind, typeKey, identity, proxied(kind, identity));
+    return accept(kind, typeId, identity, proxied(kind, identity));
   };
 
   return {

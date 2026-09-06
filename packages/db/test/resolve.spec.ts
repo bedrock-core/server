@@ -4,115 +4,9 @@
  * entity answers through a three-method component, a dimension holds nothing, and `getComponent`
  * throws in an unloaded chunk.
  */
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { COMPONENT_BUDGET, DIRECT_BUDGET, createResolver, prefixed } from '../src/index';
-import type { DirectDp, DpValue } from '../src/index';
-
-// ─── Stubs ─────────────────────────────────────────────────────────────────────
-
-class DirectStub implements DirectDp {
-  private readonly _props = new Map<string, DpValue>();
-
-  getDynamicProperty(id: string): DpValue | undefined {
-    return this._props.get(id);
-  }
-
-  setDynamicProperty(id: string, value?: DpValue): void {
-    if (value === undefined) {
-      this._props.delete(id);
-    } else {
-      this._props.set(id, value);
-    }
-  }
-
-  getDynamicPropertyIds(): string[] {
-    return [...this._props.keys()];
-  }
-
-  getDynamicPropertyTotalByteCount(): number {
-    return [...this._props.entries()].reduce((n, [k, v]) => n + k.length + String(v).length, 0);
-  }
-
-  setDynamicProperties(values: Record<string, DpValue | undefined>): void {
-    for (const key of Object.keys(values)) {
-      this.setDynamicProperty(key, values[key]);
-    }
-  }
-}
-
-class WorldStub extends DirectStub {
-  getAllPlayers(): unknown[] {
-    return [];
-  }
-}
-
-class EntityStub extends DirectStub {
-  constructor(readonly id: string, readonly typeId: string) {
-    super();
-  }
-}
-
-class ItemStackStub extends DirectStub {
-  constructor(readonly typeId: string, readonly maxAmount: number) {
-    super();
-  }
-
-  clone(): ItemStackStub {
-    return new ItemStackStub(this.typeId, this.maxAmount);
-  }
-}
-
-class SlotStub extends DirectStub {
-  readonly maxAmount = 64;
-
-  constructor(private readonly _item: ItemStackStub | undefined) {
-    super();
-  }
-
-  getItem(): ItemStackStub | undefined {
-    return this._item;
-  }
-}
-
-class ComponentStub {
-  private readonly _props = new Map<string, DpValue>();
-
-  get(key: string): DpValue | undefined {
-    return this._props.get(key);
-  }
-
-  set(key: string, value?: DpValue): void {
-    if (value === undefined) {
-      this._props.delete(key);
-    } else {
-      this._props.set(key, value);
-    }
-  }
-
-  totalByteCount(): number {
-    return [...this._props.entries()].reduce((n, [k, v]) => n + k.length + String(v).length, 0);
-  }
-}
-
-class BlockStub {
-  readonly permutation = {};
-  readonly getComponent = vi.fn((id: string): unknown => (id === 'minecraft:dynamic_properties' ? this._component : undefined));
-
-  constructor(
-    readonly typeId: string,
-    readonly location: { x: number; y: number; z: number },
-    readonly dimension: { id: string },
-    private readonly _component: ComponentStub | undefined,
-  ) {}
-}
-
-class DimensionStub {
-  constructor(readonly id: string) {}
-
-  getBlock(): undefined {
-    return undefined;
-  }
-}
+import { BlockStub, ComponentStub, DimensionStub, EntityStub, ItemStackStub, SlotStub, WorldStub } from './stubs';
 
 function resolver(world = new WorldStub()): { world: WorldStub; resolve: ReturnType<typeof createResolver> } {
   return { world, resolve: createResolver({ world, namespace: 'ns' }) };
@@ -369,7 +263,7 @@ describe('prefixed hosts', () => {
     expect(r.host.abi).toBe('proxied');
     expect(r.host.caps.own).toBe(false);
     expect(world.getDynamicProperty('core-db:ns:dimension:minecraft:the_end:events:a')).toBe(1);
-    expect(events.keys()?.sort()).toEqual(['a', 'b']);
+    expect([...events.keys() ?? []].sort()).toEqual(['a', 'b']);
   });
 
   it('a block entity collection prefix is just the collection, to spare the 950-byte budget', () => {
