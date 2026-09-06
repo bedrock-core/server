@@ -22,6 +22,7 @@ import type { ConfigDefinition } from './config/schema';
 import type { I18nBundle } from '@bedrock-core/i18n';
 import { TranslationsRegistry } from './translations';
 import { GuidesRegistry } from './guides/guides-registry';
+import { type AddonPageReference, PagesRegistry } from './pages/pages-registry';
 import { HostElection } from './host';
 import type { GuideManifest, GuideReference } from './guides/types';
 import type { Rpc } from '@bedrock-core/sync';
@@ -59,6 +60,15 @@ export interface RegisterOptions<I extends ConfigDefinition = ConfigDefinition> 
    */
   guideReference?: GuideReference;
 
+  /**
+   * This addon's page in the shared addon list as a reference
+   * (`addonPageReference(Page)` from `@bedrock-core/config/compiled`): per
+   * reserved entry the value it is shown with and where a press leads. The
+   * page itself is a compiled screen in this addon's pack, which every client
+   * holds; the elected host draws it into its list from this alone.
+   */
+  page?: AddonPageReference;
+
   /** This addon's config schema. When given, `register()` returns the typed scope accessors. */
   config?: I;
 }
@@ -72,6 +82,7 @@ export class Runtime {
   private _config: ConfigRegistry | undefined;
   private _translations: TranslationsRegistry | undefined;
   private _guides: GuidesRegistry | undefined;
+  private _pages: PagesRegistry | undefined;
   private _host: HostElection | undefined;
 
   /** Whether the addon has been registered (and is therefore live). */
@@ -120,6 +131,11 @@ export class Runtime {
   }
 
   /** Cross-addon guides — publish via `register({ guide })` (or `core.guides.provideManifest()` to replace at runtime), `core.guides.of()` for cross-addon reads. */
+  /** Cross-addon list pages — publish via `register({ page })` (or `core.pages.provide()` to replace at runtime), `core.pages.of()` for the host's reads. */
+  get pages(): PagesRegistry {
+    return this.require(this._pages, 'pages');
+  }
+
   get guides(): GuidesRegistry {
     return this.require(this._guides, 'guides');
   }
@@ -179,6 +195,7 @@ export class Runtime {
     const config = new ConfigRegistry(node, namespace);
     const translations = new TranslationsRegistry(node.state, namespace);
     const guides = new GuidesRegistry(node.state, namespace);
+    const pages = new PagesRegistry(node.state, namespace);
     const host = new HostElection(registry, namespace);
 
     this._node = node;
@@ -188,6 +205,7 @@ export class Runtime {
     this._config = config;
     this._translations = translations;
     this._guides = guides;
+    this._pages = pages;
     this._host = host;
 
     node.start();
@@ -204,6 +222,8 @@ export class Runtime {
 
     if (options.guideReference) { guides.provideReference(options.guideReference); }
 
+    if (options.page) { pages.provide(options.page); }
+
     return options.config ? config.define(options.config) : undefined;
   }
 
@@ -217,6 +237,7 @@ export class Runtime {
     this._registry?.stop();
     this._node?.stop();
     this._host = undefined;
+    this._pages = undefined;
     this._guides = undefined;
     this._translations = undefined;
     this._config = undefined;

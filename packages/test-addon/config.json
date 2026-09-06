@@ -11,8 +11,8 @@
 		"dataPath": "./packs/data",
 		"filterDefinitions": {
 			"bundler": {
-				"url": "github.com/bedrock-core/regolith-filters",
-				"version": "1.1.2"
+				"runWith": "nodejs",
+				"script": "../../../regolith-filters/bundler/main.ts"
 			},
 			"guides": {
 				"runWith": "nodejs",

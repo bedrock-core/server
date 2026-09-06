@@ -5,37 +5,31 @@
  */
 import { core } from '@bedrock-core/server-runtime';
 import { ui } from '@bedrock-core/config';
+import { addonPageReference } from '@bedrock-core/config/compiled';
 import bundle from '@bedrock-core/generated/i18n';
-import { createI18n } from '@bedrock-core/i18n';
 import guides from '@bedrock-core/generated/guides';
 import { guideReference } from '@bedrock-core/guides';
+import { manifest } from './addon';
 import { configDef, setupEconomy } from './example';
-import './probe-s4';
+import AddonPage from './screens/addon.screen';
 // The compiled screens — the guide's pages among them — registered by the
 // module the ui-compile filter generates.
 import '@bedrock-core/generated/ui';
-
-// The addon's typed verbs over its resources (packs/data/i18n). Creating the instance
-// also registers it as the default translation source for any UI this addon renders.
-const i18n = createI18n(bundle);
 
 // register() declares everything in one call and brings the addon online — no separate
 // start(). Display fields are translation keys — typed through key(), generated into
 // this addon's .lang by the i18n filter; UIs localize them per player language. The
 // i18n bundle and guide manifest ride along as optional fields; register() returns the typed config accessors.
 const config = core.register({
-  creator: 'drav0011',
-  pack: 'economy',
-  packName: i18n.key($ => $.meta.name),
-  creatorName: i18n.key($ => $.meta.creator),
-  version: '1.0.0',
-  description: i18n.key($ => $.meta.description),
-  icon: 'textures/ui/economy/icon',
+  ...manifest,
   translations: bundle,
   guide: guides,
   // The same guide as compiled screens, reduced to what the host needs to
   // present it with native forms: every client already holds the pages.
   guideReference: guideReference('drav0011_economy'),
+  // This addon's page in the shared addon list, baked in its own pack; the
+  // host draws it from the reference alone.
+  page: addonPageReference(AddonPage),
   config: configDef,
 });
 
