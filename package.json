@@ -25,6 +25,7 @@
 	"packageManager": "yarn@4.9.3",
 	"workspaces": [
 		"packages/bds-runner",
+		"packages/db",
 		"packages/observable",
 		"packages/server",
 		"packages/sync",

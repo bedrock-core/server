@@ -84,6 +84,22 @@ __metadata:
   languageName: node
   linkType: soft
 
+"@bedrock-core/db@workspace:packages/db":
+  version: 0.0.0-use.local
+  resolution: "@bedrock-core/db@workspace:packages/db"
+  dependencies:
+    "@bedrock-core/observable": "workspace:^"
+    "@minecraft/server": "npm:2.8.0"
+    "@stylistic/eslint-plugin": "npm:^5.10.0"
+    eslint: "npm:^10.5.0"
+    typescript: "npm:^6.0.3"
+    typescript-eslint: "npm:^8.62.0"
+    vitest: "npm:^4.1.10"
+  peerDependencies:
+    "@minecraft/server": ">=2.8.0"
+  languageName: unknown
+  linkType: soft
+
 "@bedrock-core/flexbox@portal:../ui/packages/flexbox::locator=%40bedrock-core%2Fserver-monorepo%40workspace%3A.":
   version: 0.0.0-use.local
   resolution: "@bedrock-core/flexbox@portal:../ui/packages/flexbox::locator=%40bedrock-core%2Fserver-monorepo%40workspace%3A."
@@ -116,7 +132,7 @@ __metadata:
   languageName: node
   linkType: soft
 
-"@bedrock-core/observable@workspace:packages/observable":
+"@bedrock-core/observable@workspace:^, @bedrock-core/observable@workspace:packages/observable":
   version: 0.0.0-use.local
   resolution: "@bedrock-core/observable@workspace:packages/observable"
   dependencies:

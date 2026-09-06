@@ -1,0 +1,59 @@
+{
+	"name": "@bedrock-core/db",
+	"version": "0.0.0",
+	"description": "Persisted documents for @bedrock-core: a resolver that finds where a target can hold dynamic properties, and typed collections over it",
+	"keywords": [
+		"minecraft",
+		"bedrock",
+		"dynamic-properties",
+		"persistence",
+		"database",
+		"collections"
+	],
+	"license": "MIT",
+	"author": "DrAv0011",
+	"contributors": [
+		{
+			"name": "DrAv0011",
+			"email": "contact@drav.dev",
+			"url": "https://drav.dev"
+		}
+	],
+	"repository": "github:bedrock-core/server",
+	"type": "module",
+	"exports": {
+		".": {
+			"types": "./src/index.ts",
+			"import": "./src/index.ts"
+		},
+		"./minecraft": {
+			"types": "./src/minecraft.ts",
+			"import": "./src/minecraft.ts"
+		}
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"files": [
+		"src/**/*"
+	],
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"test": "vitest run",
+		"lint": "eslint ."
+	},
+	"dependencies": {
+		"@bedrock-core/observable": "workspace:^"
+	},
+	"devDependencies": {
+		"@minecraft/server": "2.8.0",
+		"@stylistic/eslint-plugin": "^5.10.0",
+		"eslint": "^10.5.0",
+		"typescript": "^6.0.3",
+		"typescript-eslint": "^8.62.0",
+		"vitest": "^4.1.10"
+	},
+	"peerDependencies": {
+		"@minecraft/server": ">=2.8.0"
+	}
+}
