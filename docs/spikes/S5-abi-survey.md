@@ -1,6 +1,6 @@
 # Spike S5 — dynamic-property ABI survey
 
-**Measured 2026-09-05** with `probe-abi.ts` in `test-addon` (`/drav0011_economy:abi all`). One
+**Measured 2026-09-05/06 on 1.26.50** with `probe-abi.ts` in `test-addon` (`/drav0011_economy:abi all`). One
 `describe()` per target: methods present, every `/ynamic/` member on the prototype chain, both
 component ids, write-then-read on the same handle and on a **freshly fetched** handle,
 enumeration, `Vector3`, `setDynamicProperties`, byte budget by ladder, 1 000× cost.
@@ -16,8 +16,8 @@ enumeration, `Vector3`, `setDynamicProperties`, byte budget by ladder, 1 000× c
 | `ItemStack`, constructed `minecraft:stone` | direct methods present | — | — | — | — | **write throws** `UnsupportedFunctionalityError: Cannot set dynamic properties on stackable items` |
 | `ItemStack` from `slot.getItem()` (non-stackable) | direct | **`undefined`** — the write landed on a copy | yes (on the copy) | yes | 32 767 | 12 µs / 2 µs |
 | `ContainerSlot` (slot 0) | direct | **sticks** | yes | yes | 32 767, throws | **327 µs** / 2 µs |
-| Block with `minecraft:block_entity` | component `get` / `set` / `totalByteCount` — from [S4](./S4-block-documents.md) | sticks | **no** | no | ~950 B, throws | 11 µs / 1.5 µs |
-| vanilla block | not run this pass (block JSON rejected on this build); no `minecraft:dynamic_properties` component by construction | — | — | — | — | proxy required |
+| Block with `minecraft:block_entity` | component `get` / `set` / `totalByteCount` — reproduced here and in [S4](./S4-block-documents.md) | **sticks** | **no** | no | 900 chars ok, **throws at 1 000** | 11 µs / 1 µs |
+| vanilla block (`minecraft:stone`) | **none** — no `minecraft:dynamic_properties` component | — | — | — | — | proxy required |
 
 Every direct-ABI host exposes the same six methods — `getDynamicProperty`, `setDynamicProperty`,
 `setDynamicProperties`, `getDynamicPropertyIds`, `getDynamicPropertyTotalByteCount`,
@@ -41,11 +41,35 @@ surface.
 5. **Every direct host shares the 32 767-character cap and ~10 µs write**, so the capability
    record's `budget` is one constant for the direct family and ~950 bytes for the component family.
 
+## Native DDUI observables (`@minecraft/server-ui` 2.1.0, `ObservableNumber`)
+
+| Question | Answer |
+| --- | --- |
+| prototype members | `setData`, `getData`, `subscribe`, `unsubscribe` |
+| `subscribe(cb)` returns | **the callback itself** — not an unsubscriber; calling it does nothing |
+| how to stop listening | **`obs.unsubscribe(cb)`** → `boolean`; re-entrant (re-subscribe fires again, unsubscribe stops it) |
+| `setData` with an equal value | **does not notify** — native guards equality itself |
+| notification timing | **synchronous**, inside `setData`; nothing deferred to the next tick |
+| cost | 1 000 × `setData` = 1 ms (**1 µs**); `getData` ≈ 0; 1 000 constructions = 3 ms |
+| `toJSON` | absent — `JSON.stringify` gives `{}` |
+
+Consequences for the [`toNative` bridge](../01-observable.md#native-observables--the-ddui-bridge):
+`dispose()` must call `native.unsubscribe(cb)` with the exact callback it registered — nothing
+else releases it; the `Object.is` guard on native → ours is still needed (native does not notify
+on equal values, but *our* write into native must not echo back); a native observable is cheap
+enough that one per visible control is free.
+
+## Why the block half failed on the first pass
+
+The block JSON declared a custom component (`drav0011_economy:s4_probe`) that no script registered
+any more — the engine validates block components against the schema *including* script-registered
+custom components at startup, and rejects the block outright: `this component was found in the
+input, but is not present in the Schema`. Removing the reference fixed it. Rule for db's build step:
+a `core:store_block`-style component the build injects must always be registered by the runtime, or
+every accepted block type disappears from the world.
+
 ## Still open
 
-- `/drav0011_economy:abi item` — the mined block-entity item: does `block_actor_dynamic_properties`
-  carry the block's data into the stack (`carry_over_block_entity_data`), and can it be read back
-  from a live slot? Needs the 1.26.50 build.
-- Native DDUI observables — equal-value `setData` notification, `subscribe` return value,
-  per-observable cost. Not in this probe yet.
-- The probe left an armor stand at the player's position + 2 when it aborted; kill it by hand.
+- `/drav0011_economy:abi place` then `item` — the mined block-entity item: does
+  `block_actor_dynamic_properties` carry the block's document into the drop, and can it be read
+  back from a live slot?

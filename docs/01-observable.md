@@ -92,9 +92,11 @@ them *are* observables. `useState` / `useReducer` stay component-local as they a
 
 Mojang's data-driven forms (`@minecraft/server-ui` 2.1.0, stable since 1.26.30) redraw only for
 their own observables: `ObservableString`, `ObservableNumber`, `ObservableBoolean`,
-`ObservableUIRawMessage`, each with `getData()` / `setData()` / `subscribe()`, an optional
-`{ clientWritable: true }` that lets the player's control write the value, and `getFilteredText()`
-on strings. Same verbs, different job:
+`ObservableUIRawMessage`, each with `getData()` / `setData()` / `subscribe()` / `unsubscribe()`, an
+optional `{ clientWritable: true }` that lets the player's control write the value, and
+`getFilteredText()` on strings. Measured ([S5](./spikes/S5-abi-survey.md)): notification is
+synchronous, an equal-value `setData` does not notify, `subscribe` returns the callback (not a
+handle — `unsubscribe(cb)` is the release), and a `setData` costs 1 µs. Same verbs, different job:
 
 | | Native `Observable*` | `@bedrock-core/observable` |
 | --- | --- | --- |
@@ -120,9 +122,11 @@ Contract — *Decided*:
 
 1. **Ours is the source of truth.** Every change of ours is pushed to the native (`setData`).
 2. **Native → ours only when `clientWritable`** — that is the player moving the control. Guarded
-   with `Object.is` so the two never ping-pong.
-3. **`dispose()` on form close.** A stale form can never write back. Our future DDUI host calls it;
-   a user on a raw `CustomForm` calls it in `.show().then()`.
+   with `Object.is` so our own push never echoes back (native skips equal values itself, but the
+   guard is what keeps the two subscriptions from chasing each other).
+3. **`dispose()` on form close** — it calls `native.unsubscribe(cb)` with the exact callback it
+   registered, the only thing that releases a native listener. A stale form can never write back.
+   Our future DDUI host calls it; a user on a raw `CustomForm` calls it in `.show().then()`.
 4. **Types are what native can hold**: `number | string | boolean`. An enum leaf binds as a string;
    `list` / `multiselect` have no native control and are refused at the type level.
 5. **One native per widget, one of ours per value.** The bridge mints engine objects only for
@@ -131,9 +135,8 @@ Contract — *Decided*:
 The same adapter serves both audiences — people who skip our UI and bind config, db or query values
 to their own `CustomForm`, and our host later — so there is exactly one mechanism.
 
-**Measure — folded into S5:** does native `setData` with an equal value still notify and push to the
-client (if so the bridge's guard is load-bearing); does native `subscribe` return an unsubscribe
-handle (leak on form close otherwise); per-observable cost and any cap on updates per tick.
+**Measured in S5** — equal-value `setData` does not notify; `subscribe` returns the callback and
+`unsubscribe(cb)` is the release; 1 µs per `setData`. One native per visible control is free.
 
 ## Non-goals
 
