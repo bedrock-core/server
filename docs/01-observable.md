@@ -60,6 +60,10 @@ batch(fn: () => void): void
 - **`ReadonlyObservable<T>`** is what `computed` returns and what anything exposing a value it owns
   hands out — a db document, a query, a peer's shared key — so a consumer cannot `set` what is not
   theirs.
+- **Measured against the engine's own observable** ([S7](./spikes/S7-observable-bench.md)): a bare
+  `set` is parity (0.43 vs 0.41 µs), a set with listeners is faster (0.11 µs per listener vs 0.31),
+  `get` half the cost, `computed` faster than a hand-wired native chain. Listener storage is
+  copy-on-write — subscribe and unsubscribe pay the allocation, delivery pays none.
 
 ## Scheduling — the Minecraft part
 

@@ -1,0 +1,61 @@
+{
+	"name": "@bedrock-core/observable",
+	"version": "0.0.0",
+	"description": "The reactive primitive for @bedrock-core: observable values with get / set / subscribe, computed values, effects and batching, plus a bridge to Minecraft's data-driven UI observables",
+	"keywords": [
+		"minecraft",
+		"bedrock",
+		"observable",
+		"reactive",
+		"signal",
+		"ddui"
+	],
+	"license": "MIT",
+	"author": "DrAv0011",
+	"contributors": [
+		{
+			"name": "DrAv0011",
+			"email": "contact@drav.dev",
+			"url": "https://drav.dev"
+		}
+	],
+	"repository": "github:bedrock-core/server",
+	"type": "module",
+	"exports": {
+		".": {
+			"types": "./src/index.ts",
+			"import": "./src/index.ts"
+		},
+		"./minecraft": {
+			"types": "./src/minecraft.ts",
+			"import": "./src/minecraft.ts"
+		}
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"files": [
+		"src/**/*"
+	],
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"test": "vitest run",
+		"lint": "eslint ."
+	},
+	"devDependencies": {
+		"@minecraft/server-ui": "2.1.0",
+		"@stylistic/eslint-plugin": "^5.10.0",
+		"eslint": "^10.5.0",
+		"typescript": "^6.0.3",
+		"typescript-eslint": "^8.62.0",
+		"vitest": "^4.1.10"
+	},
+	"peerDependencies": {
+		"@minecraft/server-ui": ">=2.1.0"
+	},
+	"peerDependenciesMeta": {
+		"@minecraft/server-ui": {
+			"optional": true
+		}
+	}
+}
