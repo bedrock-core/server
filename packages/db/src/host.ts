@@ -4,7 +4,9 @@
  * nothing at all on a dimension or a vanilla block. This file is the one adapter over all of it:
  * three verbs, one capability record, and the target's identity where it has to be part of the key.
  *
- * Every number here is measured, not assumed — see `docs/spikes/S2`, `S4` and `S5`.
+ * Every number here is measured, not assumed — see `docs/spikes/S2`, `S4` and `S5`. Hosts are
+ * classes with prototype methods rather than closures: the engine's JavaScript is QuickJS, where a
+ * host is made per operation and each closure costs.
  */
 
 /** What a dynamic property can hold. Documents travel as JSON strings under the per-value cap. */
@@ -58,79 +60,148 @@ export const DIRECT_BUDGET = 32_767;
 /** A block entity holds this many bytes per pack, key and overhead included; more throws. Measured. */
 export const COMPONENT_BUDGET = 950;
 
-const DIRECT_CAPS: Capabilities = {
-  own: true,
-  enumerable: true,
-  budget: DIRECT_BUDGET,
-  readableWhenUnloaded: false,
-  batch: true,
+const direct = (batch: boolean, readableWhenUnloaded: boolean): Capabilities =>
+  Object.freeze({ own: true, enumerable: true, budget: DIRECT_BUDGET, readableWhenUnloaded, batch });
+
+/** The four direct capability records, so a host never allocates one. */
+const DIRECT_CAPS = {
+  loaded: { batch: direct(true, false), single: direct(false, false) },
+  unloaded: { batch: direct(true, true), single: direct(false, true) },
 };
 
-const COMPONENT_CAPS: Capabilities = {
+const COMPONENT_CAPS: Capabilities = Object.freeze({
   own: true,
   enumerable: false,
   budget: COMPONENT_BUDGET,
   readableWhenUnloaded: false,
   batch: false,
-};
+});
 
-const PROXIED_CAPS: Capabilities = {
+const PROXIED_CAPS: Capabilities = Object.freeze({
   own: false,
   enumerable: true,
   budget: DIRECT_BUDGET,
   readableWhenUnloaded: true,
   batch: true,
-};
+});
 
-/** The target holds its own properties through the six-method ABI. */
-export function directHost(target: DirectDp, options?: { readableWhenUnloaded?: boolean }): DpHost {
-  const batch = typeof target.setDynamicProperties === 'function';
-  const caps: Capabilities = {
-    ...DIRECT_CAPS,
-    batch,
-    readableWhenUnloaded: options?.readableWhenUnloaded ?? false,
-  };
+class DirectHost implements DpHost {
+  readonly abi = 'direct';
 
-  return {
-    abi: 'direct',
-    caps,
-    read: (key): DpValue | undefined => target.getDynamicProperty(key),
-    write: (key, value): void => {
-      target.setDynamicProperty(key, value);
-    },
-    keys: (): readonly string[] => target.getDynamicPropertyIds(),
-    bytes: (): number => target.getDynamicPropertyTotalByteCount(),
-    writeMany: (values): void => {
-      if (target.setDynamicProperties) {
-        target.setDynamicProperties(values);
+  constructor(private readonly _target: DirectDp, readonly caps: Capabilities) {}
 
-        return;
-      }
+  read(key: string): DpValue | undefined {
+    return this._target.getDynamicProperty(key);
+  }
 
-      for (const key of Object.keys(values)) {
-        target.setDynamicProperty(key, values[key]);
-      }
-    },
-  };
+  write(key: string, value: DpValue | undefined): void {
+    this._target.setDynamicProperty(key, value);
+  }
+
+  keys(): readonly string[] {
+    return this._target.getDynamicPropertyIds();
+  }
+
+  bytes(): number {
+    return this._target.getDynamicPropertyTotalByteCount();
+  }
+
+  writeMany(values: Record<string, DpValue | undefined>): void {
+    if (this.caps.batch && this._target.setDynamicProperties) {
+      this._target.setDynamicProperties(values);
+
+      return;
+    }
+
+    for (const key of Object.keys(values)) {
+      this._target.setDynamicProperty(key, values[key]);
+    }
+  }
+}
+
+class ComponentHost implements DpHost {
+  readonly abi = 'component';
+  readonly caps = COMPONENT_CAPS;
+
+  constructor(private readonly _component: ComponentDp) {}
+
+  read(key: string): DpValue | undefined {
+    return this._component.get(key);
+  }
+
+  write(key: string, value: DpValue | undefined): void {
+    this._component.set(key, value);
+  }
+
+  keys(): undefined {
+    return undefined;
+  }
+
+  bytes(): number {
+    return this._component.totalByteCount();
+  }
+
+  writeMany(values: Record<string, DpValue | undefined>): void {
+    for (const key of Object.keys(values)) {
+      this._component.set(key, values[key]);
+    }
+  }
+}
+
+class PrefixedHost implements DpHost {
+  constructor(
+    private readonly _host: DpHost,
+    private readonly _prefix: string,
+    readonly caps: Capabilities,
+    readonly abi: HostAbi,
+  ) {}
+
+  read(key: string): DpValue | undefined {
+    return this._host.read(this._prefix + key);
+  }
+
+  write(key: string, value: DpValue | undefined): void {
+    this._host.write(this._prefix + key, value);
+  }
+
+  keys(): readonly string[] | undefined {
+    const prefix = this._prefix;
+
+    return this._host.keys()
+      ?.filter(id => id.startsWith(prefix))
+      .map(id => id.slice(prefix.length));
+  }
+
+  bytes(): number {
+    return this._host.bytes();
+  }
+
+  writeMany(values: Record<string, DpValue | undefined>): void {
+    const mapped: Record<string, DpValue | undefined> = {};
+
+    for (const key of Object.keys(values)) {
+      mapped[this._prefix + key] = values[key];
+    }
+
+    this._host.writeMany(mapped);
+  }
+}
+
+/**
+ * The target holds its own properties through the six-method ABI. `batch` says whether the target
+ * has `setDynamicProperties`; when omitted it is probed, one native lookup — pass it where the type
+ * is already known.
+ */
+export function directHost(target: DirectDp, options?: { readableWhenUnloaded?: boolean; batch?: boolean }): DpHost {
+  const batch = options?.batch ?? typeof target.setDynamicProperties === 'function';
+  const family = options?.readableWhenUnloaded === true ? DIRECT_CAPS.unloaded : DIRECT_CAPS.loaded;
+
+  return new DirectHost(target, batch ? family.batch : family.single);
 }
 
 /** The target holds its own properties through a block entity's component. */
 export function componentHost(component: ComponentDp): DpHost {
-  return {
-    abi: 'component',
-    caps: COMPONENT_CAPS,
-    read: (key): DpValue | undefined => component.get(key),
-    write: (key, value): void => {
-      component.set(key, value);
-    },
-    keys: (): undefined => undefined,
-    bytes: (): number => component.totalByteCount(),
-    writeMany: (values): void => {
-      for (const key of Object.keys(values)) {
-        component.set(key, values[key]);
-      }
-    },
-  };
+  return new ComponentHost(component);
 }
 
 /**
@@ -140,29 +211,7 @@ export function componentHost(component: ComponentDp): DpHost {
  * the whole target's count — the engine has no per-prefix figure.
  */
 export function prefixed(host: DpHost, prefix: string, caps: Capabilities = host.caps, abi: HostAbi = host.abi): DpHost {
-  const full = (key: string): string => prefix + key;
-
-  return {
-    abi,
-    caps,
-    read: (key): DpValue | undefined => host.read(full(key)),
-    write: (key, value): void => {
-      host.write(full(key), value);
-    },
-    keys: (): readonly string[] | undefined => host.keys()
-      ?.filter(id => id.startsWith(prefix))
-      .map(id => id.slice(prefix.length)),
-    bytes: (): number => host.bytes(),
-    writeMany: (values): void => {
-      const mapped: Record<string, DpValue | undefined> = {};
-
-      for (const key of Object.keys(values)) {
-        mapped[full(key)] = values[key];
-      }
-
-      host.writeMany(mapped);
-    },
-  };
+  return new PrefixedHost(host, prefix, caps, abi);
 }
 
 /**
@@ -170,5 +219,5 @@ export function prefixed(host: DpHost, prefix: string, caps: Capabilities = host
  * carries the target's identity.
  */
 export function proxiedHost(world: DirectDp, prefix: string): DpHost {
-  return prefixed(directHost(world, { readableWhenUnloaded: true }), prefix, PROXIED_CAPS, 'proxied');
+  return new PrefixedHost(directHost(world, { readableWhenUnloaded: true }), prefix, PROXIED_CAPS, 'proxied');
 }

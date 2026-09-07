@@ -19,7 +19,7 @@ export {
 export type { Capabilities, ComponentDp, DirectDp, DpHost, DpValue, HostAbi } from './host';
 
 export { createResolver, structuralClassifier } from './resolve';
-export type { Classifier, Resolution, Resolver, ResolverOptions, TargetKind } from './resolve';
+export type { Accepted, Classifier, Refused, Resolution, Resolver, ResolverOptions, TargetKind } from './resolve';
 
 export { createDb, parseBlockIdentity, structuralLocator } from './collection';
 export type { Collection, CollectionOptions, Db, DbOptions, Document, IndexedDocument, Lifecycle, Locator, Where } from './collection';

@@ -33,7 +33,7 @@ describe('index set', () => {
 
   it('opens a new chunk when the next entry would not fit', () => {
     const world = new WorldStub();
-    const index = createIndexSet(prefixed(directHost(world), 'i:'), 30);
+    const index = createIndexSet(prefixed(directHost(world), 'i:'), { budget: 30 });
 
     index.add('a'.repeat(12));
     index.add('b'.repeat(12));
@@ -45,7 +45,7 @@ describe('index set', () => {
 
     index.remove('b'.repeat(12));
     expect(world.getDynamicProperty('i:0')).toBe('a'.repeat(12));
-    expect([...createIndexSet(prefixed(directHost(world), 'i:'), 30).entries()].sort()).toEqual(['a'.repeat(12), 'c'.repeat(12)]);
+    expect([...createIndexSet(prefixed(directHost(world), 'i:'), { budget: 30 }).entries()].sort()).toEqual(['a'.repeat(12), 'c'.repeat(12)]);
   });
 });
 

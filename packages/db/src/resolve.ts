@@ -32,25 +32,31 @@ export interface Classifier {
   kindOf(target: unknown): TargetKind;
 }
 
-export type Resolution
-  = | {
-    ok: true;
-    kind: TargetKind;
-    /** The block or entity type, a slot's item type, a dimension's id, `world`. */
-    typeId: string;
-    typeKey: string;
-    identity: string;
-    host: DpHost;
-    /**
-     * The prefix a collection applies on top of `host` so its keys never meet another
-     * collection's, config's, or a proxied document's — the key scheme in one place:
-     * `core-db:<ns>:<kind>:<identity>:<collection>:<key>`, the identity empty on an own host
-     * because the target *is* the identity, and only `<collection>:` on a block entity, whose
-     * ~950 bytes are per pack per block already.
-     */
-    prefixFor(collection: string): string;
-  }
-  | { ok: false; kind: TargetKind; reason: string };
+export interface Accepted {
+  readonly ok: true;
+  readonly kind: TargetKind;
+  /** The block or entity type, a slot's item type, a dimension's id, `world`. */
+  readonly typeId: string;
+  readonly typeKey: string;
+  readonly identity: string;
+  readonly host: DpHost;
+  /**
+   * The prefix a collection applies on top of `host` so its keys never meet another
+   * collection's, config's, or a proxied document's — the key scheme in one place:
+   * `core-db:<ns>:<kind>:<identity>:<collection>:<key>`, the identity empty on an own host
+   * because the target *is* the identity, and only `<collection>:` on a block entity, whose
+   * ~950 bytes are per pack per block already.
+   */
+  prefixFor(collection: string): string;
+}
+
+export interface Refused {
+  readonly ok: false;
+  readonly kind: TargetKind;
+  readonly reason: string;
+}
+
+export type Resolution = Accepted | Refused;
 
 export interface ResolverOptions {
   /** The world, for proxied hosts. Anything with the six-method ABI. */
@@ -69,7 +75,7 @@ export interface Resolver {
    * chunk — when its documents live on the world anyway: a dimension always, a block or entity type
    * this session already saw resolve to the proxy. `undefined` when the bytes would be on the target.
    */
-  absent(kind: TargetKind, typeId: string, identity: string): (Resolution & { ok: true }) | undefined;
+  absent(kind: TargetKind, typeId: string, identity: string): Accepted | undefined;
 }
 
 // ─── Structural reads, without assertions ─────────────────────────────────────
@@ -214,32 +220,49 @@ function typeKeyOf(kind: TargetKind, typeId: string): string {
 
 // ─── The resolver ──────────────────────────────────────────────────────────────
 
+type Decision
+  = | { abi: 'direct'; batch: boolean }
+    | { abi: 'component' }
+    | { abi: 'proxied' };
+
+const PROXIED: Decision = { abi: 'proxied' };
+const COMPONENT: Decision = { abi: 'component' };
+const DIRECT_BATCH: Decision = { abi: 'direct', batch: true };
+const DIRECT_SINGLE: Decision = { abi: 'direct', batch: false };
+
+class AcceptedResolution implements Accepted {
+  readonly ok = true;
+  readonly typeKey: string;
+
+  constructor(
+    readonly kind: TargetKind,
+    readonly typeId: string,
+    readonly identity: string,
+    readonly host: DpHost,
+    private readonly _namespace: string,
+  ) {
+    this.typeKey = typeKeyOf(kind, typeId);
+  }
+
+  prefixFor(collection: string): string {
+    return this.host.abi === 'direct'
+      ? `core-db:${this._namespace}:${this.kind}::${collection}:`
+      : `${collection}:`;
+  }
+}
+
 export function createResolver(options: ResolverOptions): Resolver {
   const classify = options.classify ?? structuralClassifier;
-  const decisions = new Map<string, 'direct' | 'component' | 'proxied'>();
+  const { namespace, world } = options;
+  const decisions = new Map<string, Decision>();
 
-  const proxied = (kind: TargetKind, identity: string): DpHost =>
-    proxiedHost(options.world, `core-db:${options.namespace}:${kind}:${identity}:`);
+  const proxied = (kind: TargetKind, typeId: string, identity: string): Accepted =>
+    new AcceptedResolution(kind, typeId, identity, proxiedHost(world, `core-db:${namespace}:${kind}:${identity}:`), namespace);
 
-  const refuse = (kind: TargetKind, reason: string): Resolution => ({ ok: false, kind, reason });
+  const direct = (kind: TargetKind, typeId: string, identity: string, target: DirectDp, batch: boolean): Accepted =>
+    new AcceptedResolution(kind, typeId, identity, directHost(target, { readableWhenUnloaded: kind === 'world', batch }), namespace);
 
-  const accept = (kind: TargetKind, typeId: string, identity: string, host: DpHost): Resolution => ({
-    ok: true,
-    kind,
-    typeId,
-    typeKey: typeKeyOf(kind, typeId),
-    identity,
-    host,
-    prefixFor: (collection: string): string => {
-      switch (host.abi) {
-        case 'direct':
-          return `core-db:${options.namespace}:${kind}::${collection}:`;
-        case 'component':
-        case 'proxied':
-          return `${collection}:`;
-      }
-    },
-  });
+  const refuse = (kind: TargetKind, reason: string): Refused => ({ ok: false, kind, reason });
 
   const resolve = (target: unknown): Resolution => {
     const kind = classify.kindOf(target);
@@ -272,21 +295,36 @@ export function createResolver(options: ResolverOptions): Resolver {
       }
     }
 
+    // A type decided once is trusted: whether it holds its own properties, and how, cannot change.
     const cached = decisions.get(typeKey);
 
-    if (cached === 'direct' && isDirectDp(target)) {
-      return accept(kind, typeId, identity, directHost(target, { readableWhenUnloaded: kind === 'world' }));
-    }
+    if (cached !== undefined) {
+      switch (cached.abi) {
+        case 'direct':
+          return direct(kind, typeId, identity, target as unknown as DirectDp, cached.batch); // eslint-disable-line @typescript-eslint/no-unsafe-type-assertion
 
-    if (cached === 'proxied') {
-      return accept(kind, typeId, identity, proxied(kind, identity));
+        case 'proxied':
+          return proxied(kind, typeId, identity);
+
+        case 'component': {
+          const component = probeComponent(target);
+
+          if (component === undefined) {
+            return refuse(kind, 'cannot probe right now: the target is not loaded');
+          }
+
+          return new AcceptedResolution(kind, typeId, identity, componentHost(component), namespace);
+        }
+      }
     }
 
     // Direct ABI first: it wins where both are present (a block item has the component too).
     if (isDirectDp(target)) {
-      decisions.set(typeKey, 'direct');
+      const batch = typeof target.setDynamicProperties === 'function';
 
-      return accept(kind, typeId, identity, directHost(target, { readableWhenUnloaded: kind === 'world' }));
+      decisions.set(typeKey, batch ? DIRECT_BATCH : DIRECT_SINGLE);
+
+      return direct(kind, typeId, identity, target, batch);
     }
 
     // Component ABI: probe, and never cache a throw — an unloaded chunk throws here.
@@ -300,30 +338,39 @@ export function createResolver(options: ResolverOptions): Resolver {
       }
 
       if (isComponentDp(component)) {
-        decisions.set(typeKey, 'component');
+        decisions.set(typeKey, COMPONENT);
 
-        return accept(kind, typeId, identity, componentHost(component));
+        return new AcceptedResolution(kind, typeId, identity, componentHost(component), namespace);
       }
     }
 
-    decisions.set(typeKey, 'proxied');
+    decisions.set(typeKey, PROXIED);
 
-    return accept(kind, typeId, identity, proxied(kind, identity));
+    return proxied(kind, typeId, identity);
   };
 
   return {
     resolve,
-    decision: typeKey => decisions.get(typeKey),
-    absent: (kind, typeId, identity): (Resolution & { ok: true }) | undefined => {
-      const decided = kind === 'dimension' ? 'proxied' : decisions.get(typeKeyOf(kind, typeId));
+    decision: typeKey => decisions.get(typeKey)?.abi,
+    absent: (kind, typeId, identity): Accepted | undefined => {
+      const decided = kind === 'dimension' ? 'proxied' : decisions.get(typeKeyOf(kind, typeId))?.abi;
 
-      if (decided !== 'proxied') {
-        return undefined;
-      }
-
-      const resolution = accept(kind, typeId, identity, proxied(kind, identity));
-
-      return resolution.ok ? resolution : undefined;
+      return decided === 'proxied' ? proxied(kind, typeId, identity) : undefined;
     },
   };
+}
+
+/** The component of a block whose type is known to have one; `undefined` while its chunk is unloaded. */
+function probeComponent(target: Record<string, unknown>): ComponentDp | undefined {
+  if (!hasGetComponent(target)) {
+    return undefined;
+  }
+
+  try {
+    const component = target.getComponent('minecraft:dynamic_properties');
+
+    return isComponentDp(component) ? component : undefined;
+  } catch {
+    return undefined;
+  }
 }

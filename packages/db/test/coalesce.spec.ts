@@ -30,10 +30,12 @@ function harness(parkFor?: number): {
   const entities = new Map<string, EntityStub>();
   const scheduled: (() => void)[] = [];
   let attachedHooks: { loaded(target: unknown): void; leaving(target: unknown): void } | undefined;
+  let now = 0;
   const lifecycle = {
     schedule: vi.fn((flush: () => void) => {
       scheduled.push(flush);
     }),
+    tick: (): number => now,
     attach: vi.fn((hooks: { loaded(target: unknown): void; leaving(target: unknown): void }) => {
       attachedHooks = hooks;
     }),
@@ -58,6 +60,8 @@ function harness(parkFor?: number): {
     lifecycle,
     log,
     tick: (): void => {
+      now++;
+
       for (const flush of scheduled.splice(0)) {
         flush();
       }
@@ -82,7 +86,8 @@ describe('coalesce', () => {
 
     expect(counters.for(mob).get()).toEqual({ hits: 100 });
     expect(spy).not.toHaveBeenCalled();
-    expect(lifecycle.schedule).toHaveBeenCalledTimes(1);
+    // One flush for the documents, one for the index chunk.
+    expect(lifecycle.schedule).toHaveBeenCalledTimes(2);
 
     tick();
 
@@ -182,6 +187,24 @@ describe('coalesce', () => {
     expect(counters.size).toBe(0);
   });
 
+  it('re-resolves a handle once per tick', () => {
+    const { entities, db, tick } = harness();
+    const plain = db.collection('plain', { schema: schema<Counter>() });
+    const mob = new EntityStub('m', 'ns:mob');
+
+    entities.set('m', mob);
+
+    const handle = plain.for(mob);
+
+    expect(handle.available).toBe(true);
+    entities.delete('m');
+    // Same tick: the memo still trusts the target.
+    expect(handle.available).toBe(true);
+    tick();
+    expect(handle.available).toBe(false);
+    expect(handle.get()).toBeUndefined();
+  });
+
   it('never attaches to the lifecycle without a coalescing collection', () => {
     const { db, lifecycle, entities } = harness();
     const plain = db.collection('plain', { schema: schema<Counter>() });
@@ -191,7 +214,8 @@ describe('coalesce', () => {
     plain.for(mob).set({ hits: 1 });
 
     expect(lifecycle.attach).not.toHaveBeenCalled();
-    expect(lifecycle.schedule).not.toHaveBeenCalled();
+    // Only the index chunk is scheduled; the document itself was written through.
+    expect(lifecycle.schedule).toHaveBeenCalledTimes(1);
     expect(mob.getDynamicProperty('core-db:ns:entity::plain:doc')).toBe('{"v":1,"d":{"hits":1}}');
   });
 });

@@ -9,6 +9,10 @@
  *
  * An entry is added by the first write of a document and dropped by `delete`, by `onBreak`, and by
  * `all()` when it finds the target replaced. An orphan costs its identity's length until then.
+ *
+ * Chunks are written behind: a change marks its chunk dirty and the chunk is written once when
+ * `schedule` fires — the index lives on the world, which cannot vanish, so nothing is at risk. A
+ * thousand blocks placed in one tick cost a thousand set-inserts and three string writes.
  */
 import type { DpHost } from './host';
 
@@ -21,13 +25,25 @@ export interface IndexSet {
   remove(entry: string): void;
   entries(): Iterable<string>;
   readonly size: number;
+  /** Write the dirty chunks now. */
+  flush(): void;
 }
 
-export function createIndexSet(host: DpHost, budget: number = host.caps.budget): IndexSet {
+export interface IndexSetOptions {
+  /** Characters per chunk. The host's budget when omitted. */
+  budget?: number;
+  /** Run `flush` once, later — `system.run` in the engine. Chunks are written at once when omitted. */
+  schedule?: (flush: () => void) => void;
+}
+
+export function createIndexSet(host: DpHost, options: IndexSetOptions = {}): IndexSet {
+  const budget = options.budget ?? host.caps.budget;
   let chunks: string[][] | undefined;
   let where: Map<string, number> | undefined;
   /** Joined length per chunk, so appending never re-joins 30 KB to measure it. */
   const lengths: number[] = [];
+  const dirtyChunks = new Set<number>();
+  let scheduled = false;
 
   const load = (): { chunks: string[][]; where: Map<string, number> } => {
     if (chunks !== undefined && where !== undefined) {
@@ -57,11 +73,29 @@ export function createIndexSet(host: DpHost, budget: number = host.caps.budget):
     return { chunks, where };
   };
 
-  const save = (index: number, entries: readonly string[]): void => {
-    const raw = entries.join(SEPARATOR);
+  const flush = (): void => {
+    scheduled = false;
 
-    lengths[index] = raw.length;
-    host.write(String(index), raw);
+    for (const index of dirtyChunks) {
+      host.write(String(index), chunks?.[index]?.join(SEPARATOR) ?? '');
+    }
+
+    dirtyChunks.clear();
+  };
+
+  const save = (index: number, added: string | undefined): void => {
+    if (added !== undefined) {
+      lengths[index] = (lengths[index] ?? 0) + (lengths[index] === undefined || lengths[index] === 0 ? 0 : SEPARATOR.length) + added.length;
+    }
+
+    dirtyChunks.add(index);
+
+    if (options.schedule === undefined) {
+      flush();
+    } else if (!scheduled) {
+      scheduled = true;
+      options.schedule(flush);
+    }
   };
 
   return {
@@ -86,7 +120,7 @@ export function createIndexSet(host: DpHost, budget: number = host.caps.budget):
 
       target.push(entry);
       state.where.set(entry, index);
-      save(index, target);
+      save(index, entry);
     },
 
     remove: (entry): void => {
@@ -106,7 +140,8 @@ export function createIndexSet(host: DpHost, budget: number = host.caps.budget):
           target.splice(at, 1);
         }
 
-        save(index, target);
+        // Removals leave the length estimate high, which only makes a chunk split a little early.
+        save(index, undefined);
       }
 
       state.where.delete(entry);
@@ -117,5 +152,7 @@ export function createIndexSet(host: DpHost, budget: number = host.caps.budget):
     get size(): number {
       return load().where.size;
     },
+
+    flush,
   };
 }

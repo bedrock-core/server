@@ -98,21 +98,98 @@ function isDerivedKey(key: string): boolean {
   return suffix === 'bad' || /^\d+$/.test(suffix);
 }
 
-export function createDocumentStore<T extends object>(host: DpHost, options: DocumentStoreOptions<T>): DocumentStore<T> {
-  const version = options.version ?? 1;
-  const log = options.log ?? ((message: string): void => {
-    console.warn(message);
-  });
-  const chunked = host.abi !== 'component';
+class DocumentStoreImpl<T extends object> implements DocumentStore<T> {
+  private readonly _version: number;
+  private readonly _chunked: boolean;
 
-  const chunkCount = (key: string): number => {
-    const head = host.read(key);
+  constructor(private readonly _host: DpHost, private readonly _options: DocumentStoreOptions<T>) {
+    this._version = _options.version ?? 1;
+    this._chunked = _host.abi !== 'component';
+  }
+
+  read(key: string): T | undefined {
+    const raw = this._readRaw(key);
+
+    if (raw === undefined) {
+      return undefined;
+    }
+
+    let envelope: Envelope | undefined;
+
+    try {
+      envelope = parseEnvelope(raw);
+    } catch (error) {
+      return this._quarantine(key, raw, `not JSON: ${String(error)}`);
+    }
+
+    if (envelope === undefined) {
+      return this._quarantine(key, raw, 'not a document envelope');
+    }
+
+    if (envelope.v > this._version) {
+      return this._quarantine(key, raw, `written at version ${envelope.v}, this addon reads version ${this._version}`);
+    }
+
+    if (envelope.v === this._version) {
+      return this._withDefaults(envelope.d);
+    }
+
+    let migrated: Record<string, unknown>;
+
+    try {
+      migrated = this._migrate(envelope);
+    } catch (error) {
+      return this._quarantine(key, raw, `migration from version ${envelope.v} failed: ${String(error)}`);
+    }
+
+    // Migrated once, written once: the next read is a plain parse.
+    this._writeRaw(key, JSON.stringify({ v: this._version, d: migrated }));
+
+    return this._withDefaults(migrated);
+  }
+
+  write(key: string, doc: T): void {
+    this._writeRaw(key, JSON.stringify({ v: this._version, d: doc }));
+  }
+
+  remove(key: string): void {
+    const count = this._chunkCount(key);
+
+    if (count === 0) {
+      this._host.write(key, undefined);
+
+      return;
+    }
+
+    const values: Record<string, undefined> = { [key]: undefined };
+
+    for (let i = 0; i < count; i++) {
+      values[`${key}${CHUNKS}${i}`] = undefined;
+    }
+
+    this._host.writeMany(values);
+  }
+
+  keys(): readonly string[] | undefined {
+    return this._host.keys()?.filter(key => !isDerivedKey(key));
+  }
+
+  private _log(message: string): void {
+    if (this._options.log !== undefined) {
+      this._options.log(message);
+    } else {
+      console.warn(message);
+    }
+  }
+
+  private _chunkCount(key: string): number {
+    const head = this._host.read(key);
 
     return typeof head === 'string' && head.startsWith(CHUNKS) ? Number(head.slice(CHUNKS.length)) : 0;
-  };
+  }
 
-  const readRaw = (key: string): string | undefined => {
-    const head = host.read(key);
+  private _readRaw(key: string): string | undefined {
+    const head = this._host.read(key);
 
     if (typeof head !== 'string') {
       return undefined;
@@ -126,7 +203,7 @@ export function createDocumentStore<T extends object>(host: DpHost, options: Doc
     let joined = '';
 
     for (let i = 0; i < count; i++) {
-      const part = host.read(`${key}${CHUNKS}${i}`);
+      const part = this._host.read(`${key}${CHUNKS}${i}`);
 
       if (typeof part !== 'string') {
         return undefined;
@@ -136,34 +213,30 @@ export function createDocumentStore<T extends object>(host: DpHost, options: Doc
     }
 
     return joined;
-  };
+  }
 
-  const removeRaw = (key: string): void => {
-    const count = chunkCount(key);
-    const values: Record<string, undefined> = { [key]: undefined };
+  private _writeRaw(key: string, raw: string): void {
+    const budget = this._host.caps.budget;
 
-    for (let i = 0; i < count; i++) {
-      values[`${key}${CHUNKS}${i}`] = undefined;
-    }
-
-    host.writeMany(values);
-  };
-
-  const writeRaw = (key: string, raw: string): void => {
-    const budget = host.caps.budget;
-
-    if (!chunked) {
+    if (!this._chunked) {
       // The component budget counts key and value together, per block per pack.
       if (key.length + raw.length > budget) {
-        throw new DbBudgetError(options.collection, key, key.length + raw.length, budget);
+        throw new DbBudgetError(this._options.collection, key, key.length + raw.length, budget);
       }
 
-      host.write(key, raw);
+      this._host.write(key, raw);
 
       return;
     }
 
-    const previous = chunkCount(key);
+    const previous = this._chunkCount(key);
+
+    if (raw.length <= budget && previous === 0) {
+      this._host.write(key, raw);
+
+      return;
+    }
+
     const values: Record<string, string | undefined> = {};
     let count = 0;
 
@@ -182,28 +255,28 @@ export function createDocumentStore<T extends object>(host: DpHost, options: Doc
       values[`${key}${CHUNKS}${i}`] = undefined;
     }
 
-    host.writeMany(values);
-  };
+    this._host.writeMany(values);
+  }
 
-  const quarantine = (key: string, raw: string, why: string): undefined => {
-    log(`[db] ${options.collection}: document '${key}' quarantined under '${key}${BAD}' — ${why}`);
+  private _quarantine(key: string, raw: string, why: string): undefined {
+    this._log(`[db] ${this._options.collection}: document '${key}' quarantined under '${key}${BAD}' — ${why}`);
 
     try {
-      writeRaw(`${key}${BAD}`, raw);
+      this._writeRaw(`${key}${BAD}`, raw);
     } catch (error) {
-      log(`[db] ${options.collection}: could not keep the quarantined copy of '${key}': ${String(error)}`);
+      this._log(`[db] ${this._options.collection}: could not keep the quarantined copy of '${key}': ${String(error)}`);
     }
 
-    removeRaw(key);
+    this.remove(key);
 
     return undefined;
-  };
+  }
 
-  const migrate = (envelope: Envelope): Record<string, unknown> => {
+  private _migrate(envelope: Envelope): Record<string, unknown> {
     let doc = envelope.d;
 
-    for (let v = envelope.v + 1; v <= version; v++) {
-      const step = options.migrate?.[v];
+    for (let v = envelope.v + 1; v <= this._version; v++) {
+      const step = this._options.migrate?.[v];
 
       if (step === undefined) {
         throw new Error(`no migration step to version ${v}`);
@@ -213,64 +286,17 @@ export function createDocumentStore<T extends object>(host: DpHost, options: Doc
     }
 
     return doc;
-  };
+  }
 
   // The caller's type is the contract for what is on disk; the store cannot check it.
-  const withDefaults = (doc: Record<string, unknown>): T => {
-    const defaults = options.defaults;
+  private _withDefaults(doc: Record<string, unknown>): T {
+    const defaults = this._options.defaults;
     const filled: unknown = defaults === undefined ? doc : { ...defaults, ...doc };
 
     return filled as T; // eslint-disable-line @typescript-eslint/no-unsafe-type-assertion
-  };
+  }
+}
 
-  return {
-    read: (key): T | undefined => {
-      const raw = readRaw(key);
-
-      if (raw === undefined) {
-        return undefined;
-      }
-
-      let envelope: Envelope | undefined;
-
-      try {
-        envelope = parseEnvelope(raw);
-      } catch (error) {
-        return quarantine(key, raw, `not JSON: ${String(error)}`);
-      }
-
-      if (envelope === undefined) {
-        return quarantine(key, raw, 'not a document envelope');
-      }
-
-      if (envelope.v > version) {
-        return quarantine(key, raw, `written at version ${envelope.v}, this addon reads version ${version}`);
-      }
-
-      if (envelope.v === version) {
-        return withDefaults(envelope.d);
-      }
-
-      let migrated: Record<string, unknown>;
-
-      try {
-        migrated = migrate(envelope);
-      } catch (error) {
-        return quarantine(key, raw, `migration from version ${envelope.v} failed: ${String(error)}`);
-      }
-
-      // Migrated once, written once: the next read is a plain parse.
-      writeRaw(key, JSON.stringify({ v: version, d: migrated }));
-
-      return withDefaults(migrated);
-    },
-
-    write: (key, doc): void => {
-      writeRaw(key, JSON.stringify({ v: version, d: doc }));
-    },
-
-    remove: removeRaw,
-
-    keys: (): readonly string[] | undefined => host.keys()?.filter(key => !isDerivedKey(key)),
-  };
+export function createDocumentStore<T extends object>(host: DpHost, options: DocumentStoreOptions<T>): DocumentStore<T> {
+  return new DocumentStoreImpl(host, options);
 }

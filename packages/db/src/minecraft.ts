@@ -117,6 +117,8 @@ export const engineLifecycle: Lifecycle = {
     system.run(flush);
   },
 
+  tick: (): number => system.currentTick,
+
   attach({ loaded, leaving }): void {
     world.afterEvents.entityLoad.subscribe(({ entity }) => {
       loaded(entity);

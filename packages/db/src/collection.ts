@@ -3,10 +3,10 @@
  *
  * `for(target)` keeps an identity and a way to find the target again, never the handle it was
  * given — a `Block` goes stale when its chunk unloads, an `Entity` after removal — and every
- * operation re-resolves. Reads answer `undefined` when the target cannot be reached; writes throw
- * `DbTargetError` naming the collection, because writing to nothing is a bug at the call site.
- * A proxied document (world property keyed by identity) stays readable while its target is
- * unloaded, since the world needs no chunk.
+ * operation re-resolves, at most once per tick. Reads answer `undefined` when the target cannot be
+ * reached; writes throw `DbTargetError` naming the collection, because writing to nothing is a bug
+ * at the call site. A proxied document (world property keyed by identity) stays readable while its
+ * target is unloaded, since the world needs no chunk.
  *
  * Write-through: a `set` or `patch` updates the in-memory document and the dynamic property in the
  * same call — measured at 17 µs there is nothing to flush and nothing to lose. Documents are cached
@@ -21,14 +21,17 @@
  * writes each dirty document once. It is offered only where a dirty document cannot die with its
  * target inside that window — on the world, and on entities, whose unloaded documents are parked
  * and written when the entity loads again (players are flushed as they leave instead).
+ *
+ * Handles and collections are classes with prototype methods: the engine runs QuickJS, where a
+ * `for()` that allocated a dozen closures cost more than the property write it wrapped.
  */
 import { observable, type Observable, type Unsubscribe } from '@bedrock-core/observable';
 import { accepts, type Acceptor, type Conflicts, type Requirements, type StorableTarget } from './accept';
 import { createDocumentStore, type DocumentSchema, type DocumentStore, type Schema } from './document';
-import { DbTargetError } from './errors';
-import { directHost, prefixed, type Capabilities, type DirectDp } from './host';
+import { DbBudgetError, DbTargetError } from './errors';
+import { directHost, prefixed, type Capabilities, type DirectDp, type DpHost } from './host';
 import { createIndexSet, type IndexSet } from './indexed';
-import { createResolver, type Classifier, type Resolution, type Resolver, type TargetKind } from './resolve';
+import { createResolver, type Accepted, type Classifier, type Resolution, type Resolver, type TargetKind } from './resolve';
 
 export interface CollectionOptions<T extends object, Target, R extends Requirements> {
   /** The document type, with its version, defaults and migrations: `schema<Elevator>({ version: 2 })`. */
@@ -89,8 +92,6 @@ export interface Collection<T extends object, Target> {
   readonly size: number;
 }
 
-type Accepted = Resolution & { ok: true };
-
 /**
  * How a kept target is found again for the next operation, and how an index entry becomes a target.
  * The default trusts the handle while it says it is valid and cannot locate by identity;
@@ -129,12 +130,18 @@ export function parseBlockIdentity(identity: string): { dimensionId: string; x: 
 }
 
 /**
- * What `coalesce` needs from the engine, wired only when the first coalescing collection is made
- * so a db without one costs nothing per tick.
+ * What `coalesce` and the index need from the engine, wired only when the first coalescing
+ * collection is made so a db without one costs nothing per tick.
  */
 export interface Lifecycle {
   /** Run `flush` once, later in this tick or next — `system.run` in the engine. */
   schedule(flush: () => void): void;
+  /**
+   * The current tick. A handle re-resolves its target at most once per tick: within one tick the
+   * script is the only thing running, so a target it has not itself removed is still there.
+   * Without a clock every operation re-resolves.
+   */
+  tick?(): number;
   /** Called once; `loaded` must be called with every entity that loads, `leaving` with every player about to leave. */
   attach(hooks: { loaded(target: unknown): void; leaving(target: unknown): void }): void;
 }
@@ -170,10 +177,12 @@ export interface Db {
    * engine's `onBreak` runs, which is why this takes the identity, not the block.
    */
   blockRemoved(dimensionId: string, location: { x: number; y: number; z: number }, typeId: string): void;
-  /** Write every coalesced document now — all of them, or those of one target. */
+  /** Write every coalesced document and every dirty index chunk now — all of them, or one target's documents. */
   flush(target?: unknown): void;
   readonly resolver: Resolver;
 }
+
+// ─── Internals ─────────────────────────────────────────────────────────────────
 
 const REQUIREMENTS: readonly (keyof Requirements)[] = ['own', 'enumerable', 'readableWhenUnloaded'];
 
@@ -192,20 +201,22 @@ function isKind(value: string): value is TargetKind {
   return KINDS.includes(value);
 }
 
+const PARK_FOR = 5 * 60_000;
+
+/** `coalesce` is safe where a dirty document cannot die with its target before the flush. */
+const coalescable = (resolution: Accepted): boolean => resolution.host.caps.readableWhenUnloaded || resolution.kind === 'entity';
+
+const NOTHING = (): undefined => undefined;
+
+const NO_LISTENER = (): void => {};
+
 type Admitted = { ok: true; resolution: Accepted } | { ok: false; kind: TargetKind; reason: string };
+
+type State = { ok: true; resolution: Accepted } | { ok: false; reason: string };
 
 interface Stream<T> {
   source: Observable<T | undefined>;
   listeners: number;
-}
-
-/** What a collection exposes to the db for cleanup by identity and for flushing. */
-interface Registered {
-  readonly kinds: readonly TargetKind[] | undefined;
-  removed(kind: TargetKind, typeId: string, identity: string): void;
-  flush(key?: string): void;
-  /** An entity is back: write what was parked for it. */
-  loaded(target: unknown): void;
 }
 
 interface Dirty<T> {
@@ -219,517 +230,621 @@ interface Parked<T> {
   until: number;
 }
 
-const PARK_FOR = 5 * 60_000;
+/** What every collection shares from its db. */
+interface Shared {
+  readonly namespace: string;
+  readonly resolver: Resolver;
+  readonly locate: Locator;
+  readonly worldHost: DpHost;
+  readonly tick: (() => number) | undefined;
+  readonly scheduleIndex: ((flush: () => void) => void) | undefined;
+  readonly parkFor: number;
+  log(message: string): void;
+  attach(): void;
+  scheduleFlush(): void;
+}
 
-/** `coalesce` is safe where a dirty document cannot die with its target before the flush. */
-const coalescable = (resolution: Accepted): boolean => resolution.host.caps.readableWhenUnloaded || resolution.kind === 'entity';
+/** Documents are cached, subscribed and indexed by identity; a slot has none, so each handle stands alone. */
+function identityKey(kind: TargetKind, identity: string): string | undefined {
+  return kind === 'slot' ? undefined : `${kind}:${identity}`;
+}
+
+function typeIdOfEntry(kind: TargetKind, identity: string): string {
+  switch (kind) {
+    case 'block':
+      return parseBlockIdentity(identity)?.typeId ?? '?';
+    case 'dimension':
+      return identity;
+    default:
+      return '?';
+  }
+}
+
+// ─── The handle ────────────────────────────────────────────────────────────────
+
+class Handle<T extends object> implements Document<T> {
+  /** Cache, stream and index key: `kind:identity`. Undefined for a slot, which has no identity. */
+  readonly key: string | undefined;
+  /** The world is one target with one document; it needs no index. */
+  private readonly _indexKey: string | undefined;
+  private _last: Accepted | undefined;
+  private _memo: State | undefined;
+  private _memoTick: number;
+  private _store: DocumentStore<T> | undefined;
+  private _storeFor: Accepted | undefined;
+  private _local: Stream<T> | undefined;
+
+  constructor(
+    private readonly _c: CollectionImpl<T>,
+    private readonly _first: Admitted,
+    private _find: () => unknown,
+  ) {
+    this._last = _first.ok ? _first.resolution : undefined;
+    this.key = this._last === undefined ? undefined : identityKey(this._last.kind, this._last.identity);
+    this._indexKey = this.key !== undefined && this._last?.kind !== 'world' ? this.key : undefined;
+    // `first` was resolved this very tick: the first operation need not resolve again.
+    this._memoTick = _c.shared.tick === undefined ? -1 : _c.shared.tick();
+    this._memo = _first.ok ? _first : undefined;
+  }
+
+  get available(): boolean {
+    return this._current().ok;
+  }
+
+  get reason(): string | undefined {
+    const state = this._current();
+
+    return state.ok ? undefined : state.reason;
+  }
+
+  get(): T | undefined {
+    const state = this._current();
+
+    return state.ok ? this._read(state.resolution) : undefined;
+  }
+
+  set(doc: T): void {
+    this._write(this._reachable(), doc);
+  }
+
+  patch(changes: Partial<T>): void {
+    const resolution = this._reachable();
+    const merged: unknown = { ...this._c.defaults, ...this._read(resolution), ...changes };
+
+    this._write(resolution, merged as T); // eslint-disable-line @typescript-eslint/no-unsafe-type-assertion
+  }
+
+  delete(): void {
+    const state = this._current();
+    const resolution = state.ok ? state.resolution : this._last;
+
+    if (resolution === undefined) {
+      return;
+    }
+
+    const c = this._c;
+
+    if (this.key !== undefined) {
+      c.dirty.delete(this.key);
+      c.parked.delete(this.key);
+    }
+
+    if (state.ok || resolution.host.caps.readableWhenUnloaded) {
+      try {
+        this._storeOf(resolution).remove(DOC);
+      } catch {
+        this._memo = undefined;
+      }
+    }
+
+    if (this.key !== undefined) {
+      c.cache.delete(this.key);
+    }
+
+    if (this._indexKey !== undefined) {
+      c.index.remove(this._indexKey);
+    }
+
+    this._notify(undefined);
+  }
+
+  subscribe(listener: (doc: T | undefined) => void): Unsubscribe {
+    if (!this._first.ok) {
+      return NO_LISTENER;
+    }
+
+    const c = this._c;
+    const key = this.key;
+    const entry = key === undefined
+      ? (this._local ??= { source: observable<T | undefined>(undefined, { label: `${c.name}/slot` }), listeners: 0 })
+      : c.stream(key, c.cache.get(key));
+    const release = entry.source.subscribe(listener);
+    let released = false;
+
+    entry.listeners++;
+
+    return (): void => {
+      if (released) {
+        return;
+      }
+
+      released = true;
+      release();
+      entry.listeners--;
+
+      if (entry.listeners === 0 && key !== undefined && c.streams.get(key) === entry) {
+        c.streams.delete(key);
+      }
+    };
+  }
+
+  private _current(): State {
+    const tick = this._c.shared.tick;
+
+    if (tick === undefined) {
+      return this._resolveNow();
+    }
+
+    const now = tick();
+
+    if (this._memo !== undefined && this._memoTick === now) {
+      return this._memo;
+    }
+
+    this._memo = this._resolveNow();
+    this._memoTick = now;
+
+    return this._memo;
+  }
+
+  private _resolveNow(): State {
+    const found = this._find();
+    const last = this._last;
+
+    if (found === undefined) {
+      // A world property keyed by identity needs no loaded target.
+      if (last !== undefined && last.host.caps.readableWhenUnloaded) {
+        return { ok: true, resolution: last };
+      }
+
+      return { ok: false, reason: this._first.ok ? 'the target is not loaded or no longer exists' : this._first.reason };
+    }
+
+    const admitted = this._c.admit(this._c.shared.resolver.resolve(found));
+
+    if (!admitted.ok) {
+      return { ok: false, reason: admitted.reason };
+    }
+
+    if (last === undefined || admitted.resolution.identity !== last.identity) {
+      this._find = this._c.shared.locate.bind(found, admitted.resolution);
+    }
+
+    this._last = admitted.resolution;
+
+    return admitted;
+  }
+
+  private _reachable(): Accepted {
+    const state = this._current();
+
+    if (!state.ok) {
+      throw new DbTargetError(this._c.name, state.reason);
+    }
+
+    return state.resolution;
+  }
+
+  /** The store for a resolution, kept while the resolution object is the same one. */
+  private _storeOf(resolution: Accepted): DocumentStore<T> {
+    if (this._store === undefined || this._storeFor !== resolution) {
+      this._store = this._c.storeFor(resolution);
+      this._storeFor = resolution;
+    }
+
+    return this._store;
+  }
+
+  private _notify(doc: T | undefined): void {
+    (this.key === undefined ? this._local : this._c.streams.get(this.key))?.source.set(doc);
+  }
+
+  private _read(resolution: Accepted): T | undefined {
+    const c = this._c;
+    const key = this.key;
+
+    if (key !== undefined && c.cache.has(key)) {
+      return c.cache.get(key);
+    }
+
+    const doc = this._storeOf(resolution).read(DOC);
+
+    if (key !== undefined) {
+      c.cache.set(key, doc);
+    }
+
+    return doc;
+  }
+
+  private _write(resolution: Accepted, doc: T): void {
+    const c = this._c;
+    const key = this.key;
+
+    if (c.coalesce && key !== undefined) {
+      c.dirty.set(key, { doc, last: resolution, find: (): unknown => this._find() });
+      c.shared.scheduleFlush();
+    } else {
+      // An engine throw on a target the memo still trusted — removed by this very script this
+      // tick — becomes ours.
+      try {
+        this._storeOf(resolution).write(DOC, doc);
+      } catch (error) {
+        this._memo = undefined;
+
+        if (error instanceof DbBudgetError) {
+          throw error;
+        }
+
+        throw new DbTargetError(c.name, `the target is gone: ${String(error)}`);
+      }
+    }
+
+    if (key !== undefined) {
+      c.cache.set(key, doc);
+    }
+
+    if (this._indexKey !== undefined) {
+      c.index.add(this._indexKey);
+    }
+
+    this._notify(doc);
+  }
+}
+
+class IndexedHandle<T extends object> extends Handle<T> implements IndexedDocument<T> {
+  constructor(c: CollectionImpl<T>, first: Admitted, find: () => unknown, readonly kind: TargetKind, readonly identity: string) {
+    super(c, first, find);
+  }
+}
+
+// ─── The collection ────────────────────────────────────────────────────────────
+
+class CollectionImpl<T extends object> implements Collection<T, unknown> {
+  readonly coalesce: boolean;
+  readonly defaults: Partial<T> | undefined;
+  readonly cache = new Map<string, T | undefined>();
+  readonly streams = new Map<string, Stream<T>>();
+  readonly dirty = new Map<string, Dirty<T>>();
+  readonly parked = new Map<string, Parked<T>>();
+  readonly index: IndexSet;
+  readonly kinds: readonly TargetKind[] | undefined;
+  private readonly _acceptor: Acceptor<unknown> | undefined;
+  private readonly _require: Requirements | undefined;
+  private readonly _schema: DocumentSchema<T>;
+  private readonly _accepted = new Map<string, boolean>();
+
+  constructor(readonly shared: Shared, readonly name: string, options: CollectionOptions<T, unknown, Requirements>) {
+    this._acceptor = options.accept;
+    this._require = options.require;
+    this._schema = options.schema;
+    this.defaults = options.schema.defaults;
+    this.coalesce = options.coalesce === true;
+    this.kinds = options.accept?.kinds;
+    this.index = createIndexSet(prefixed(shared.worldHost, `core-db:${shared.namespace}:index:${name}:`), { schedule: shared.scheduleIndex });
+
+    if (this.coalesce) {
+      shared.attach();
+    }
+  }
+
+  get size(): number {
+    return this.index.size;
+  }
+
+  for(target: unknown): Document<T> {
+    const first = this.admit(this.shared.resolver.resolve(target));
+
+    return new Handle(this, first, first.ok ? this.shared.locate.bind(target, first.resolution) : NOTHING);
+  }
+
+  where(target: unknown): Where {
+    const admitted = this.admit(this.shared.resolver.resolve(target));
+
+    return admitted.ok
+      ? { ok: true, kind: admitted.resolution.kind, caps: admitted.resolution.host.caps }
+      : admitted;
+  }
+
+  forget(target: unknown): void {
+    const resolution = this.shared.resolver.resolve(target);
+    const key = resolution.ok ? identityKey(resolution.kind, resolution.identity) : undefined;
+
+    if (key === undefined) {
+      return;
+    }
+
+    this.cache.delete(key);
+    this.streams.delete(key);
+  }
+
+  * all(): IterableIterator<IndexedDocument<T>> {
+    for (const entry of [...this.index.entries()]) {
+      const at = entry.indexOf(':');
+      const kind = entry.slice(0, at);
+      const identity = entry.slice(at + 1);
+
+      if (!isKind(kind)) {
+        this.index.remove(entry);
+        continue;
+      }
+
+      const doc = this._handleForEntry(kind, identity);
+
+      if (doc !== undefined) {
+        yield doc;
+      }
+    }
+  }
+
+  admit(resolution: Resolution): Admitted {
+    if (!resolution.ok) {
+      return { ok: false, kind: resolution.kind, reason: resolution.reason };
+    }
+
+    if (this._acceptor !== undefined) {
+      let pass = this._accepted.get(resolution.typeKey);
+
+      if (pass === undefined) {
+        pass = accepts(this._acceptor, resolution.typeId, resolution.kind);
+        this._accepted.set(resolution.typeKey, pass);
+      }
+
+      if (!pass) {
+        return { ok: false, kind: resolution.kind, reason: `${resolution.typeId} is not accepted by '${this.name}'` };
+      }
+    }
+
+    if (this._require !== undefined) {
+      for (const requirement of REQUIREMENTS) {
+        if (this._require[requirement] === true && !resolution.host.caps[requirement]) {
+          return { ok: false, kind: resolution.kind, reason: `require.${requirement}: ${REQUIREMENT_TEXT[requirement]}` };
+        }
+      }
+    }
+
+    if (this.coalesce && !coalescable(resolution)) {
+      return { ok: false, kind: resolution.kind, reason: `coalesce: a ${resolution.kind} document could die with its target before the flush` };
+    }
+
+    return { ok: true, resolution };
+  }
+
+  storeFor(resolution: Accepted): DocumentStore<T> {
+    return createDocumentStore<T>(prefixed(resolution.host, resolution.prefixFor(this.name)), { ...this._schema, collection: this.name, log: this.shared.log });
+  }
+
+  stream(key: string, initial: T | undefined): Stream<T> {
+    let entry = this.streams.get(key);
+
+    if (entry === undefined) {
+      entry = { source: observable<T | undefined>(initial, { label: `${this.name}/${key}` }), listeners: 0 };
+      this.streams.set(key, entry);
+    }
+
+    return entry;
+  }
+
+  /** A block or entity is gone for good, by identity. */
+  removed(kind: TargetKind, typeId: string, identity: string): void {
+    const key = identityKey(kind, identity);
+
+    if (key !== undefined && this.index.has(key)) {
+      this._dropIdentity(key, this.shared.resolver.absent(kind, typeId, identity));
+    }
+  }
+
+  /** Write the dirty documents — all, or one key — parking those whose entity is away; then the index. */
+  flush(only?: string): void {
+    for (const [key, entry] of [...this.dirty]) {
+      if (only !== undefined && key !== only) {
+        continue;
+      }
+
+      this.dirty.delete(key);
+
+      const resolution = this._flushTarget(entry);
+
+      if (resolution === undefined) {
+        this.parked.set(key, { doc: entry.doc, until: Date.now() + this.shared.parkFor });
+        continue;
+      }
+
+      this.storeFor(resolution).write(DOC, entry.doc);
+    }
+
+    this.index.flush();
+  }
+
+  /** An entity came back: write its parked document, and drop parked documents past their time. */
+  loaded(target: unknown): void {
+    if (this.parked.size === 0) {
+      return;
+    }
+
+    const now = Date.now();
+
+    for (const [key, entry] of [...this.parked]) {
+      if (entry.until <= now) {
+        this.parked.delete(key);
+        this.shared.log(`[db] ${this.name}: dropped a document parked for '${key}' — its target did not load again in time`);
+      }
+    }
+
+    const resolution = this.shared.resolver.resolve(target);
+
+    if (!resolution.ok) {
+      return;
+    }
+
+    const key = identityKey(resolution.kind, resolution.identity);
+    const waiting = key === undefined ? undefined : this.parked.get(key);
+
+    if (key === undefined || waiting === undefined) {
+      return;
+    }
+
+    this.parked.delete(key);
+    this.storeFor(resolution).write(DOC, waiting.doc);
+  }
+
+  /** Where a dirty document goes now: its target found again, or the world when the document lives there. */
+  private _flushTarget(entry: Dirty<T>): Accepted | undefined {
+    const found = entry.find();
+
+    if (found === undefined) {
+      return entry.last.host.caps.readableWhenUnloaded ? entry.last : undefined;
+    }
+
+    const resolved = this.shared.resolver.resolve(found);
+
+    return resolved.ok && resolved.identity === entry.last.identity ? resolved : undefined;
+  }
+
+  /** The identity is gone for good: forget it, tell subscribers, and remove a world-kept document. */
+  private _dropIdentity(key: string, resolution: Accepted | undefined): void {
+    if (resolution !== undefined && resolution.host.caps.readableWhenUnloaded) {
+      this.storeFor(resolution).remove(DOC);
+    }
+
+    this.cache.delete(key);
+    this.streams.get(key)?.source.set(undefined);
+    this.streams.delete(key);
+    this.index.remove(key);
+  }
+
+  /** A handle for an index entry: the located target when it is at hand, else the world-kept document, else nothing reachable. */
+  private _handleForEntry(kind: TargetKind, identity: string): IndexedDocument<T> | undefined {
+    const key = `${kind}:${identity}`;
+    const located = this.shared.locate.fromIdentity(kind, identity);
+
+    if (located !== undefined) {
+      const resolved = this.shared.resolver.resolve(located);
+
+      // The index said one thing, the world holds another: a block of another type now stands
+      // there (the identity carries the type). Whatever was kept for the old one is gone or orphaned.
+      if (resolved.ok && resolved.identity !== identity) {
+        this._dropIdentity(key, this.shared.resolver.absent(kind, typeIdOfEntry(kind, identity), identity));
+
+        return undefined;
+      }
+
+      const first = this.admit(resolved);
+
+      return new IndexedHandle(this, first, first.ok ? this.shared.locate.bind(located, first.resolution) : NOTHING, kind, identity);
+    }
+
+    const absent = this.shared.resolver.absent(kind, typeIdOfEntry(kind, identity), identity);
+    const first: Admitted = absent === undefined
+      ? { ok: false, kind, reason: 'the target is not loaded or no longer exists' }
+      : this.admit(absent);
+
+    return new IndexedHandle(this, first, NOTHING, kind, identity);
+  }
+}
+
+// ─── The db ────────────────────────────────────────────────────────────────────
 
 export function createDb(options: DbOptions): Db {
   const { world, namespace } = options;
   const resolver = createResolver({ world, namespace, classify: options.classify });
-  const locate = options.locate ?? structuralLocator;
-  const log = options.log ?? ((message: string): void => {
-    console.warn(message);
-  });
-  const worldHost = directHost(world, { readableWhenUnloaded: true });
-  const registered: Registered[] = [];
-  const parkFor = options.parkFor ?? PARK_FOR;
+  const collections: CollectionImpl<object>[] = [];
+  const lifecycle = options.lifecycle;
   let attached = false;
   let flushScheduled = false;
 
   const keyOf = (target: unknown): string | undefined => {
     const resolution = resolver.resolve(target);
 
-    return resolution.ok && resolution.kind !== 'slot' ? `${resolution.kind}:${resolution.identity}` : undefined;
+    return resolution.ok ? identityKey(resolution.kind, resolution.identity) : undefined;
   };
 
   const flushAll = (key?: string): void => {
     flushScheduled = false;
 
-    for (const entry of registered) {
-      entry.flush(key);
+    for (const collection of collections) {
+      collection.flush(key);
     }
   };
 
-  /** The first coalescing collection wires the engine hooks; a db without one never does. */
-  const attach = (): void => {
-    if (attached) {
-      return;
-    }
+  const shared: Shared = {
+    namespace,
+    resolver,
+    locate: options.locate ?? structuralLocator,
+    worldHost: directHost(world, { readableWhenUnloaded: true }),
+    tick: lifecycle?.tick?.bind(lifecycle),
+    scheduleIndex: lifecycle === undefined ? undefined : lifecycle.schedule.bind(lifecycle),
+    parkFor: options.parkFor ?? PARK_FOR,
 
-    attached = true;
-    options.lifecycle?.attach({
-      loaded: (target): void => {
-        for (const entry of registered) {
-          entry.loaded(target);
-        }
-      },
-      leaving: (target): void => {
-        flushAll(keyOf(target));
-      },
-    });
-  };
+    log: options.log ?? ((message: string): void => {
+      console.warn(message);
+    }),
 
-  const scheduleFlush = (): void => {
-    if (flushScheduled) {
-      return;
-    }
-
-    flushScheduled = true;
-
-    if (options.lifecycle === undefined) {
-      queueMicrotask(() => flushAll());
-    } else {
-      options.lifecycle.schedule(() => flushAll());
-    }
-  };
-
-  function collection<T extends object, Target, R extends Requirements>(
-    name: string,
-    collectionOptions: CollectionOptions<T, Target, R>,
-  ): Collection<T, Target> {
-    const acceptor = collectionOptions.accept;
-    const require = collectionOptions.require;
-    const coalesce = collectionOptions.coalesce === true;
-    const schema: DocumentSchema<T> = collectionOptions.schema;
-    const defaults = schema.defaults;
-    const accepted = new Map<string, boolean>();
-    const cache = new Map<string, T | undefined>();
-    const streams = new Map<string, Stream<T>>();
-    const index: IndexSet = createIndexSet(prefixed(worldHost, `core-db:${namespace}:index:${name}:`));
-    const dirty = new Map<string, Dirty<T>>();
-    const parked = new Map<string, Parked<T>>();
-
-    if (coalesce) {
-      attach();
-    }
-
-    const admit = (resolution: Resolution): Admitted => {
-      if (!resolution.ok) {
-        return { ok: false, kind: resolution.kind, reason: resolution.reason };
-      }
-
-      if (acceptor !== undefined) {
-        let pass = accepted.get(resolution.typeKey);
-
-        if (pass === undefined) {
-          pass = accepts(acceptor, resolution.typeId, resolution.kind);
-          accepted.set(resolution.typeKey, pass);
-        }
-
-        if (!pass) {
-          return { ok: false, kind: resolution.kind, reason: `${resolution.typeId} is not accepted by '${name}'` };
-        }
-      }
-
-      if (require !== undefined) {
-        for (const requirement of REQUIREMENTS) {
-          if (require[requirement] === true && !resolution.host.caps[requirement]) {
-            return { ok: false, kind: resolution.kind, reason: `require.${requirement}: ${REQUIREMENT_TEXT[requirement]}` };
-          }
-        }
-      }
-
-      if (coalesce && !coalescable(resolution)) {
-        return { ok: false, kind: resolution.kind, reason: `coalesce: a ${resolution.kind} document could die with its target before the flush` };
-      }
-
-      return { ok: true, resolution };
-    };
-
-    const storeFor = (resolution: Accepted): DocumentStore<T> =>
-      createDocumentStore<T>(prefixed(resolution.host, resolution.prefixFor(name)), { ...schema, collection: name, log });
-
-    /** Where a dirty document goes now: its target found again, or the world when the document lives there. */
-    const flushTarget = (entry: Dirty<T>): Accepted | undefined => {
-      const found = entry.find();
-
-      if (found === undefined) {
-        return entry.last.host.caps.readableWhenUnloaded ? entry.last : undefined;
-      }
-
-      const resolved = resolver.resolve(found);
-
-      return resolved.ok && resolved.identity === entry.last.identity ? resolved : undefined;
-    };
-
-    /** Write the dirty documents — all, or one key — parking those whose entity is away. */
-    const flush = (only?: string): void => {
-      for (const [key, entry] of [...dirty]) {
-        if (only !== undefined && key !== only) {
-          continue;
-        }
-
-        dirty.delete(key);
-
-        const resolution = flushTarget(entry);
-
-        if (resolution === undefined) {
-          parked.set(key, { doc: entry.doc, until: Date.now() + parkFor });
-          continue;
-        }
-
-        storeFor(resolution).write(DOC, entry.doc);
-      }
-    };
-
-    /** An entity came back: write its parked document, and drop parked documents past their time. */
-    const loaded = (target: unknown): void => {
-      if (parked.size === 0) {
+    /** The first coalescing collection wires the engine hooks; a db without one never does. */
+    attach: (): void => {
+      if (attached) {
         return;
       }
 
-      const now = Date.now();
+      attached = true;
+      lifecycle?.attach({
+        loaded: (target): void => {
+          for (const collection of collections) {
+            collection.loaded(target);
+          }
+        },
+        leaving: (target): void => {
+          flushAll(keyOf(target));
+        },
+      });
+    },
 
-      for (const [key, entry] of [...parked]) {
-        if (entry.until <= now) {
-          parked.delete(key);
-          log(`[db] ${name}: dropped a document parked for '${key}' — its target did not load again in time`);
-        }
-      }
-
-      const resolution = resolver.resolve(target);
-
-      if (!resolution.ok) {
+    scheduleFlush: (): void => {
+      if (flushScheduled) {
         return;
       }
 
-      const key = identityKey(resolution.kind, resolution.identity);
-      const waiting = key === undefined ? undefined : parked.get(key);
+      flushScheduled = true;
 
-      if (key === undefined || waiting === undefined) {
-        return;
-      }
-
-      parked.delete(key);
-      storeFor(resolution).write(DOC, waiting.doc);
-    };
-
-    /** Documents are cached, subscribed and indexed by identity; a slot has none, so each handle stands alone. */
-    const identityKey = (kind: TargetKind, identity: string): string | undefined =>
-      (kind === 'slot' ? undefined : `${kind}:${identity}`);
-
-    const stream = (key: string, initial: T | undefined): Stream<T> => {
-      let entry = streams.get(key);
-
-      if (entry === undefined) {
-        entry = { source: observable<T | undefined>(initial, { label: `${name}/${key}` }), listeners: 0 };
-        streams.set(key, entry);
-      }
-
-      return entry;
-    };
-
-    /** The identity is gone for good: forget it, tell subscribers, and remove a world-kept document. */
-    const dropIdentity = (key: string, resolution: Accepted | undefined): void => {
-      if (resolution !== undefined && resolution.host.caps.readableWhenUnloaded) {
-        storeFor(resolution).remove(DOC);
-      }
-
-      cache.delete(key);
-      streams.get(key)?.source.set(undefined);
-      streams.delete(key);
-      index.remove(key);
-    };
-
-    /**
-     * One document. `first` is how the target resolved when the handle was made; `find` locates it
-     * again for every operation. A handle made from an index entry whose target is not at hand
-     * starts with `find` answering nothing and, when the document lives on the world, still reads.
-     */
-    const handle = (first: Admitted, find: () => unknown): Document<T> => {
-      let last: Accepted | undefined = first.ok ? first.resolution : undefined;
-      const key = last === undefined ? undefined : identityKey(last.kind, last.identity);
-      // The world is one target with one document; it needs no index.
-      const indexKey = key !== undefined && last?.kind !== 'world' ? key : undefined;
-      let local: Stream<T> | undefined;
-
-      const current = (): { ok: true; resolution: Accepted } | { ok: false; reason: string } => {
-        const found = find();
-
-        if (found === undefined) {
-          // A world property keyed by identity needs no loaded target.
-          if (last !== undefined && last.host.caps.readableWhenUnloaded) {
-            return { ok: true, resolution: last };
-          }
-
-          return { ok: false, reason: first.ok ? 'the target is not loaded or no longer exists' : first.reason };
-        }
-
-        const admitted = admit(resolver.resolve(found));
-
-        if (!admitted.ok) {
-          return { ok: false, reason: admitted.reason };
-        }
-
-        if (last === undefined || admitted.resolution.identity !== last.identity) {
-          find = locate.bind(found, admitted.resolution);
-        }
-
-        last = admitted.resolution;
-
-        return admitted;
-      };
-
-      const notify = (doc: T | undefined): void => {
-        (key === undefined ? local : streams.get(key))?.source.set(doc);
-      };
-
-      const read = (resolution: Accepted): T | undefined => {
-        if (key !== undefined && cache.has(key)) {
-          return cache.get(key);
-        }
-
-        const doc = storeFor(resolution).read(DOC);
-
-        if (key !== undefined) {
-          cache.set(key, doc);
-        }
-
-        return doc;
-      };
-
-      const write = (resolution: Accepted, doc: T): void => {
-        if (coalesce && key !== undefined) {
-          dirty.set(key, { doc, last: resolution, find: (): unknown => find() });
-          scheduleFlush();
-        } else {
-          storeFor(resolution).write(DOC, doc);
-        }
-
-        if (key !== undefined) {
-          cache.set(key, doc);
-        }
-
-        if (indexKey !== undefined) {
-          index.add(indexKey);
-        }
-
-        notify(doc);
-      };
-
-      const reachable = (): Accepted => {
-        const state = current();
-
-        if (!state.ok) {
-          throw new DbTargetError(name, state.reason);
-        }
-
-        return state.resolution;
-      };
-
-      return {
-        get available(): boolean {
-          return current().ok;
-        },
-
-        get reason(): string | undefined {
-          const state = current();
-
-          return state.ok ? undefined : state.reason;
-        },
-
-        get: (): T | undefined => {
-          const state = current();
-
-          return state.ok ? read(state.resolution) : undefined;
-        },
-
-        set: (doc): void => {
-          write(reachable(), doc);
-        },
-
-        patch: (changes): void => {
-          const resolution = reachable();
-          const merged: unknown = { ...defaults, ...read(resolution), ...changes };
-
-          write(resolution, merged as T); // eslint-disable-line @typescript-eslint/no-unsafe-type-assertion
-        },
-
-        delete: (): void => {
-          const state = current();
-          const resolution = state.ok ? state.resolution : last;
-
-          if (resolution === undefined) {
-            return;
-          }
-
-          if (key !== undefined) {
-            dirty.delete(key);
-            parked.delete(key);
-          }
-
-          if (state.ok || resolution.host.caps.readableWhenUnloaded) {
-            storeFor(resolution).remove(DOC);
-          }
-
-          if (key !== undefined) {
-            cache.delete(key);
-          }
-
-          if (indexKey !== undefined) {
-            index.remove(indexKey);
-          }
-
-          notify(undefined);
-        },
-
-        subscribe: (listener): Unsubscribe => {
-          if (!first.ok) {
-            return (): void => {};
-          }
-
-          const entry = key === undefined
-            ? (local ??= { source: observable<T | undefined>(undefined, { label: `${name}/slot` }), listeners: 0 })
-            : stream(key, cache.get(key));
-          const release = entry.source.subscribe(listener);
-          let released = false;
-
-          entry.listeners++;
-
-          return (): void => {
-            if (released) {
-              return;
-            }
-
-            released = true;
-            release();
-            entry.listeners--;
-
-            if (entry.listeners === 0 && key !== undefined && streams.get(key) === entry) {
-              streams.delete(key);
-            }
-          };
-        },
-      };
-    };
-
-    const handleFor = (target: unknown): Document<T> => {
-      const first = admit(resolver.resolve(target));
-
-      return handle(first, first.ok ? locate.bind(target, first.resolution) : (): unknown => undefined);
-    };
-
-    const typeIdOfEntry = (kind: TargetKind, identity: string): string => {
-      switch (kind) {
-        case 'block':
-          return parseBlockIdentity(identity)?.typeId ?? '?';
-        case 'dimension':
-          return identity;
-        default:
-          return '?';
-      }
-    };
-
-    /** A handle for an index entry: the located target when it is at hand, else the world-kept document, else nothing reachable. */
-    const handleForEntry = (kind: TargetKind, identity: string): IndexedDocument<T> | undefined => {
-      const key = `${kind}:${identity}`;
-      const located = locate.fromIdentity(kind, identity);
-      let first: Admitted;
-      let find: () => unknown;
-
-      if (located !== undefined) {
-        const resolved = resolver.resolve(located);
-
-        // The index said one thing, the world holds another: a block of another type now stands
-        // there (the identity carries the type). Whatever was kept for the old one is gone or orphaned.
-        if (resolved.ok && resolved.identity !== identity) {
-          dropIdentity(key, resolver.absent(kind, typeIdOfEntry(kind, identity), identity));
-
-          return undefined;
-        }
-
-        first = admit(resolved);
-        find = first.ok ? locate.bind(located, first.resolution) : (): unknown => undefined;
+      if (lifecycle === undefined) {
+        flushAll();
       } else {
-        const absent = resolver.absent(kind, typeIdOfEntry(kind, identity), identity);
-
-        first = absent === undefined
-          ? { ok: false, kind, reason: 'the target is not loaded or no longer exists' }
-          : admit(absent);
-        find = (): unknown => undefined;
+        lifecycle.schedule(() => flushAll());
       }
-
-      return Object.assign(handle(first, find), { kind, identity });
-    };
-
-    function* all(): IterableIterator<IndexedDocument<T>> {
-      for (const entry of [...index.entries()]) {
-        const at = entry.indexOf(':');
-        const kind = entry.slice(0, at);
-        const identity = entry.slice(at + 1);
-
-        if (!isKind(kind)) {
-          index.remove(entry);
-          continue;
-        }
-
-        const doc = handleForEntry(kind, identity);
-
-        if (doc !== undefined) {
-          yield doc;
-        }
-      }
-    }
-
-    registered.push({
-      kinds: acceptor?.kinds,
-      removed: (kind, typeId, identity): void => {
-        const key = identityKey(kind, identity);
-
-        if (key !== undefined && index.has(key)) {
-          dropIdentity(key, resolver.absent(kind, typeId, identity));
-        }
-      },
-      flush,
-      loaded,
-    });
-
-    return {
-      name,
-
-      for: (target): Document<T> => handleFor(target),
-
-      where: (target): Where => {
-        const admitted = admit(resolver.resolve(target));
-
-        return admitted.ok
-          ? { ok: true, kind: admitted.resolution.kind, caps: admitted.resolution.host.caps }
-          : admitted;
-      },
-
-      forget: (target): void => {
-        const resolution = resolver.resolve(target);
-        const key = resolution.ok ? identityKey(resolution.kind, resolution.identity) : undefined;
-
-        if (key === undefined) {
-          return;
-        }
-
-        cache.delete(key);
-        streams.delete(key);
-      },
-
-      all,
-
-      get size(): number {
-        return index.size;
-      },
-    };
-  }
+    },
+  };
 
   return {
-    collection,
     resolver,
+
+    collection<T extends object, Target, R extends Requirements>(name: string, collectionOptions: CollectionOptions<T, Target, R>): Collection<T, Target> {
+      // The acceptor's brand is compile-time only; at runtime every collection handles `unknown`.
+      const impl = new CollectionImpl<T>(shared, name, collectionOptions as CollectionOptions<T, unknown, Requirements>); // eslint-disable-line @typescript-eslint/no-unsafe-type-assertion
+
+      collections.push(impl as unknown as CollectionImpl<object>); // eslint-disable-line @typescript-eslint/no-unsafe-type-assertion
+
+      return impl;
+    },
+
     flush: (target): void => {
       flushAll(target === undefined ? undefined : keyOf(target));
     },
+
     blockRemoved: (dimensionId, location, typeId): void => {
       const identity = `${dimensionId}:${location.x},${location.y},${location.z}:${typeId}`;
 
-      for (const entry of registered) {
-        if (entry.kinds === undefined || entry.kinds.includes('block')) {
-          entry.removed('block', typeId, identity);
+      for (const collection of collections) {
+        if (collection.kinds === undefined || collection.kinds.includes('block')) {
+          collection.removed('block', typeId, identity);
         }
       }
     },
