@@ -101,6 +101,7 @@ export type { TypedClient, RPCHandlerMap } from '@bedrock-core/sync';
 export type { IncompatibleListener, IncompatiblePeer } from '@bedrock-core/sync';
 export { PROTOCOL_MAX, PROTOCOL_MIN } from '@bedrock-core/sync';
 
+export { type EngineHandle, isUsable } from './handle';
 export { TranslationsRegistry } from './translations';
 export type { TranslationsChangeListener } from './translations';
 export type { I18nBundle, TranslationResolver } from '@bedrock-core/i18n';

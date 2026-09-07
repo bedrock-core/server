@@ -120,8 +120,10 @@ export const engineLifecycle: Lifecycle = {
   tick: (): number => system.currentTick,
 
   attach({ loaded, leaving }): void {
+    // `entityLoad` is an afterEvent, so the entity can already be gone by the time this runs; a
+    // handle whose `isValid` is false would throw on the first property read downstream.
     world.afterEvents.entityLoad.subscribe(({ entity }) => {
-      loaded(entity);
+      if (entity.isValid) { loaded(entity); }
     });
     world.beforeEvents.playerLeave.subscribe(({ player }) => {
       leaving(player);

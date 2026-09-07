@@ -26,6 +26,7 @@ import type { I18n, I18nBundle, TranslationResolver } from '@bedrock-core/i18n';
 import { stateKey } from '@bedrock-core/sync';
 import type { State, Unsubscribe } from '@bedrock-core/sync';
 import type { Player } from '@minecraft/server';
+import { isUsable } from './handle';
 
 /** Locale `forPlayer` falls back to when no candidate locale is published. */
 const DEFAULT_LOCALE = 'en_US';
@@ -142,6 +143,10 @@ export class TranslationsRegistry {
    * the literal key.
    */
   forPlayer(player: Player, defaultLocale = DEFAULT_LOCALE): TranslationResolver {
+    // Both reads below throw on an invalidated handle, and callers reach this from event
+    // subscribers. A player who is gone has no locale to prefer, so fall back to the default.
+    if (!isUsable(player)) { return this.forLocale(defaultLocale); }
+
     const override = player.getDynamicProperty(LOCALE_PROPERTY);
     const chosen = pickLocale([...this.availableLocales()], [
       typeof override === 'string' ? override : undefined,

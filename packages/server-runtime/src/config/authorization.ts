@@ -17,6 +17,7 @@
  */
 import { PlayerPermissionLevel, world } from '@minecraft/server';
 import type { Player } from '@minecraft/server';
+import { isUsable } from '../handle';
 
 /** The three config scopes, named as they appear on the wire. */
 export type ConfigScopeName = 'server' | 'dimension' | 'player';
@@ -32,7 +33,7 @@ export type ConfigScopeName = 'server' | 'dimension' | 'player';
  * `Operator`, so treating it as "at least operator" would grant more than the name implies.
  */
 export function isOperator(player: Player): boolean {
-  return player.playerPermissionLevel === PlayerPermissionLevel.Operator;
+  return isUsable(player) && player.playerPermissionLevel === PlayerPermissionLevel.Operator;
 }
 
 /**

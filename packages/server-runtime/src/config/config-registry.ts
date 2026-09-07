@@ -77,6 +77,7 @@ import { ServerConfigScope, EntityConfigScope, type ServerConfigTree } from './s
 import { buildNestedObject, flattenObject } from './scopes/utils';
 import { registerConfigRpc } from './rpc';
 import { denyReason, type ConfigScopeName } from './authorization';
+import { isUsable } from '../handle';
 
 type Flat = Record<string, ConfigValue>;
 
@@ -346,7 +347,9 @@ export class ConfigRegistry {
       (playerId, changes) => {
         const player = this._onlinePlayers.get(playerId);
 
-        if (!player) {
+        // A stored handle goes stale the moment the player leaves. Writing through it would throw
+        // InvalidEntityError, so this reports the dropped write rather than letting it escape.
+        if (!isUsable(player)) {
           console.warn(`[bedrock-core] '${this._addonId}' config: player '${playerId}' is offline; values not persisted`);
 
           return;
@@ -361,7 +364,7 @@ export class ConfigRegistry {
     // callers get read-after-write in one round trip.
 
     const requireOnline = (playerId: string, method: string): boolean => {
-      if (this._onlinePlayers.has(playerId)) { return true; }
+      if (isUsable(this._onlinePlayers.get(playerId))) { return true; }
 
       console.warn(`[bedrock-core] '${this._addonId}' config: ${method} for offline player '${playerId}' ignored`);
 
@@ -448,6 +451,8 @@ export class ConfigRegistry {
       // no playerSpawn fires for them, so relying on the event alone would leave
       // player-scope config dead until they rejoin.
       for (const player of world.getAllPlayers()) {
+        if (!isUsable(player)) { continue; }
+
         this._onlinePlayers.set(player.id, player);
 
         if (Object.keys(playerFlat).length > 0) {
@@ -463,6 +468,10 @@ export class ConfigRegistry {
 
     const onSpawn = world.afterEvents.playerSpawn.subscribe(({ player, initialSpawn }) => {
       if (!initialSpawn) { return; }
+
+      // Nothing is lost by skipping an invalidated player: they are not in the world to read
+      // config, and a real connection fires this event again with a live handle.
+      if (!isUsable(player)) { return; }
 
       this._onlinePlayers.set(player.id, player);
 
