@@ -64,6 +64,12 @@ export interface Resolver {
   resolve(target: unknown): Resolution;
   /** The cached decision for a type key, for tests and diagnostics. */
   decision(typeKey: string): 'direct' | 'component' | 'proxied' | undefined;
+  /**
+   * A resolution for a target that is not at hand — an index entry whose block sits in an unloaded
+   * chunk — when its documents live on the world anyway: a dimension always, a block or entity type
+   * this session already saw resolve to the proxy. `undefined` when the bytes would be on the target.
+   */
+  absent(kind: TargetKind, typeId: string, identity: string): (Resolution & { ok: true }) | undefined;
 }
 
 // ─── Structural reads, without assertions ─────────────────────────────────────
@@ -308,5 +314,16 @@ export function createResolver(options: ResolverOptions): Resolver {
   return {
     resolve,
     decision: typeKey => decisions.get(typeKey),
+    absent: (kind, typeId, identity): (Resolution & { ok: true }) | undefined => {
+      const decided = kind === 'dimension' ? 'proxied' : decisions.get(typeKeyOf(kind, typeId));
+
+      if (decided !== 'proxied') {
+        return undefined;
+      }
+
+      const resolution = accept(kind, typeId, identity, proxied(kind, identity));
+
+      return resolution.ok ? resolution : undefined;
+    },
   };
 }

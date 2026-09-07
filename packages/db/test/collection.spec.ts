@@ -4,7 +4,7 @@
  * caching and local change events, and two collections on one target staying apart.
  */
 import { describe, expect, it, vi } from 'vitest';
-import { DbTargetError, accepting, accepts, allOf, anyOf, blockTypes, createDb, createResolver, dimensions, entityTypes, except, players, schema, slots, worldTarget } from '../src/index';
+import { DbTargetError, accepting, accepts, allOf, anyOf, blockTypes, createDb, dimensions, entityTypes, except, players, schema, slots, worldTarget } from '../src/index';
 import type { Collection, Requirements, Rule, Schema } from '../src/index';
 import { BlockStub, ComponentStub, DimensionStub, EntityStub, ItemStackStub, SlotStub, WorldStub } from './stubs';
 
@@ -29,7 +29,7 @@ interface LooseDb {
 function db(world = new WorldStub()): { world: WorldStub; db: LooseDb; log: ReturnType<typeof vi.fn<(message: string) => void>> } {
   const log = vi.fn<(message: string) => void>();
 
-  return { world, db: createDb({ resolver: createResolver({ world, namespace: 'ns' }), log }), log };
+  return { world, db: createDb({ world, namespace: 'ns', log }), log };
 }
 
 describe('documents on own hosts', () => {
@@ -85,7 +85,9 @@ describe('documents on own hosts', () => {
     elevators.for(block).set({ configured: true, facing: 'north' });
 
     expect(component.get('elevators:doc')).toBe('{"v":1,"d":{"configured":true,"facing":"north"}}');
-    expect(world.getDynamicPropertyIds()).toEqual([]);
+    // Only the index touches the world: the document is on the block.
+    expect(world.getDynamicPropertyIds()).toEqual(['core-db:ns:index:elevators:0']);
+    expect(world.getDynamicProperty('core-db:ns:index:elevators:0')).toBe('block:overworld:1,2,3:papi:elevator');
     expect(elevators.where(block)).toMatchObject({ ok: true, kind: 'block', caps: { own: true, enumerable: false } });
   });
 
@@ -238,8 +240,9 @@ describe('validity', () => {
     handle.set({ name: 'hell' });
 
     const gone: LooseDb = createDb({
-      resolver: createResolver({ world, namespace: 'ns' }),
-      locate: { bind: () => (): unknown => undefined },
+      world,
+      namespace: 'ns',
+      locate: { bind: () => (): unknown => undefined, fromIdentity: () => undefined },
     });
     const unloaded = gone.collection('regions', { schema: schema<{ name: string }>() }).for(nether);
 
@@ -248,7 +251,8 @@ describe('validity', () => {
     unloaded.set({ name: 'nether' });
     expect(world.getDynamicProperty('core-db:ns:dimension:minecraft:nether:regions:doc')).toContain('nether');
     unloaded.delete();
-    expect(world.getDynamicPropertyIds()).toEqual([]);
+    expect(world.getDynamicPropertyIds()).toEqual(['core-db:ns:index:regions:0']);
+    expect(world.getDynamicProperty('core-db:ns:index:regions:0')).toBe('');
     expect(unloaded.get()).toBeUndefined();
   });
 

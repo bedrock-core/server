@@ -21,8 +21,11 @@ export type { Capabilities, ComponentDp, DirectDp, DpHost, DpValue, HostAbi } fr
 export { createResolver, structuralClassifier } from './resolve';
 export type { Classifier, Resolution, Resolver, ResolverOptions, TargetKind } from './resolve';
 
-export { createDb, structuralLocator } from './collection';
-export type { Collection, CollectionOptions, Db, DbOptions, Document, Locator, Where } from './collection';
+export { createDb, parseBlockIdentity, structuralLocator } from './collection';
+export type { Collection, CollectionOptions, Db, DbOptions, Document, IndexedDocument, Lifecycle, Locator, Where } from './collection';
+
+export { createIndexSet } from './indexed';
+export type { IndexSet } from './indexed';
 
 export { createDocumentStore, schema } from './document';
 export type { DocumentSchema, DocumentStore, DocumentStoreOptions, MigrateStep, Schema } from './document';

@@ -55,6 +55,15 @@ elevators.where(stone);                     // { ok: false, reason: "minecraft:s
 - **Budget checked before the engine sees it.** A block entity holds ~950 bytes per pack; more
   throws `DbBudgetError` naming the collection. On the world, entities and slots a document past
   32 767 characters is chunked into `<key>#0..n` transparently.
+- **`all()` walks an index, never the world's property ids.** The identities of a collection's
+  documents live in chunked world properties, kept by the first write, `delete`, and `blockCleanup`
+  — the custom component to register and list on every accepted block type, whose `onBreak` fires
+  for every removal. A block found replaced by another type heals out of the index. The iterator is
+  resumable: take a few per tick.
+- **`coalesce: true` is write-behind**: one property write per dirty document per tick. Offered on
+  the world and on entities only — a block or slot document could die with its target before the
+  flush, so those are refused with a reason. An entity that unloads before the flush has its
+  document parked and written on `entityLoad`; a leaving player is flushed in `beforeEvents.playerLeave`.
 - **Every operation re-resolves the target.** A handle from `for()` keeps an identity, not the
   object: `get()` is `undefined` and `set()` throws `DbTargetError` once an entity is removed, a
   slot empties, or a block's chunk unloads — except a proxied document (dimension, vanilla block),

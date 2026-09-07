@@ -5,7 +5,7 @@
  * Compiled with the package's type assertions (`yarn test:types`); it is not deployed.
  */
 import { accepting, anyOf, blockTypes, entityTypes, players, schema } from '@bedrock-core/db';
-import { createEngineDb } from '@bedrock-core/db/minecraft';
+import { blockCleanup, createEngineDb } from '@bedrock-core/db/minecraft';
 import { Entity, system, world } from '@minecraft/server';
 
 const db = createEngineDb('papi');
@@ -49,6 +49,9 @@ const elevators = db.collection('elevators', {
 });
 
 system.beforeEvents.startup.subscribe(({ blockComponentRegistry }) => {
+  // papi:elevator lists both components in its JSON. This one keeps the index honest on every removal.
+  blockComponentRegistry.registerCustomComponent('papi:db_block', blockCleanup(db));
+
   blockComponentRegistry.registerCustomComponent('papi:elevator', {
     onPlayerInteract({ block, player }) {
       const doc = elevators.for(block);
@@ -67,6 +70,28 @@ system.beforeEvents.startup.subscribe(({ blockComponentRegistry }) => {
     },
   });
 });
+
+// ─── Walking the index a few per tick ──────────────────────────────────────────
+
+let walk = elevators.all();
+
+system.runInterval(() => {
+  for (let i = 0; i < 20; i++) {
+    const next = walk.next();
+
+    if (next.done) {
+      walk = elevators.all(); // start over next tick
+
+      return;
+    }
+
+    const doc = next.value.get(); // undefined while the chunk is unloaded; a replaced block heals itself out
+
+    if (doc?.particles) {
+      // spawn particles at next.value.identity's position
+    }
+  }
+}, 1);
 
 // ─── A HUD reacting to a document ──────────────────────────────────────────────
 
