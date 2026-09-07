@@ -51,3 +51,15 @@ is written.
 - Patching is real code, synchronous, in the target's realm, via `script_eval`; the expression tree is the fallback.
 - No security against hostile packs. Robustness against buggy ones instead ([07-trust-model](./07-trust-model.md)).
 - Nothing on the hot path for addons that do not use a feature: lazy scopes, owner-published invalidation, zero-patch dispatch measured against a plain call.
+- **No runtime code may throw out of an event subscriber.** Twelve engine types expose `isValid`, and every member of an invalidated handle throws. The engine catches what escapes a subscriber and logs it against the *pack's* name, so a library bug is reported as the consuming addon's. `isUsable()` guards every handle that outlives the moment it was obtained: one stored in a map, and anything an `afterEvents` subscriber is handed. `Entity.id` stays readable when invalid, which is what keeps id-keyed bookkeeping working.
+
+## Harness
+
+The GameTest runner lives in its own repository, `bedrock-core/bds-runner`, and is resolved here as
+a sibling through `portal:../bds-runner` the way the ui packages are. It is private and unpublished;
+the first release is 0.1.0. `bds-runner.json` at the repo root pins the engine.
+
+`yarn test:mc` fails on an uncaught script error as well as on a failed test. An exception thrown
+outside a test shares no call stack with one, so GameTest cannot fail on it and a green build over
+broken code was previously possible. Errors a pack logs itself with `console.error` are not counted;
+`--allow-script-errors` opts out.
