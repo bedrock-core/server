@@ -54,20 +54,16 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@bedrock-core/bds-runner@workspace:^, @bedrock-core/bds-runner@workspace:packages/bds-runner":
+"@bedrock-core/bds-runner@portal:../bds-runner::locator=%40bedrock-core%2Fserver-monorepo%40workspace%3A.":
   version: 0.0.0-use.local
-  resolution: "@bedrock-core/bds-runner@workspace:packages/bds-runner"
+  resolution: "@bedrock-core/bds-runner@portal:../bds-runner::locator=%40bedrock-core%2Fserver-monorepo%40workspace%3A."
   dependencies:
-    "@types/node": "npm:^26.2.0"
-    "@types/yauzl": "npm:^2.10.3"
     jiti: "npm:^2.7.0"
     prismarine-nbt: "npm:^2.7.0"
-    typescript: "npm:^6.0.3"
-    vitest: "npm:^4.1.10"
     yauzl: "npm:^3.2.0"
   bin:
     bc-bds: ./bin/bc-bds.mjs
-  languageName: unknown
+  languageName: node
   linkType: soft
 
 "@bedrock-core/config@portal:../ui/packages/config::locator=%40bedrock-core%2Fserver-monorepo%40workspace%3A.":
@@ -164,7 +160,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@bedrock-core/server-monorepo@workspace:."
   dependencies:
-    "@bedrock-core/bds-runner": "workspace:^"
+    "@bedrock-core/bds-runner": "portal:../bds-runner"
     "@changesets/changelog-github": "npm:^0.7.0"
     "@changesets/cli": "npm:^2.31.0"
     "@eslint/js": "npm:^10.0.1"
@@ -1114,15 +1110,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@types/node@npm:*, @types/node@npm:^26.2.0":
-  version: 26.2.0
-  resolution: "@types/node@npm:26.2.0"
-  dependencies:
-    undici-types: "npm:~8.3.0"
-  checksum: 10c0/f8566d88162241eb55a46f7e4ea097188eab0aaafefea7a58e63adab8c4144eb98c08b7911452c846104c339a0f82282f5e1ed4b26b578d60709614fe2843f4d
-  languageName: node
-  linkType: hard
-
 "@types/node@npm:^12.7.1":
   version: 12.20.55
   resolution: "@types/node@npm:12.20.55"
@@ -1145,15 +1132,6 @@ __metadata:
   dependencies:
     uuid: "npm:*"
   checksum: 10c0/6ebf1448d8fdc78d348a8a84389b74083f2f58bed75a5a6cf3be8419d33dcf757735c8b2de746b066ff8ef07f4384d02549774dc84195ffa46b24745471e9d8e
-  languageName: node
-  linkType: hard
-
-"@types/yauzl@npm:^2.10.3":
-  version: 2.10.3
-  resolution: "@types/yauzl@npm:2.10.3"
-  dependencies:
-    "@types/node": "npm:*"
-  checksum: 10c0/f1b7c1b99fef9f2fe7f1985ef7426d0cebe48cd031f1780fcdc7451eec7e31ac97028f16f50121a59bcf53086a1fc8c856fd5b7d3e00970e43d92ae27d6b43dc
   languageName: node
   linkType: hard
 

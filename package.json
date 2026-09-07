@@ -24,7 +24,6 @@
 	"type": "module",
 	"packageManager": "yarn@4.9.3",
 	"workspaces": [
-		"packages/bds-runner",
 		"packages/db",
 		"packages/observable",
 		"packages/server",
@@ -57,14 +56,14 @@
 		"test:mc": "yarn workspaces foreach -A --jobs=1 run build:test && bc-bds run --packs packages/test-addon/build/test --packs packages/test-addon-2/build/test --tag core --expect-registered 6",
 		"test:mc:bench": "yarn workspaces foreach -A --jobs=1 run build:test && bc-bds run --packs packages/test-addon/build/test --packs packages/test-addon-2/build/test --tag bench --expect-registered 5 --idle 120 && node scripts/bench-report.mjs",
 		"bench:report": "node scripts/bench-report.mjs",
-		"bds:fetch": "yarn workspace @bedrock-core/bds-runner run fetch",
-		"bds:where": "yarn workspace @bedrock-core/bds-runner run where",
+		"bds:fetch": "bc-bds fetch",
+		"bds:where": "bc-bds where",
 		"changeset": "changeset",
 		"version-packages": "changeset version && node scripts/sync-meta-version.mjs && node scripts/sync-runtime-version.mjs",
 		"release": "yarn lint:libs && yarn build:libs && node scripts/publish-tarballs.mjs && changeset tag"
 	},
 	"devDependencies": {
-		"@bedrock-core/bds-runner": "workspace:^",
+		"@bedrock-core/bds-runner": "portal:../bds-runner",
 		"@changesets/changelog-github": "^0.7.0",
 		"@changesets/cli": "^2.31.0",
 		"@eslint/js": "^10.0.1",
