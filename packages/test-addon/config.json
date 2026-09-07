@@ -10,25 +10,9 @@
 	"regolith": {
 		"dataPath": "./packs/data",
 		"filterDefinitions": {
-			"bundler": {
+			"core": {
 				"runWith": "nodejs",
-				"script": "../../../regolith-filters/bundler/main.ts"
-			},
-			"guides": {
-				"runWith": "nodejs",
-				"script": "../../../regolith-filters/guides/main.ts"
-			},
-			"i18n": {
-				"runWith": "nodejs",
-				"script": "../../../regolith-filters/i18n/main.ts"
-			},
-			"manifest": {
-				"runWith": "nodejs",
-				"script": "../../../regolith-filters/manifest/main.ts"
-			},
-			"ui-compile": {
-				"runWith": "nodejs",
-				"script": "../../../regolith-filters/ui-compile/main.ts"
+				"script": "../../../regolith-filters/core/main.ts"
 			}
 		},
 		"formatVersion": "1.4.0",
@@ -41,31 +25,17 @@
 				},
 				"filters": [
 					{
-						"filter": "manifest"
-					},
-					{
-						"filter": "guides",
+						"filter": "core",
 						"settings": {
-							"namespace": "drav0011_economy"
-						}
-					},
-					{
-						"filter": "i18n",
-						"settings": {
-							"namespace": "drav0011_economy"
-						}
-					},
-					{
-						"filter": "ui-compile",
-						"settings": {
-							"namespace": "drav0011_economy",
-							"screens": ["@bedrock-core/config/compiled"]
-						}
-					},
-					{
-						"filter": "bundler",
-						"settings": {
-							"debug": true
+							"shared": {
+								"namespace": "drav0011_economy"
+							},
+							"ui-compile": {
+								"screens": ["@bedrock-core/config/compiled"]
+							},
+							"bundler": {
+								"debug": true
+							}
 						}
 					}
 				]
@@ -78,35 +48,21 @@
 				},
 				"filters": [
 					{
-						"filter": "manifest",
+						"filter": "core",
 						"settings": {
-							"manifestPath": "BP/manifest.test.json"
-						}
-					},
-					{
-						"filter": "guides",
-						"settings": {
-							"namespace": "drav0011_economy"
-						}
-					},
-					{
-						"filter": "i18n",
-						"settings": {
-							"namespace": "drav0011_economy"
-						}
-					},
-					{
-						"filter": "ui-compile",
-						"settings": {
-							"namespace": "drav0011_economy",
-							"screens": ["@bedrock-core/config/compiled"]
-						}
-					},
-					{
-						"filter": "bundler",
-						"settings": {
-							"debug": true,
-							"tsConfigPath": "tsconfig.test.json"
+							"shared": {
+								"namespace": "drav0011_economy"
+							},
+							"manifest": {
+								"manifestPath": "BP/manifest.test.json"
+							},
+							"ui-compile": {
+								"screens": ["@bedrock-core/config/compiled"]
+							},
+							"bundler": {
+								"debug": true,
+								"tsConfigPath": "tsconfig.test.json"
+							}
 						}
 					}
 				]
@@ -121,35 +77,21 @@
 				},
 				"filters": [
 					{
-						"filter": "manifest",
+						"filter": "core",
 						"settings": {
-							"manifestPath": "BP/manifest.test.json"
-						}
-					},
-					{
-						"filter": "guides",
-						"settings": {
-							"namespace": "drav0011_economy"
-						}
-					},
-					{
-						"filter": "i18n",
-						"settings": {
-							"namespace": "drav0011_economy"
-						}
-					},
-					{
-						"filter": "ui-compile",
-						"settings": {
-							"namespace": "drav0011_economy",
-							"screens": ["@bedrock-core/config/compiled"]
-						}
-					},
-					{
-						"filter": "bundler",
-						"settings": {
-							"debug": true,
-							"tsConfigPath": "tsconfig.test.json"
+							"shared": {
+								"namespace": "drav0011_economy"
+							},
+							"manifest": {
+								"manifestPath": "BP/manifest.test.json"
+							},
+							"ui-compile": {
+								"screens": ["@bedrock-core/config/compiled"]
+							},
+							"bundler": {
+								"debug": true,
+								"tsConfigPath": "tsconfig.test.json"
+							}
 						}
 					}
 				]
