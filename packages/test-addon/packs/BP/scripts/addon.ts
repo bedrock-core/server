@@ -9,7 +9,6 @@ import { createI18n } from '@bedrock-core/i18n';
 // also registers it as the default translation source for any UI this addon renders.
 export const i18n = createI18n(bundle);
 
-// TODO UPDATE CONFIG INPUT TO REFLECT NEW MANIFEST STRUCTURE and not need to spread so it is an object
 export const manifest = {
   creator: 'drav0011',
   pack: 'economy',

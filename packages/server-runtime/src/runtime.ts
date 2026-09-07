@@ -3,10 +3,10 @@
  *
  * An addon registers itself once — that's it. {@link Runtime.register} validates the manifest
  * and immediately brings the addon online (no separate `start()`). Everything the addon
- * *declares* rides in that one call: identity, plus the optional `translations`, `guide`, and
- * `config` fields (see {@link RegisterOptions}). The runtime wraps a single sync `SyncNode`
- * and exposes the cross-addon {@link Registry}, the {@link FeatureManager}, and
- * messaging/state passthroughs.
+ * *declares* rides in that one call: identity, plus the optional `translations`, `guide`,
+ * `config` and `shared` fields (see {@link RegisterOptions}). The runtime wraps a single sync
+ * `SyncNode` and exposes the cross-addon {@link Registry}, the {@link FeatureManager}, the
+ * shared mirror and messaging passthroughs.
  *
  * The default export is the `core` singleton — `import { core } from '@bedrock-core/server-runtime'`.
  * The `Runtime` class stands alone, so tests (and GameTests) can create several runtimes in one
@@ -26,20 +26,29 @@ import { type AddonPageReference, PagesRegistry } from './pages/pages-registry';
 import { HostElection } from './host';
 import type { GuideManifest, GuideReference } from './guides/types';
 import type { Rpc } from '@bedrock-core/sync';
+import { createEngineDb } from '@bedrock-core/db/minecraft';
+import type { Db } from '@bedrock-core/db';
+import { SharedRegistry } from './shared/shared-registry';
+import { deferToNextTick, worldStore } from './shared/engine';
+import type { SharedDef, SharedTree } from './shared/tree';
 
 /**
- * Everything an addon declares when it registers: the identity manifest plus the optional
- * cross-addon data. One bag — "tell core what you are" — then run your own code. Each optional
- * field is sugar for the corresponding post-register call and behaves identically:
+ * Everything an addon declares when it registers: the identity `manifest` plus the optional
+ * cross-addon data beside it. One bag — "tell core what you are" — then run your own code. Each
+ * optional field is sugar for the corresponding post-register call and behaves identically:
  *
  * - `translations` → `core.translations.provide()`
  * - `guide` → `core.guides.provideManifest()`
  * - `config` → `core.config.define()` (its typed accessors become `register()`'s return value)
+ * - `shared` → `core.shared.define()` (its typed tree is `register()`'s `shared`)
  *
  * The standalone calls remain available for addons that need to publish late or replace data
  * at runtime.
  */
-export interface RegisterOptions<I extends ConfigDefinition = ConfigDefinition> extends AddonManifest {
+export interface RegisterOptions<I extends ConfigDefinition = ConfigDefinition, S extends SharedDef = SharedDef> {
+
+  /** Who this addon is: creator, pack, display names, version, dependencies. */
+  manifest: AddonManifest;
 
   /**
    * This addon's i18n bundle (`@bedrock-core/generated/i18n`, or a
@@ -71,7 +80,22 @@ export interface RegisterOptions<I extends ConfigDefinition = ConfigDefinition> 
 
   /** This addon's config schema. When given, `register()` returns the typed scope accessors. */
   config?: I;
+
+  /**
+   * This addon's shared shape: values are leaves every realm can read, plain objects are branches,
+   * `open()` / `persisted()` / `leaf()` mark them. When given, `register()`'s result carries the
+   * typed tree as `shared`.
+   */
+  shared?: S;
 }
+
+/**
+ * What `register()` hands back: one entry per declaration that has accessors, each under the key
+ * it was declared as — `config` for the scope accessors, `shared` for the shared tree.
+ */
+export type Registered<I extends ConfigDefinition | undefined, S extends SharedDef | undefined>
+  = (I extends ConfigDefinition ? { config: Config<I> } : unknown)
+    & (S extends SharedDef ? { shared: SharedTree<S> } : unknown);
 
 export class Runtime {
   private _node: SyncNode | undefined;
@@ -79,6 +103,8 @@ export class Runtime {
   private _features: FeatureManager | undefined;
   private _manifest: AddonManifest | undefined;
   private _state: ScopedState | undefined;
+  private _shared: SharedRegistry | undefined;
+  private _db: Db | undefined;
   private _config: ConfigRegistry | undefined;
   private _translations: TranslationsRegistry | undefined;
   private _guides: GuidesRegistry | undefined;
@@ -145,7 +171,28 @@ export class Runtime {
     return this.require(this._host, 'host');
   }
 
-  /** Replicated state scoped to this addon's namespace — no need to pass the namespace on every call. For cross-namespace reads use `core.node.state`. */
+  /**
+   * The shared mirror as typed trees: this addon's own from `register({ shared })`, a peer's via
+   * `core.shared.of<Def>(ns)`. Every node has `get` / `subscribe`; own nodes and opened peer
+   * leaves also `set`.
+   */
+  get shared(): SharedRegistry {
+    return this.require(this._shared, 'shared');
+  }
+
+  /**
+   * Persisted documents for this addon, keyed by target — players, entities, blocks, the world —
+   * on whatever dynamic properties the target itself can hold: `core.db.collection(name, { schema, accept })`.
+   * Its keys live under this addon's namespace, so two addons never meet.
+   */
+  get db(): Db {
+    return this.require(this._db, 'db');
+  }
+
+  /**
+   * @deprecated String-keyed access to this addon's namespace. Declare a `shared` shape in
+   * `register()` and use the typed tree; the raw mirror stays at `core.node.state`.
+   */
   get state(): ScopedState {
     return this.require(this._state, 'state');
   }
@@ -165,18 +212,18 @@ export class Runtime {
    * or a second registration. No separate start step is needed.
    *
    * Beyond identity, the options bag carries everything the addon declares up front:
-   * `translations`, `guide`, and `config` (see {@link RegisterOptions}). When `config` is
-   * given, the typed scope accessors are returned — the same value `core.config.define()`
-   * would return.
+   * `translations`, `guide`, `config` and `shared` (see {@link RegisterOptions}). The result holds
+   * the typed accessors of what was declared, each under its own key: `config` — the same value
+   * `core.config.define()` would return — and `shared`.
    */
-  register<I extends ConfigDefinition>(options: RegisterOptions<I> & { config: I }): Config<I>;
-  register(options: RegisterOptions): void;
-  register<I extends ConfigDefinition>(options: RegisterOptions<I>): Config<I> | undefined {
+  register<I extends ConfigDefinition, S extends SharedDef>(options: RegisterOptions<I, S> & { config: I; shared: S }): Registered<I, S>;
+  register<I extends ConfigDefinition>(options: RegisterOptions<I> & { config: I; shared?: undefined }): Registered<I, undefined>;
+  register<S extends SharedDef>(options: RegisterOptions<ConfigDefinition, S> & { shared: S; config?: undefined }): Registered<undefined, S>;
+  register(options: RegisterOptions & { config?: undefined; shared?: undefined }): void;
+  register<I extends ConfigDefinition, S extends SharedDef>(options: RegisterOptions<I, S>): unknown {
     if (this._manifest) { throw new Error('runtime is already registered'); }
 
-    // validateManifest() copies only the identity fields, so the extra declaration
-    // fields never leak into the stored manifest or the discovery meta blob.
-    const validated = validateManifest(options);
+    const validated = validateManifest(options.manifest);
 
     this._manifest = validated;
 
@@ -197,11 +244,15 @@ export class Runtime {
     const guides = new GuidesRegistry(node.state, namespace);
     const pages = new PagesRegistry(node.state, namespace);
     const host = new HostElection(registry, namespace);
+    const shared = new SharedRegistry({ state: node.state, namespace, store: worldStore, defer: deferToNextTick });
+    const db = createEngineDb(namespace, message => console.warn(message));
 
     this._node = node;
     this._registry = registry;
     this._features = features;
     this._state = new ScopedState(node.state, namespace);
+    this._shared = shared;
+    this._db = db;
     this._config = config;
     this._translations = translations;
     this._guides = guides;
@@ -224,7 +275,17 @@ export class Runtime {
 
     if (options.page) { pages.provide(options.page); }
 
-    return options.config ? config.define(options.config) : undefined;
+    const configTree = options.config ? config.define(options.config) : undefined;
+    const sharedTree = options.shared ? shared.define(options.shared) : undefined;
+
+    if (configTree === undefined && sharedTree === undefined) {
+      return undefined;
+    }
+
+    return {
+      ...(configTree === undefined ? {} : { config: configTree }),
+      ...(sharedTree === undefined ? {} : { shared: sharedTree }),
+    };
   }
 
   /** Take the addon offline. Safe to call before registering (no-op). */
@@ -244,6 +305,8 @@ export class Runtime {
     this._features = undefined;
     this._registry = undefined;
     this._state = undefined;
+    this._shared = undefined;
+    this._db = undefined;
     this._node = undefined;
     this._manifest = undefined;
   }

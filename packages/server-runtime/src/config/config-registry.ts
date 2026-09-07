@@ -13,8 +13,8 @@
  * Addon defining config (usually via the `config` field of `core.register()`, which
  * delegates here and returns the same typed accessors):
  * ```ts
- * const config = core.register({
- *   // ...identity fields...
+ * const { config } = core.register({
+ *   manifest,
  *   config: {
  *     server:    { pricing: { taxRate: { type: 'number', default: 0.05, min: 0, max: 1, label: 'Tax Rate' } } },
  *     dimension: { miningBonus: { type: 'number', default: 1.0, min: 0, max: 5, label: 'Mining Bonus' } },

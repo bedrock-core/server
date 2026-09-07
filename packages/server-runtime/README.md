@@ -35,33 +35,50 @@ build against has to match the one your pack's `manifest.json` declares.
   any peer's strings server-side for text measurement
 - **Host election** — `core.host` picks the realm running the newest runtime, with no negotiation
   messages, so exactly one realm serves shared UI for the whole world
-- **Messaging and state** — `core.rpc` and a `core.state` scoped to your own namespace, with the
+- **Messaging and the shared mirror** — `core.rpc`, and a `shared` shape declared in `register()` that every realm mirrors as a typed tree (`core.shared.of()` for a peer's), with the
   raw sync node available at `core.node`
+- **Documents** — `core.db`, this addon's `@bedrock-core/db`: typed, versioned documents keyed by player, entity, block or world, stored on whatever the target itself can hold
 
 ## Usage
 
 ```ts
-import { core } from '@bedrock-core/server-runtime';
+import { core, persisted, players, schema } from '@bedrock-core/server-runtime';
 import bundle from '@bedrock-core/generated/i18n';
 import guides from '@bedrock-core/generated/guides';
 
-// register() declares everything and brings the addon online. When `config` is given it
-// returns the typed scope accessors — the same value core.config.define() would return.
-const config = core.register({
-  creator: 'drav0011',            // creator/vendor id — [a-z0-9_]+
-  pack: 'economy',                // abbreviated pack id — together: namespace `drav0011_economy`
-  packName: 'Economy',            // display label only, never part of identity
-  version: '1.0.0',
-  dependencies: ['os_shop'],      // namespaces you need — soft, logs, never blocks
+// register() declares everything and brings the addon online. It returns the typed accessors of
+// what was declared, one key each: `config` and `shared`.
+const { config, shared } = core.register({
+  manifest: {
+    creator: 'drav0011',          // creator/vendor id — [a-z0-9_]+
+    pack: 'economy',              // abbreviated pack id — together: namespace `drav0011_economy`
+    packName: 'Economy',          // display label only, never part of identity
+    version: '1.0.0',
+    dependencies: ['os_shop'],    // namespaces you need — soft, logs, never blocks
+  },
   translations: bundle,           // optional — the i18n filter's bundle
   guide: guides,                  // optional — the guides filter's manifest
   config: {                       // optional — config schema
     server: { taxRate: { type: 'number', default: 0.05, min: 0, max: 1, label: 'Tax Rate' } },
   },
+  shared: {                       // optional — what every realm mirrors; only this one writes it
+    currency: 'gold',
+    event: persisted({ name: 'none', active: false }),   // survives restarts
+  },
 });
 
 config.server.taxRate.get();          // 0.05 — typed all the way down
 config.server.taxRate.subscribe((next, prev) => console.warn('tax', prev, '→', next));
+
+// Persisted documents keyed by target, on the target's own dynamic properties.
+const balances = core.db.collection('balances', { schema: schema<{ gold: number }>(), accept: players() });
+balances.for(player).patch({ gold: 10 });
+
+shared.currency.set('emerald');       // every realm sees it this tick
+shared.event.subscribe(event => console.warn('event', event.name, event.active));
+
+// A peer's shared tree, typed by the declaration the peer exports; read-only unless it said open().
+core.shared.of<ShopShared>('os_shop')?.stock.subscribe(stock => console.warn('stock', stock));
 
 core.registry.onRegister(addon => console.warn('joined:', addon.id));
 
@@ -81,12 +98,12 @@ core.rpc.request('os_shop', 'getStock', {}).then(stock => console.warn('stock', 
   scopes, cross-addon access, authorization
 - [Translations](https://bedrock-core.drav.dev/docs/server/server-runtime/translations) ·
   [Guides](https://bedrock-core.drav.dev/docs/server/server-runtime/guides) ·
-  [Scoped state](https://bedrock-core.drav.dev/docs/server/server-runtime/scoped-state)
+  [Shared](https://bedrock-core.drav.dev/docs/server/server-runtime/shared)
 - [UI integration](https://bedrock-core.drav.dev/docs/server/ui-integration) — what the runtime
   publishes and which UI package draws it
 
 `packages/test-addon` and `packages/test-addon-2` in this repository are two real addons wired to
-each other, with GameTests covering discovery, RPC, state, collisions and features.
+each other, with GameTests covering discovery, RPC, the shared mirror, collisions and features.
 
 ## License
 

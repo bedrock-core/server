@@ -7,26 +7,37 @@
  *   cross-addon    : subscribe to Shop's config (test-addon-2)
  *   types          : export EconomyConfigDef so consumers can type cross-addon reads
  *
+ * plus the two data layers beside config:
+ *   shared         : a declared shape every realm mirrors — `sharedDef`, typed for peers
+ *   db             : per-player balances as documents on the player's own dynamic properties (`core.db`)
+ *
  * The schema below is also the UI's reference case — see the note above `configDef`.
  */
-import { core } from '@bedrock-core/server-runtime';
-import type { Config } from '@bedrock-core/server-runtime';
+import { core, persisted, players, schema } from '@bedrock-core/server-runtime';
+import type { Registered } from '@bedrock-core/server-runtime';
 import { system, world } from '@minecraft/server';
 
-// ─── State persistence ────────────────────────────────────────────────────────
+// ─── Shared ──────────────────────────────────────────────────────────────────
 
 /**
- * One dynamic property per state key, under this addon's OWN namespace — `core` belongs to the
- * framework, an addon must not squat it.
- *
- * Per key, not one blob for the whole namespace: a dynamic property string caps at 32767
- * characters, and a namespace that grows a key per player crosses that on some later write, far
- * from the code that added the key. Persisting per key also rewrites only what changed.
+ * Declared via the `shared` field of `core.register()` in main.ts. Every realm mirrors it; only
+ * this addon writes it. Export the type so a peer gets the typed tree from
+ * `core.shared.of<EconomyShared>('drav0011_economy')`.
  */
-const SAVE_PREFIX = 'drav0011:economy:';
+export const sharedDef = {
+  currency: 'gold',
+  // Survives restarts: written to the world on change, restored on boot.
+  event: persisted({ name: 'none', active: false, multiplier: 1 }),
+};
 
-/** Bedrock's ceiling for a string dynamic property. */
-const DP_STRING_MAX = 32767;
+export type EconomyShared = typeof sharedDef;
+
+// ─── Db ──────────────────────────────────────────────────────────────────────
+
+interface Balance {
+  gold: number;
+  lastSeen: number;
+}
 
 // ─── RPC ─────────────────────────────────────────────────────────────────────
 
@@ -121,59 +132,35 @@ export type EconomyConfigDef = typeof configDef;
 
 // ─── Setup ────────────────────────────────────────────────────────────────────
 
-export function setupEconomy(config: Config<EconomyConfigDef>): void {
+export function setupEconomy({ config, shared }: Registered<EconomyConfigDef, EconomyShared>): void {
+  // ─── Db: one document per player, on the player's own dynamic properties ──
+
+  // `core.db` is this addon's db, keyed under its namespace; a player's document dies with the
+  // player's data, so there is nothing to clean up.
+  const balances = core.db.collection('balances', {
+    schema: schema<Balance>({ defaults: { gold: 0, lastSeen: 0 } }),
+    accept: players(),
+  });
+
   // ─── RPC ──────────────────────────────────────────────────────────────────
 
   core.rpc.serve<EconomyRPC>({
     getBalance: ({ player }) => {
-      const balance = core.state.get(`balance.${player}`);
+      const [target] = world.getPlayers({ name: player });
 
-      return typeof balance === 'number' ? balance : 0;
+      return target === undefined ? 0 : balances.for(target).get()?.gold ?? 0;
     },
   });
+
+  // ─── Shared: this realm writes, every realm reads ─────────────────────────
+
+  // The mirror follows the config: a peer that mirrors `currency` never needs the config schema.
+  config.server.economy.currency.kind.subscribe(kind => shared.currency.set(kind));
+  shared.event.subscribe(event => console.warn(`[economy] event ${event.name} ${event.active ? 'on' : 'off'} ×${String(event.multiplier)}`));
 
   // ─── Deferred setup (requires tick ≥ 1 for DP access) ────────────────────
 
   system.run(() => {
-    // Restore state from dynamic properties, before subscribing — so replaying the saved keys
-    // does not write every one of them straight back out.
-    for (const dpKey of world.getDynamicPropertyIds()) {
-      if (!dpKey.startsWith(SAVE_PREFIX)) { continue; }
-
-      const saved = world.getDynamicProperty(dpKey);
-
-      if (typeof saved !== 'string') { continue; }
-
-      try {
-        core.state.set(dpKey.slice(SAVE_PREFIX.length), JSON.parse(saved) as unknown);
-      } catch {
-        console.warn(`[economy] could not parse saved state '${dpKey}'`);
-      }
-    }
-
-    // No namespace check: `core.state` is already scoped to this addon and hides the framework's
-    // own keys, so this fires only for what the addon itself wrote.
-    core.state.subscribe((change) => {
-      const dpKey = `${SAVE_PREFIX}${change.key}`;
-
-      if (change.deleted) {
-        world.setDynamicProperty(dpKey, undefined);
-
-        return;
-      }
-
-      const encoded = JSON.stringify(change.value);
-
-      if (encoded.length > DP_STRING_MAX) {
-        console.warn(`[economy] '${change.key}' is ${String(encoded.length)} chars, over the ${String(DP_STRING_MAX)} dynamic-property limit — not persisted`);
-
-        return;
-      }
-
-      world.setDynamicProperty(dpKey, encoded);
-    });
-    core.state.set('currency', 'gold');
-
     // Accessor tree — every node carries its own verbs, leaf or group, at any depth
     config.server.economy.currency.kind.set('gold');
     config.server.economy.balances.startingBalance.set(120);
@@ -218,6 +205,15 @@ export function setupEconomy(config: Config<EconomyConfigDef>): void {
   world.afterEvents.playerSpawn.subscribe(({ player, initialSpawn }) => {
     if (!initialSpawn) { return; }
 
+    // The player's document: read on demand, written through, cached by identity.
+    const balance = balances.for(player);
+
+    if (balance.get() === undefined) {
+      balance.set({ gold: config.server.economy.balances.startingBalance.get(), lastSeen: Date.now() });
+    } else {
+      balance.patch({ lastSeen: Date.now() });
+    }
+
     // The player's own accessor tree — same shape as the server scope past `for()`
     const playerCfg = config.player.for(player);
 
@@ -231,7 +227,7 @@ export function setupEconomy(config: Config<EconomyConfigDef>): void {
     });
 
     if (playerCfg.notify.onLogin.get()) {
-      player.sendMessage(`Balance: 0${config.server.display.suffix.get()}`);
+      player.sendMessage(`Balance: ${String(balance.get()?.gold ?? 0)}${config.server.display.suffix.get()}`);
     }
   });
 }

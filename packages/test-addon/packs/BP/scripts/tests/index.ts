@@ -8,7 +8,7 @@
  */
 import './bench';
 import { type Test, register } from '@minecraft/server-gametest';
-import { Runtime, core } from '@bedrock-core/server-runtime';
+import { Runtime, core, open } from '@bedrock-core/server-runtime';
 
 const STRUCTURE = 'core:empty';
 
@@ -20,10 +20,10 @@ function gametest(name: string, fn: (test: Test) => void): void {
 gametest('discovery_and_rpc', (test) => {
   const a = new Runtime();
 
-  a.register({ creator: 'test', pack: 'demo_a', packName: 'A', version: '1.0.0' });
+  a.register({ manifest: { creator: 'test', pack: 'demo_a', packName: 'A', version: '1.0.0' } });
   const b = new Runtime();
 
-  b.register({ creator: 'test', pack: 'demo_b', packName: 'B', version: '1.0.0' });
+  b.register({ manifest: { creator: 'test', pack: 'demo_b', packName: 'B', version: '1.0.0' } });
   b.rpc.onRequest('ping', () => 'pong');
 
   let reply: unknown;
@@ -49,7 +49,7 @@ gametest('discovery_and_rpc', (test) => {
 gametest('rpc_to_self', (test) => {
   const a = new Runtime();
 
-  a.register({ creator: 'test', pack: 'self_rpc', packName: 'A', version: '1.0.0' });
+  a.register({ manifest: { creator: 'test', pack: 'self_rpc', packName: 'A', version: '1.0.0' } });
   a.rpc.onRequest('echo', params => params);
 
   let reply: unknown;
@@ -66,20 +66,37 @@ gametest('rpc_to_self', (test) => {
     .thenSucceed();
 });
 
-// Shared state replicates between runtimes (last-write-wins, local reads).
-gametest('state_replication', (test) => {
+// A shared tree replicates between runtimes: the owner writes, a peer reads it typed, and a
+// peer's write lands only on a leaf the owner opened.
+gametest('shared_replication', (test) => {
   const a = new Runtime();
-
-  a.register({ creator: 'test', pack: 'state_a', packName: 'A', version: '1.0.0' });
+  const { shared } = a.register({ manifest: { creator: 'test', pack: 'shared_a', packName: 'A', version: '1.0.0' }, shared: { volume: 5, votes: open(0) } });
   const b = new Runtime();
 
-  b.register({ creator: 'test', pack: 'state_b', packName: 'B', version: '1.0.0' });
+  b.register({ manifest: { creator: 'test', pack: 'shared_b', packName: 'B', version: '1.0.0' } });
 
-  a.state.set('volume', 7);
+  shared.volume.set(7);
   test.startSequence()
     .thenIdle(20)
     .thenExecute(() => {
-      if (b.node.state.get(a.namespace, 'volume') !== 7) { test.fail('state did not replicate to B'); }
+      const mirror = b.shared.of<{ volume: number; votes: ReturnType<typeof open<number>> }>(a.namespace);
+
+      if (mirror === undefined) {
+        test.fail('B never saw the shape');
+
+        return;
+      }
+
+      if (mirror.volume.get() !== 7) { test.fail('volume did not replicate to B'); }
+
+      mirror.votes.set(3);
+      b.node.state.set(a.namespace, 'volume', 1);
+    })
+    .thenIdle(20)
+    .thenExecute(() => {
+      if (shared.votes.get() !== 3) { test.fail('an opened leaf did not take the peer write'); }
+
+      if (shared.volume.get() !== 7) { test.fail('a closed leaf took a peer write'); }
 
       a.stop();
       b.stop();
@@ -91,20 +108,20 @@ gametest('state_replication', (test) => {
 gametest('distinct_vs_collision', (test) => {
   const x = new Runtime();
 
-  x.register({ creator: 'test', pack: 'dup_a', packName: 'X', version: '1.0.0' });
+  x.register({ manifest: { creator: 'test', pack: 'dup_a', packName: 'X', version: '1.0.0' } });
   const y = new Runtime();
 
-  y.register({ creator: 'test', pack: 'dup_b', packName: 'Y', version: '1.0.0' });
+  y.register({ manifest: { creator: 'test', pack: 'dup_b', packName: 'Y', version: '1.0.0' } });
 
   const c1 = new Runtime();
 
-  c1.register({ creator: 'test', pack: 'clash_same', packName: 'First', version: '1.0.0' });
+  c1.register({ manifest: { creator: 'test', pack: 'clash_same', packName: 'First', version: '1.0.0' } });
   let collided = false;
 
   c1.registry.onNamespaceCollision(() => { collided = true; });
   const c2 = new Runtime();
 
-  c2.register({ creator: 'test', pack: 'clash_same', packName: 'Second', version: '1.0.0' });
+  c2.register({ manifest: { creator: 'test', pack: 'clash_same', packName: 'Second', version: '1.0.0' } });
 
   test.startSequence()
     .thenIdle(30)
@@ -124,7 +141,7 @@ gametest('distinct_vs_collision', (test) => {
 gametest('feature_toggle', (test) => {
   const consumer = new Runtime();
 
-  consumer.register({ creator: 'test', pack: 'game_main', packName: 'Game', version: '1.0.0', optionalDependencies: ['test_lb_main'] });
+  consumer.register({ manifest: { creator: 'test', pack: 'game_main', packName: 'Game', version: '1.0.0', optionalDependencies: ['test_lb_main'] } });
 
   let enabled = 0;
 
@@ -137,7 +154,7 @@ gametest('feature_toggle', (test) => {
     .thenExecute(() => {
       if (enabled !== 0) { test.fail('feature enabled before its provider was present'); }
 
-      provider.register({ creator: 'test', pack: 'lb_main', packName: 'Leaderboard', version: '1.0.0' });
+      provider.register({ manifest: { creator: 'test', pack: 'lb_main', packName: 'Leaderboard', version: '1.0.0' } });
     })
     .thenIdle(20)
     .thenExecute(() => {

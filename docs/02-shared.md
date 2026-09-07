@@ -23,33 +23,42 @@ core.node.state.get('os_shop', STOCK);
 core.state.subscribe(change => persistMyNamespace());
 
 // after — declare the shape once, get a typed tree; every node is an observable
-const shared = core.register({
-  // …identity…
-  shared: {
-    spawnRate: 5,
-    highScore: open(0),                                   // anyone may write this one
-    event: persisted({ name: 'none', active: false }),    // this branch survives restart
-  },
-});
+export const sharedDef = {
+  spawnRate: 5,
+  highScore: open(0),                                   // anyone may write this one
+  event: persisted({ name: 'none', active: false }),    // this branch survives restart
+  palette: leaf({ fg: '#fff', bg: '#000' }),            // one object under one key, not a branch
+};
+export type LobbyShared = typeof sharedDef;             // peers type their view from this
+
+const { config, shared } = core.register({ manifest, config: configDef, shared: sharedDef });
 
 shared.spawnRate.set(6);                                  // writes, broadcasts
 shared.event.active.subscribe(on => …);                   // a leaf
 shared.event.subscribe(event => …);                       // a branch — fires when any child changes
 shared.subscribe(all => …);                               // the whole namespace
 
-const shop = core.shared.of<ShopShared>('os_shop');       // a peer's tree — read-only, or undefined until it announces
-shop?.stock.get();
+const shop = core.shared.of<ShopShared>('os_shop');       // a peer's tree — undefined until it announces
+shop?.stock.get();                                        // number | undefined: the value may lag the shape
 shop?.stock.subscribe(n => …);
 shop?.sale.subscribe(sale => …);                          // any branch, any leaf
+shop?.votes.set(1);                                       // only where the owner said open(); a compile error elsewhere
 ```
+
+`register()` hands back the typed accessors of everything declared, one key per declaration:
+`const { config, shared } = core.register({ manifest, config, shared })`. Levels never mix — the
+config scopes sit under `config`, the tree under `shared`. `core.state` stays one minor as a
+deprecated string-keyed alias; `core.shared` is the registry (`of()`, `own`).
 
 Exactly the accessor tree config already has: materialized once from the declared shape, every
 node — root, branch, leaf — carrying `get` / `subscribe`, leaves and own branches also `set` /
 `patch`. No accessor functions, no string keys, autocomplete to the leaf.
 
-- **Own tree** comes back from `register()` (and as `core.shared` afterwards), built from the
+- **Own tree** comes back from `register()` (and as `core.shared.own` afterwards), built from the
   `shared` object: its values are the initial values, its nesting the keys. Nested paths flatten to
-  dotted mirror keys (`event.active`), the same way config flattens.
+  dotted mirror keys (`event.active`). A plain object is a branch; a primitive or an array is a
+  leaf; `leaf()` keeps an object as one value. `get`, `set`, `patch`, `subscribe` are reserved
+  child names.
 - **A peer's tree** is `core.shared.of<Def>(ns)`. The peer announces its shape (key paths, no
   values — a few dozen bytes under `core-shared/shape`) when it registers, so the tree is
   materialized from that and `Def` is the compile-time view over it — the same arrangement as
@@ -57,8 +66,9 @@ node — root, branch, leaf — carrying `get` / `subscribe`, leaves and own bra
 - **Every node is an observable** ([01-observable](./01-observable.md)): `useObservable(shop.stock)`,
   `computed(…, [shared.event.active])`, `toNative(shared.spawnRate)` — no glue. A peer's nodes are
   `ReadonlyObservable` at the type level, the rule the mirror enforces at runtime.
-- **`open()` and `persisted()` mark a leaf or a whole branch** in the declaration; both are inherited
-  downward. Nothing else on this page changes.
+- **`open()`, `persisted()` and `leaf()` mark a leaf or a whole branch** in the declaration; the
+  first two are inherited downward and travel in the type, so a peer importing the owner's
+  declaration type gets `set` exactly on the opened leaves.
 
 The `core-` prefix stays reserved for the framework, and the raw namespace — framework keys
 included — stays reachable at `core.node.state`.
@@ -69,12 +79,17 @@ Today any node may write any namespace and mirrors apply whatever arrives. That 
 transport layer and wrong one layer up: a persisted value two realms disagree about ends with a
 Lamport clock deciding what the disk believes.
 
-- **Default: owner-only.** A mirror applies a delta for namespace `ns` only when the delta's
-  `src === ns`. Anything else is dropped with one debug log line. Sync deltas already carry `src`,
-  so this is a filter in the apply path, not a protocol change.
+- **Default: owner-only.** A mirror applies an entry for namespace `ns` only when its `src === ns`
+  — the sending node for a delta, the recorded writer for a snapshot entry, so a snapshot relayed
+  by a third party still names the original writer. Anything else is dropped and counted
+  (`state.droppedForeign`). Entries already carry `src`; this is a filter in the apply path, not a
+  protocol change. The local mirror applies the same rule to its own writes, so a foreign write is
+  visible locally exactly when it is visible everywhere.
 - **`open()` per leaf or branch.** The owner marks it writable by anyone in the declaration; the
-  flag travels in the owner's own entry and mirrors honor non-owner deltas for those keys. For the
-  shared counter, the lobby vote, the thing that genuinely has many writers. LWW as today.
+  flag travels in the owner's own entry (`open` on a delta, `o` on a snapshot entry), mirrors honor
+  non-owner entries for those keys, and a non-owner entry never sets or clears the flag. For the
+  shared counter, the lobby vote, the thing that genuinely has many writers. Last write wins as
+  before: a higher version, then the lexicographically greater `src` on a tie.
 - This is robustness against a *buggy* peer, not security: a hostile pack can forge `src`
   ([07-trust-model](./07-trust-model.md)). The filter makes the common mistake impossible, no more.
 
@@ -83,10 +98,13 @@ Wire impact: one optional field on the entry. Stays inside the current `PROTOCOL
 
 ## `persist` — *Decided*
 
-`persisted()` on a leaf or branch writes its value through db's world host on every change
-(`core-shared:<ns>:<key>`) and re-publishes on boot, before discovery, so a late-joining peer's
-first snapshot already has it. This closes the sync README's standing "persistence is each addon's
-own responsibility" for the values that live here. The owner persists; a peer's mirror never does.
+`persisted()` on a leaf or branch writes its value to the world on every change
+(`core-shared:<ns>:<key>`, JSON) and writes it back into the mirror one tick after registration —
+dynamic properties are not readable before the first tick, so the restore is a delta that lands a
+tick after the owner's first snapshot; a peer joining after that sees it in its snapshot. Until
+then the owner's own tree reads the declared value. This closes the sync README's standing
+"persistence is each addon's own responsibility" for the values that live here. The owner
+persists; a peer's mirror never does.
 
 Budget is the DP's: 32 767 characters, throws past it ([S2](./spikes/S2-dynamic-property-costs.md)).
 A persisted shared value is a small value by construction.
@@ -99,10 +117,12 @@ and stays exactly where it is, under the reserved prefix:
 | Key space | Written by | Read by |
 | --- | --- | --- |
 | `core-config/schema`, `core-config/groups` | config, on register | any UI building a form |
-| `core-i18n/…`, `core-guide/…` | translations, guides | any realm resolving strings / drawing pages |
-| `core-feature/…` | features | any condition depending on a peer's feature |
-| host election | runtime | every runtime |
+| `core-i18n/bundle`, `core-guide/manifest`, `core-guide/reference`, `core-addon/page` | translations, guides, pages | any realm resolving strings / drawing pages / listing addons |
+| `core-feature/<id>` | features | any condition depending on a peer's feature |
+| `core-shared/shape` — **new** | the shared registry, on register | `core.shared.of()` in every realm |
 | `core-db/<ns>/<collection>/<key>` — **new** | db, for collections marked `shared` | query caches in every realm ([04-query](./04-query.md)) |
+
+Host election publishes nothing: it is a pure function of the discovery registry.
 
 The last row is the one new use: it is how a db collection keeps peers' query caches warm. Peers
 never read it through `core.shared` — they read it through `core.query`, which gives them status,

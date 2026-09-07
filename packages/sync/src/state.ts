@@ -36,6 +36,8 @@ interface Entry {
   ver: number;
   src: string;
   del?: boolean;
+  /** The owner declared this key writable by any node. Only the owner's own entries set it. */
+  open?: boolean;
 }
 
 /** A serializable snapshot of one entry. */
@@ -45,6 +47,7 @@ export interface SnapshotEntry {
   ver: number;
   src: string;
   del?: boolean;
+  o?: boolean;
 }
 
 interface DeltaData {
@@ -53,6 +56,15 @@ interface DeltaData {
   value?: unknown;
   ver: number;
   del?: boolean;
+  open?: boolean;
+}
+
+export interface SetOptions {
+  /**
+   * Any node may write this key from now on. Without it a mirror applies writes to a namespace
+   * only from the namespace's owner — the node whose id is the namespace — and drops the rest.
+   */
+  open?: boolean;
 }
 
 interface SnapshotData {
@@ -121,6 +133,7 @@ export class State {
   private readonly _changeListeners = new Set<StateChangeListener>();
   private readonly _disposers: Unsubscribe[] = [];
   private _clock = 0;
+  private _droppedForeign = 0;
 
   constructor(bus: Bus, selfId: string, options: StateOptions = {}) {
     this._bus = bus;
@@ -172,22 +185,40 @@ export class State {
     return Array.from(this._store.keys());
   }
 
-  /** Write a key. Broadcasts a delta. Throws if `strictOwnership` is enabled and `ns` is not owned. */
-  set<T = unknown>(ns: string, key: StateKey<T>, value: NoInfer<T>): void;
-  set(ns: string, key: string, value: unknown): void {
-    this.assertWritable(ns);
-    const entry: Entry = { value, ver: ++this._clock, src: this._selfId };
+  /** Whether the owner of `ns` has declared `key` writable by any node. */
+  isOpen(ns: string, key: string): boolean {
+    return this._store.get(ns)?.get(key)?.open === true;
+  }
 
-    this.applyEntry(ns, key, entry);
-    this._bus.send({ type: MessageType.StateDelta, data: { ns, key, value, ver: entry.ver } });
+  /** How many writes from a node other than the namespace's owner this mirror has refused. */
+  get droppedForeign(): number {
+    return this._droppedForeign;
+  }
+
+  /**
+   * Write a key. Broadcasts a delta. Throws if `strictOwnership` is enabled and `ns` is not owned.
+   * A write to a namespace this node does not own reaches the mirrors only if the owner marked the
+   * key `open`; the local mirror applies the same rule, so the write is visible here exactly when
+   * it is visible everywhere.
+   */
+  set<T = unknown>(ns: string, key: StateKey<T>, value: NoInfer<T>, options?: SetOptions): void;
+  set(ns: string, key: string, value: unknown, options?: SetOptions): void {
+    this.assertWritable(ns);
+
+    const open = this._owned.has(ns) && options?.open === true ? true : undefined;
+    const entry: Entry = { value, ver: ++this._clock, src: this._selfId, open };
+
+    this.applyEntry(ns, key, entry, this._owned.has(ns));
+    this._bus.send({ type: MessageType.StateDelta, data: { ns, key, value, ver: entry.ver, open } });
   }
 
   /** Delete a key (tombstone). Broadcasts a delta. Throws if `strictOwnership` is enabled and `ns` is not owned. */
   delete(ns: string, key: string): void {
     this.assertWritable(ns);
+
     const entry: Entry = { ver: ++this._clock, src: this._selfId, del: true };
 
-    this.applyEntry(ns, key, entry);
+    this.applyEntry(ns, key, entry, this._owned.has(ns));
     this._bus.send({ type: MessageType.StateDelta, data: { ns, key, ver: entry.ver, del: true } });
   }
 
@@ -217,6 +248,7 @@ export class State {
       ver: entry.ver,
       src: entry.src,
       del: entry.del,
+      o: entry.open,
     }));
   }
 
@@ -240,10 +272,10 @@ export class State {
   private handleDelta(envelope: Envelope): void {
     if (!isDeltaData(envelope.data)) { return; }
 
-    const { ns, key, ver, value, del } = envelope.data;
+    const { ns, key, ver, value, del, open } = envelope.data;
 
     this._clock = Math.max(this._clock, ver);
-    this.applyEntry(ns, key, { value, ver, src: envelope.src, del });
+    this.applyEntry(ns, key, { value, ver, src: envelope.src, del, open: open === true ? true : undefined }, envelope.src === ns);
   }
 
   private handleStateRequest(envelope: Envelope): void {
@@ -267,12 +299,17 @@ export class State {
 
     for (const entry of entries) {
       this._clock = Math.max(this._clock, entry.ver);
-      this.applyEntry(ns, entry.k, { value: entry.v, ver: entry.ver, src: entry.src, del: entry.del });
+      this.applyEntry(ns, entry.k, { value: entry.v, ver: entry.ver, src: entry.src, del: entry.del, open: entry.o === true ? true : undefined }, entry.src === ns);
     }
   }
 
-  /** Apply an entry under last-write-wins. Returns whether it won. */
-  private applyEntry(ns: string, key: string, incoming: Entry): boolean {
+  /**
+   * Apply an entry under last-write-wins. The owner of a namespace — the node whose id it is —
+   * is the only writer a mirror trusts, unless the owner marked the key `open`; a foreign write
+   * to any other key is dropped, and a foreign write never changes the `open` flag. Returns
+   * whether the entry won.
+   */
+  private applyEntry(ns: string, key: string, incoming: Entry, fromOwner: boolean): boolean {
     let map = this._store.get(ns);
 
     if (!map) {
@@ -281,6 +318,16 @@ export class State {
     }
 
     const current = map.get(key);
+
+    if (!fromOwner) {
+      if (current?.open !== true) {
+        this._droppedForeign++;
+
+        return false;
+      }
+
+      incoming.open = true;
+    }
 
     if (current && !this.isNewer(incoming, current)) { return false; }
 

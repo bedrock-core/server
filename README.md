@@ -34,12 +34,14 @@ Register once, near the top of your script entry. `register()` is what brings th
 ```ts
 import { core } from '@bedrock-core/server';
 
-const config = core.register({
-  creator: 'ms',                    // creator id — [a-z0-9_]+
-  pack: 'shop',                     // pack id    — [a-z0-9_]+ → namespace `ms_shop`
-  packName: 'My Cool Shop',         // display label only, not part of identity
-  version: '1.0.0',
-  dependencies: ['os_economy'],     // soft — logs while absent, never blocks
+const { config } = core.register({
+  manifest: {
+    creator: 'ms',                  // creator id — [a-z0-9_]+
+    pack: 'shop',                   // pack id    — [a-z0-9_]+ → namespace `ms_shop`
+    packName: 'My Cool Shop',       // display label only, not part of identity
+    version: '1.0.0',
+    dependencies: ['os_economy'],   // soft — logs while absent, never blocks
+  },
   config: {
     server: {
       taxRate: { type: 'number', default: 0.05, min: 0, max: 1, label: 'Tax Rate' },

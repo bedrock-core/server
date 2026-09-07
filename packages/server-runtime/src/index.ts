@@ -11,13 +11,15 @@
  *
  * // register() brings the addon online — there is no separate start(). Everything the
  * // addon declares rides in the one call; translations/guide/config are all optional.
- * const config = core.register({
- *   creator: 'bt',                 // creator/vendor id, lowercase a-z0-9_
- *   pack: 'gc_shop',               // abbreviated pack id — together: namespace `bt_gc_shop`
- *   packName: 'My Cool Shop',      // display label only
- *   version: '1.2.0',
- *   dependencies: ['os_economy'],                     // namespaces (`creator_pack`)
- *   optionalDependencies: ['os_leaderboards'],
+ * const { config } = core.register({
+ *   manifest: {
+ *     creator: 'bt',               // creator/vendor id, lowercase a-z0-9_
+ *     pack: 'gc_shop',             // abbreviated pack id — together: namespace `bt_gc_shop`
+ *     packName: 'My Cool Shop',    // display label only
+ *     version: '1.2.0',
+ *     dependencies: ['os_economy'],                   // namespaces (`creator_pack`)
+ *     optionalDependencies: ['os_leaderboards'],
+ *   },
  *   translations: bundle,          // the i18n filter's bundle, shared with other addons' UIs
  *   guide: guides,                 // compiled guide manifest from the guides filter
  *   config: { server: { taxRate: { type: 'number', default: 0.05, min: 0, max: 1, label: 'Tax Rate' } } },
@@ -32,11 +34,15 @@
  *   onDisable() { console.warn('leaderboards gone'); },
  * });
  * core.rpc.onRequest('buy', params => purchase(params));
- * core.state.set('price', 10);   // namespace pre-filled from core.namespace
+ *
+ * // The shared mirror, typed: declare the shape, every realm reads it, this one writes it.
+ * const { config, shared } = core.register({ manifest, config: configDef, shared: { price: 10, event: persisted({ active: false }) } });
+ * shared.price.set(12);
+ * core.shared.of<typeof otherAddonShared>('os_shop')?.stock.subscribe(n => hud.set(n));
  * ```
  */
 export { Runtime, core } from './runtime';
-export type { RegisterOptions } from './runtime';
+export type { RegisterOptions, Registered } from './runtime';
 
 export { RUNTIME_VERSION } from './runtime-version';
 
@@ -52,6 +58,41 @@ export { FeatureManager } from './features';
 export type { FeatureSpec, FeatureConditionContext, TypedFeatureAccessor } from './features';
 
 export { ScopedState, RESERVED_STATE_PREFIX, isReservedStateKey } from './scoped-state';
+
+// What an addon needs to declare a collection on `core.db`; the package itself is the source for the rest.
+export {
+  accepting,
+  allOf,
+  anyOf,
+  blockTypes,
+  DbBudgetError,
+  DbTargetError,
+  dimensions,
+  entityTypes,
+  except,
+  players,
+  schema,
+  slots,
+  worldTarget,
+} from '@bedrock-core/db';
+export type { Collection, Db, Document, IndexedDocument, Schema } from '@bedrock-core/db';
+
+export { leaf, open, persisted, SharedRegistry, SHARED_SHAPE_KEY, sharedDpKey } from './shared';
+export type {
+  Marked,
+  OpenPeerLeaf,
+  PeerBranch,
+  PeerLeaf,
+  PeerNode,
+  PeerSharedTree,
+  PeerValue,
+  SharedBranch,
+  SharedDef,
+  SharedLeaf,
+  SharedNode,
+  SharedTree,
+  SharedValue,
+} from './shared';
 
 export { addonNamespace, validateManifest } from './manifest';
 export type { AddonManifest, ManifestMeta } from './manifest';

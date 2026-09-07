@@ -38,7 +38,7 @@ export { Rpc } from './rpc';
 export type { RequestHandler, RequestOptions, RpcOptions, TypedClient, RPCHandlerMap } from './rpc';
 
 export { State, stateKey } from './state';
-export type { SnapshotEntry, StateChange, StateChangeListener, StateKey, StateOptions } from './state';
+export type { SetOptions, SnapshotEntry, StateChange, StateChangeListener, StateKey, StateOptions } from './state';
 
 export type { Unsubscribe } from './bus';
 export type { Envelope } from './envelope';

@@ -22,9 +22,7 @@ import '@bedrock-core/generated/ui';
 // i18n bundle and guide manifest ride along as optional fields; the typed config accessors register() returns are unused here — Shop only
 // exposes its config to the UI and to cross-addon `core.config.of()` readers.
 core.register({
-  ...manifest,
-  dependencies: ['drav0011_economy'],
-  optionalDependencies: ['drav0011_leaderboard'],
+  manifest: { ...manifest, dependencies: ['drav0011_economy'], optionalDependencies: ['drav0011_leaderboard'] },
   translations: bundle,
   guide: guides,
   // The same guide as compiled screens, reduced to what the host needs to

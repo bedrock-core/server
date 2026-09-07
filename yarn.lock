@@ -84,7 +84,7 @@ __metadata:
   languageName: node
   linkType: soft
 
-"@bedrock-core/db@workspace:packages/db":
+"@bedrock-core/db@workspace:^, @bedrock-core/db@workspace:packages/db":
   version: 0.0.0-use.local
   resolution: "@bedrock-core/db@workspace:packages/db"
   dependencies:
@@ -187,6 +187,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@bedrock-core/server-runtime@workspace:packages/server-runtime"
   dependencies:
+    "@bedrock-core/db": "workspace:^"
     "@bedrock-core/i18n": "npm:^0.1.0"
     "@bedrock-core/sync": "workspace:^"
     "@minecraft/server": "npm:2.8.0"

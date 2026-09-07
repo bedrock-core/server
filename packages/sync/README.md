@@ -57,7 +57,8 @@ sync.start(); // after this, sync.discovery / sync.rpc / sync.state are live
 
 sync.discovery.onPeerUp(peer => console.warn(`${peer.id} v${peer.version} joined`));
 
-sync.state.set(NS, SPAWN_RATE, 5);                     // value must be a number
+sync.state.set(NS, SPAWN_RATE, 5);                     // value must be a number; mirrors take it because NS is ours
+sync.state.set(NS, 'votes', 0, { open: true });         // any node may write this key from now on
 sync.state.subscribe(change => { /* persist your own namespace here */ });
 
 sync.rpc.onRequest('getSpawnRate', () => sync.state.get(NS, SPAWN_RATE));

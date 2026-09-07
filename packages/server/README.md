@@ -32,11 +32,13 @@ build against has to match the one your pack's `manifest.json` declares.
 import { core } from '@bedrock-core/server';
 
 core.register({
-  creator: 'ms',
-  creatorName: 'My Studio',
-  pack: 'shop',
-  packName: 'My Shop',
-  version: '1.0.0',
+  manifest: {
+    creator: 'ms',
+    creatorName: 'My Studio',
+    pack: 'shop',
+    packName: 'My Shop',
+    version: '1.0.0',
+  },
 });
 
 // Only if you need the transport itself:
