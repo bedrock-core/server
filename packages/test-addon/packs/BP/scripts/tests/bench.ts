@@ -21,7 +21,7 @@ const STRUCTURE = 'core:empty';
 const PROBE_CHANNEL = 'bedrock-core:benchprobe';
 
 function benchmark(name: string, fn: (test: Test) => void): void {
-  register('core', name, fn).structureName(STRUCTURE).tag('bench').maxTicks(1200);
+  register('bench', name, fn).structureName(STRUCTURE).tag('bench').maxTicks(1200);
 }
 
 /** One machine-readable result line. `scripts/bench-report.mjs` parses these out of the log. */

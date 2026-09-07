@@ -7,6 +7,7 @@
  * `./bench` is registered alongside them but runs only when asked for by name.
  */
 import './bench';
+import './bench-shared';
 import { type Test, register } from '@minecraft/server-gametest';
 import { Runtime, core, open } from '@bedrock-core/server-runtime';
 
