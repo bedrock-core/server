@@ -45,7 +45,7 @@ export default function CraftingTable(): JSX.Element {
       padding={8}
       gap={6}
       background={'textures/ui/dialog_background_opaque'}
-      onOpen={(_player, host) => setPlanks(countPlanks(host))}
+      onOpen={({ host }) => setPlanks(countPlanks(host))}
     >
       <Card width={'100%'}>
         <Panel flexDirection={'row'} gap={4} alignItems={'center'}>
@@ -63,8 +63,8 @@ export default function CraftingTable(): JSX.Element {
                   <Panel background={'textures/ui/slot_enabled'} flexShrink={0}>
                     <Slot
                       role={'both'}
-                      onInsert={(_player, _stack, host) => setPlanks(countPlanks(host))}
-                      onRemove={(_player, _stack, host) => setPlanks(countPlanks(host))}
+                      onInsert={({ host }) => setPlanks(countPlanks(host))}
+                      onRemove={({ host }) => setPlanks(countPlanks(host))}
                     />
                   </Panel>
                 ))}
@@ -74,7 +74,7 @@ export default function CraftingTable(): JSX.Element {
 
           <Button
             enabled={planks >= COST}
-            onPress={(_player, host) => {
+            onPress={({ host }) => {
               if (host !== undefined && craft(host)) {
                 setCrafted(value => value + 1);
                 setPlanks(countPlanks(host));
