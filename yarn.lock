@@ -54,9 +54,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@bedrock-core/bds-runner@portal:../bds-runner::locator=%40bedrock-core%2Fserver-monorepo%40workspace%3A.":
+"@bedrock-core/bds-runner@portal:../bds-runner::locator=%40bedrock-core%2Fserver%40workspace%3A.":
   version: 0.0.0-use.local
-  resolution: "@bedrock-core/bds-runner@portal:../bds-runner::locator=%40bedrock-core%2Fserver-monorepo%40workspace%3A."
+  resolution: "@bedrock-core/bds-runner@portal:../bds-runner::locator=%40bedrock-core%2Fserver%40workspace%3A."
   dependencies:
     jiti: "npm:^2.7.0"
     prismarine-nbt: "npm:^2.7.0"
@@ -66,9 +66,9 @@ __metadata:
   languageName: node
   linkType: soft
 
-"@bedrock-core/config@portal:../ui/packages/config::locator=%40bedrock-core%2Fserver-monorepo%40workspace%3A.":
+"@bedrock-core/config@portal:../ui/packages/config::locator=%40bedrock-core%2Fserver%40workspace%3A.":
   version: 0.0.0-use.local
-  resolution: "@bedrock-core/config@portal:../ui/packages/config::locator=%40bedrock-core%2Fserver-monorepo%40workspace%3A."
+  resolution: "@bedrock-core/config@portal:../ui/packages/config::locator=%40bedrock-core%2Fserver%40workspace%3A."
   peerDependencies:
     "@bedrock-core/guides": "*"
     "@bedrock-core/i18n": "*"
@@ -80,7 +80,7 @@ __metadata:
   languageName: node
   linkType: soft
 
-"@bedrock-core/db@workspace:^, @bedrock-core/db@workspace:packages/db":
+"@bedrock-core/db@workspace:*, @bedrock-core/db@workspace:^, @bedrock-core/db@workspace:packages/db":
   version: 0.0.0-use.local
   resolution: "@bedrock-core/db@workspace:packages/db"
   dependencies:
@@ -96,15 +96,15 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@bedrock-core/flexbox@portal:../ui/packages/flexbox::locator=%40bedrock-core%2Fserver-monorepo%40workspace%3A.":
+"@bedrock-core/flexbox@portal:../ui/packages/flexbox::locator=%40bedrock-core%2Fserver%40workspace%3A.":
   version: 0.0.0-use.local
-  resolution: "@bedrock-core/flexbox@portal:../ui/packages/flexbox::locator=%40bedrock-core%2Fserver-monorepo%40workspace%3A."
+  resolution: "@bedrock-core/flexbox@portal:../ui/packages/flexbox::locator=%40bedrock-core%2Fserver%40workspace%3A."
   languageName: node
   linkType: soft
 
-"@bedrock-core/guides@portal:../ui/packages/guides::locator=%40bedrock-core%2Fserver-monorepo%40workspace%3A.":
+"@bedrock-core/guides@portal:../ui/packages/guides::locator=%40bedrock-core%2Fserver%40workspace%3A.":
   version: 0.0.0-use.local
-  resolution: "@bedrock-core/guides@portal:../ui/packages/guides::locator=%40bedrock-core%2Fserver-monorepo%40workspace%3A."
+  resolution: "@bedrock-core/guides@portal:../ui/packages/guides::locator=%40bedrock-core%2Fserver%40workspace%3A."
   peerDependencies:
     "@bedrock-core/navigation": "*"
     "@bedrock-core/ore-styled": "*"
@@ -112,23 +112,23 @@ __metadata:
   languageName: node
   linkType: soft
 
-"@bedrock-core/i18n@portal:../ui/packages/i18n::locator=%40bedrock-core%2Fserver-monorepo%40workspace%3A.":
+"@bedrock-core/i18n@portal:../ui/packages/i18n::locator=%40bedrock-core%2Fserver%40workspace%3A.":
   version: 0.0.0-use.local
-  resolution: "@bedrock-core/i18n@portal:../ui/packages/i18n::locator=%40bedrock-core%2Fserver-monorepo%40workspace%3A."
+  resolution: "@bedrock-core/i18n@portal:../ui/packages/i18n::locator=%40bedrock-core%2Fserver%40workspace%3A."
   peerDependencies:
     "@minecraft/server": ">=2.8.0"
   languageName: node
   linkType: soft
 
-"@bedrock-core/navigation@portal:../ui/packages/navigation::locator=%40bedrock-core%2Fserver-monorepo%40workspace%3A.":
+"@bedrock-core/navigation@portal:../ui/packages/navigation::locator=%40bedrock-core%2Fserver%40workspace%3A.":
   version: 0.0.0-use.local
-  resolution: "@bedrock-core/navigation@portal:../ui/packages/navigation::locator=%40bedrock-core%2Fserver-monorepo%40workspace%3A."
+  resolution: "@bedrock-core/navigation@portal:../ui/packages/navigation::locator=%40bedrock-core%2Fserver%40workspace%3A."
   peerDependencies:
     "@bedrock-core/ui-runtime": "*"
   languageName: node
   linkType: soft
 
-"@bedrock-core/observable@workspace:^, @bedrock-core/observable@workspace:packages/observable":
+"@bedrock-core/observable@workspace:*, @bedrock-core/observable@workspace:^, @bedrock-core/observable@workspace:packages/observable":
   version: 0.0.0-use.local
   resolution: "@bedrock-core/observable@workspace:packages/observable"
   dependencies:
@@ -146,37 +146,14 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@bedrock-core/ore-styled@portal:../ui/packages/ore-styled::locator=%40bedrock-core%2Fserver-monorepo%40workspace%3A.":
+"@bedrock-core/ore-styled@portal:../ui/packages/ore-styled::locator=%40bedrock-core%2Fserver%40workspace%3A.":
   version: 0.0.0-use.local
-  resolution: "@bedrock-core/ore-styled@portal:../ui/packages/ore-styled::locator=%40bedrock-core%2Fserver-monorepo%40workspace%3A."
+  resolution: "@bedrock-core/ore-styled@portal:../ui/packages/ore-styled::locator=%40bedrock-core%2Fserver%40workspace%3A."
   dependencies:
     "@bedrock-core/i18n": "workspace:*"
   peerDependencies:
     "@bedrock-core/ui-runtime": "*"
   languageName: node
-  linkType: soft
-
-"@bedrock-core/server-monorepo@workspace:.":
-  version: 0.0.0-use.local
-  resolution: "@bedrock-core/server-monorepo@workspace:."
-  dependencies:
-    "@bedrock-core/bds-runner": "portal:../bds-runner"
-    "@changesets/changelog-github": "npm:^0.7.0"
-    "@changesets/cli": "npm:^2.31.0"
-    "@eslint/js": "npm:^10.0.1"
-    "@eslint/json": "npm:^2.0.0"
-    "@stylistic/eslint-plugin": "npm:^5.10.0"
-    "@types/node": "npm:^26.0.1"
-    "@vitest/coverage-v8": "npm:^4.1.10"
-    concurrently: "npm:^10.0.3"
-    eslint: "npm:^10.5.0"
-    globals: "npm:^17.7.0"
-    jiti: "npm:^2.7.0"
-    nodemon: "npm:^3.1.14"
-    typescript: "npm:^6.0.3"
-    typescript-eslint: "npm:^8.62.0"
-    vitest: "npm:^4.1.10"
-  languageName: unknown
   linkType: soft
 
 "@bedrock-core/server-runtime@workspace:*, @bedrock-core/server-runtime@workspace:^, @bedrock-core/server-runtime@workspace:packages/server-runtime":
@@ -248,19 +225,38 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@bedrock-core/server@workspace:packages/server":
+"@bedrock-core/server@workspace:.":
   version: 0.0.0-use.local
-  resolution: "@bedrock-core/server@workspace:packages/server"
+  resolution: "@bedrock-core/server@workspace:."
   dependencies:
+    "@bedrock-core/bds-runner": "portal:../bds-runner"
+    "@bedrock-core/db": "workspace:*"
+    "@bedrock-core/observable": "workspace:*"
     "@bedrock-core/server-runtime": "workspace:*"
     "@bedrock-core/sync": "workspace:*"
+    "@changesets/changelog-github": "npm:^0.7.0"
+    "@changesets/cli": "npm:^2.31.0"
+    "@eslint/js": "npm:^10.0.1"
+    "@eslint/json": "npm:^2.0.0"
     "@minecraft/server": "npm:2.8.0"
+    "@minecraft/server-ui": "npm:2.1.0"
     "@stylistic/eslint-plugin": "npm:^5.10.0"
+    "@types/node": "npm:^26.0.1"
+    "@vitest/coverage-v8": "npm:^4.1.10"
+    concurrently: "npm:^10.0.3"
     eslint: "npm:^10.5.0"
+    globals: "npm:^17.7.0"
+    jiti: "npm:^2.7.0"
+    nodemon: "npm:^3.1.14"
     typescript: "npm:^6.0.3"
     typescript-eslint: "npm:^8.62.0"
+    vitest: "npm:^4.1.10"
   peerDependencies:
     "@minecraft/server": ">=2.8.0"
+    "@minecraft/server-ui": ">=2.1.0"
+  peerDependenciesMeta:
+    "@minecraft/server-ui":
+      optional: true
   languageName: unknown
   linkType: soft
 
@@ -279,17 +275,17 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@bedrock-core/ui-compile@portal:../ui/packages/ui-compile::locator=%40bedrock-core%2Fserver-monorepo%40workspace%3A.":
+"@bedrock-core/ui-compile@portal:../ui/packages/ui-compile::locator=%40bedrock-core%2Fserver%40workspace%3A.":
   version: 0.0.0-use.local
-  resolution: "@bedrock-core/ui-compile@portal:../ui/packages/ui-compile::locator=%40bedrock-core%2Fserver-monorepo%40workspace%3A."
+  resolution: "@bedrock-core/ui-compile@portal:../ui/packages/ui-compile::locator=%40bedrock-core%2Fserver%40workspace%3A."
   dependencies:
     "@bedrock-core/ui-runtime": "workspace:*"
   languageName: node
   linkType: soft
 
-"@bedrock-core/ui-runtime@portal:../ui/packages/ui-runtime::locator=%40bedrock-core%2Fserver-monorepo%40workspace%3A.":
+"@bedrock-core/ui-runtime@portal:../ui/packages/ui-runtime::locator=%40bedrock-core%2Fserver%40workspace%3A.":
   version: 0.0.0-use.local
-  resolution: "@bedrock-core/ui-runtime@portal:../ui/packages/ui-runtime::locator=%40bedrock-core%2Fserver-monorepo%40workspace%3A."
+  resolution: "@bedrock-core/ui-runtime@portal:../ui/packages/ui-runtime::locator=%40bedrock-core%2Fserver%40workspace%3A."
   dependencies:
     "@bedrock-core/flexbox": "workspace:*"
     "@bedrock-core/i18n": "workspace:*"
@@ -299,9 +295,9 @@ __metadata:
   languageName: node
   linkType: soft
 
-"@bedrock-core/ui@portal:../ui::locator=%40bedrock-core%2Fserver-monorepo%40workspace%3A.":
+"@bedrock-core/ui@portal:../ui::locator=%40bedrock-core%2Fserver%40workspace%3A.":
   version: 0.0.0-use.local
-  resolution: "@bedrock-core/ui@portal:../ui::locator=%40bedrock-core%2Fserver-monorepo%40workspace%3A."
+  resolution: "@bedrock-core/ui@portal:../ui::locator=%40bedrock-core%2Fserver%40workspace%3A."
   dependencies:
     "@bedrock-core/config": "workspace:*"
     "@bedrock-core/flexbox": "workspace:*"

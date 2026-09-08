@@ -59,7 +59,7 @@ jobs:
         run: npm install -g npm@latest
 
       - name: Install publishable libraries only
-        run: yarn workspaces focus @bedrock-core/server-monorepo @bedrock-core/server @bedrock-core/sync @bedrock-core/server-runtime
+        run: yarn workspaces focus @bedrock-core/server @bedrock-core/sync @bedrock-core/server-runtime
 
       - name: Create Version PR or publish
         uses: changesets/action@v2

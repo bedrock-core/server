@@ -58,12 +58,17 @@ shared.open.set(true);              // every realm sees it this tick
 await core.rpc.request('os_economy', 'getBalance', { player: 'Steve' });
 ```
 
+Each package the runtime is built on has its own subpath, for when you reach past `core` to the
+thing itself: `@bedrock-core/server/sync` for the transport, `/db` for the rest of the document
+surface, and `/observable` for `computed` / `effect` / `last` and the `toNative` bridge to a
+data-driven form.
+
 Full API — features, config scopes, translations, guides, host election — in the
 [`@bedrock-core/server-runtime` README](./packages/server-runtime/README.md).
 
 ## 📦 Packages
 
-- **`@bedrock-core/server`** — the meta package: one install for the whole stack. Re-exports the runtime at the root and the transport at `/sync`.
+- **`@bedrock-core/server`** — this repository's root: one install for the whole stack. Re-exports the runtime at the root and the transport at `/sync`.
 - **`@bedrock-core/server-runtime`** — the framework runtime: registration, the cross-addon registry, features, config, shared state, events and guides. Built on `sync`.
 - **`@bedrock-core/sync`** — the low-level transport: message bus, discovery, RPC and replicated state over script events.
 - **`@bedrock-core/db`** — persisted documents on dynamic properties, keyed by target.

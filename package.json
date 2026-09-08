@@ -1,7 +1,7 @@
 {
-	"name": "@bedrock-core/server-monorepo",
+	"name": "@bedrock-core/server",
 	"version": "0.1.0",
-	"description": "Monorepo root for the @bedrock-core/server packages — a framework for cross-addon compatible Minecraft Bedrock development",
+	"description": "A framework for cross-addon compatible Minecraft Bedrock development",
 	"keywords": [
 		"minecraft",
 		"bedrock",
@@ -20,13 +20,37 @@
 		}
 	],
 	"repository": "github:bedrock-core/server",
-	"private": true,
 	"type": "module",
+	"exports": {
+		".": {
+			"types": "./src/index.ts",
+			"import": "./src/index.ts"
+		},
+		"./sync": {
+			"types": "./src/sync.ts",
+			"import": "./src/sync.ts"
+		},
+		"./db": {
+			"types": "./src/db.ts",
+			"import": "./src/db.ts"
+		},
+		"./observable": {
+			"types": "./src/observable.ts",
+			"import": "./src/observable.ts"
+		}
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"files": [
+		"src",
+		"README.md",
+		"LICENSE"
+	],
 	"packageManager": "yarn@4.9.3",
 	"workspaces": [
 		"packages/db",
 		"packages/observable",
-		"packages/server",
 		"packages/sync",
 		"packages/server-runtime",
 		"packages/test-addon",
@@ -46,9 +70,9 @@
 	"scripts": {
 		"regolith-install": "yarn workspaces foreach -i -A --topological --jobs=1 run regolith-install",
 		"build": "yarn workspaces foreach -ptA run build",
-		"build:libs": "yarn workspaces foreach -A -pt --no-private run build",
-		"lint:libs": "yarn workspaces foreach -A -pt --no-private run lint",
-		"prepack": "yarn build",
+		"build:libs": "yarn workspaces foreach -A -pt --no-private --exclude '@bedrock-core/server' run build",
+		"lint:libs": "yarn workspaces foreach -A -pt --no-private --exclude '@bedrock-core/server' run lint",
+		"prepack": "yarn build:libs",
 		"watch": "yarn install && nodemon",
 		"lint": "eslint .",
 		"test": "yarn workspaces foreach -ptA run test",
@@ -60,7 +84,22 @@
 		"bds:where": "bc-bds where",
 		"changeset": "changeset",
 		"version-packages": "changeset version && node scripts/sync-meta-version.mjs && node scripts/sync-runtime-version.mjs",
-		"release": "yarn lint:libs && yarn build:libs && node scripts/publish-tarballs.mjs && changeset tag"
+		"release": "yarn lint:libs && yarn build:libs && node scripts/publish-tarballs.mjs && node scripts/publish-tarballs.mjs --only @bedrock-core/server && changeset tag && node scripts/tag-meta.mjs"
+	},
+	"dependencies": {
+		"@bedrock-core/db": "workspace:*",
+		"@bedrock-core/observable": "workspace:*",
+		"@bedrock-core/server-runtime": "workspace:*",
+		"@bedrock-core/sync": "workspace:*"
+	},
+	"peerDependencies": {
+		"@minecraft/server": ">=2.8.0",
+		"@minecraft/server-ui": ">=2.1.0"
+	},
+	"peerDependenciesMeta": {
+		"@minecraft/server-ui": {
+			"optional": true
+		}
 	},
 	"devDependencies": {
 		"@bedrock-core/bds-runner": "portal:../bds-runner",
@@ -68,6 +107,8 @@
 		"@changesets/cli": "^2.31.0",
 		"@eslint/js": "^10.0.1",
 		"@eslint/json": "^2.0.0",
+		"@minecraft/server": "2.8.0",
+		"@minecraft/server-ui": "2.1.0",
 		"@stylistic/eslint-plugin": "^5.10.0",
 		"@types/node": "^26.0.1",
 		"@vitest/coverage-v8": "^4.1.10",
