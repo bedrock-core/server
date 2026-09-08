@@ -20,10 +20,11 @@ import { ConfigRegistry, type Config } from './config/config-registry';
 import type { ConfigDefinition } from './config/schema';
 import type { I18nBundle } from '@bedrock-core/i18n';
 import { TranslationsRegistry } from './translations';
-import { GuidesRegistry } from './guides/guides-registry';
-import { type AddonPageReference, PagesRegistry } from './pages/pages-registry';
+import { GuidesRegistry } from './guides';
+import type { GuideManifest, GuideReference } from './guides';
+import { Announcement } from './announcement';
+import { type AddonPageReference, isAddonPageReference } from './pages';
 import { HostElection } from './host';
-import type { GuideManifest, GuideReference } from './guides/types';
 import type { Rpc } from '@bedrock-core/sync';
 import { createEngineDb } from '@bedrock-core/db/minecraft';
 import type { Db } from '@bedrock-core/db';
@@ -38,7 +39,8 @@ import type { EventsDef, EventsTree } from './events/tree';
  * optional field is sugar for the corresponding post-register call and behaves identically:
  *
  * - `translations` → `core.translations.provide()`
- * - `guide` → `core.guides.provideManifest()`
+ * - `guideReference` → `core.guides.provide()`, `guide` → `core.guides.manifest.provide()`
+ * - `page` → `core.pages.provide()`
  * - `config` → `core.config.define()` (its typed accessors become `register()`'s return value)
  * - `shared` → `core.shared.define()` (its typed tree is `register()`'s `shared`)
  * - `events` → `core.events.define()` (its typed tree is `register()`'s `events`)
@@ -59,7 +61,7 @@ export interface RegisterOptions<
    * This addon's i18n bundle (`@bedrock-core/generated/i18n`, or a
    * `createResourceBundle` result), published to replicated state so other
    * addons' UIs can resolve and measure its strings — and get verbs over them
-   * via `core.translations.of()`.
+   * via `core.translations.i18n()`.
    */
   translations?: I18nBundle;
 
@@ -120,7 +122,7 @@ export class Runtime {
   private _config: ConfigRegistry | undefined;
   private _translations: TranslationsRegistry | undefined;
   private _guides: GuidesRegistry | undefined;
-  private _pages: PagesRegistry | undefined;
+  private _pages: Announcement<AddonPageReference> | undefined;
   private _host: HostElection | undefined;
 
   /** Whether the addon has been registered (and is therefore live). */
@@ -168,12 +170,12 @@ export class Runtime {
     return this.require(this._translations, 'translations');
   }
 
-  /** Cross-addon guides — publish via `register({ guide })` (or `core.guides.provideManifest()` to replace at runtime), `core.guides.of()` for cross-addon reads. */
   /** Cross-addon list pages — publish via `register({ page })` (or `core.pages.provide()` to replace at runtime), `core.pages.of()` for the host's reads. */
-  get pages(): PagesRegistry {
+  get pages(): Announcement<AddonPageReference> {
     return this.require(this._pages, 'pages');
   }
 
+  /** Cross-addon guides — publish via `register({ guideReference })` (or `core.guides.provide()` to replace at runtime), `core.guides.of()` for the host's reads. */
   get guides(): GuidesRegistry {
     return this.require(this._guides, 'guides');
   }
@@ -259,7 +261,7 @@ export class Runtime {
     const config = new ConfigRegistry(node, namespace, db);
     const translations = new TranslationsRegistry(node.state, namespace);
     const guides = new GuidesRegistry(node.state, namespace);
-    const pages = new PagesRegistry(node.state, namespace);
+    const pages = new Announcement<AddonPageReference>(node.state, namespace, 'addon/page', isAddonPageReference);
     const host = new HostElection(registry, namespace);
     const shared = new SharedRegistry({ state: node.state, namespace });
     const events = new EventsRegistry({ events: node.events, namespace });
@@ -279,16 +281,14 @@ export class Runtime {
     node.start();
     registry.start();
     features.start();
-    config.start();
     translations.start();
-    guides.start();
     host.start();
 
     if (options.translations) { translations.provide(options.translations); }
 
-    if (options.guide) { guides.provideManifest(options.guide); }
+    if (options.guide) { guides.manifest.provide(options.guide); }
 
-    if (options.guideReference) { guides.provideReference(options.guideReference); }
+    if (options.guideReference) { guides.provide(options.guideReference); }
 
     if (options.page) { pages.provide(options.page); }
 
@@ -310,7 +310,6 @@ export class Runtime {
   /** Take the addon offline. Safe to call before registering (no-op). */
   stop(): void {
     this._host?.stop();
-    this._guides?.stop();
     this._translations?.stop();
     this._config?.stop();
     this._features?.stop();

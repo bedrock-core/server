@@ -1,4 +1,4 @@
-export { SHARED_SHAPE_KEY, SharedRegistry } from './shared-registry';
+export { SharedRegistry } from './shared-registry';
 export type { SharedRegistryOptions } from './shared-registry';
 
 export { isShape, materialize } from './tree';

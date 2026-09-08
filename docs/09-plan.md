@@ -20,7 +20,6 @@ it needs db's invalidation edge and S6's number. Everything with a *Measure* tag
 | 6 | **`@bedrock-core/query`** | typed key factories `peerConfig` / `peerDoc` / `peerAll`; the client `core.query.observe / getData / fetch / invalidate / setData / mutation`; `useQuery` / `useMutation` hooks; staleTime / gcTime / maxEntries; refetch triggers; warm reads from the mirror; optimistic `mutate` with rollback and in-flight dedup; `RemoteConfigAccessor` kept as a deprecated alias one minor ([04-query](./04-query.md)) | 2, 4, S6 | 3 days |
 | 7 | **Delete** — *`core.state` done 2026-09-09* | ✅ `ScopedState` and `core.state` gone: a `shared` key covers every call it had, the reserved `core-` prefix now belongs to the shared registry that enforces it, and the raw mirror stays at `core.node.state`; ✅ docs site's `core.state` sections removed. **Remaining**: `RemoteConfigAccessor`, once query replaces it, and the docs-site pages for observable / db / events / query | 6 | ½ day left |
 | 8 | **Patching — `script_eval` tier** | unchanged from [06-patching](./06-patching.md) | S3 + verification | 3–4 days |
-| 9 | **Patching — expression tree** — *parked* | | only if 8's verification fails or a Marketplace host is needed | 1 week |
 | 10 | **Trust model docs** | one page on the docs site; the "installing is trusting" sentence in get-started | — | ½ day |
 
 Phases 1 and 2 are independent. Phase 10 can be written any time. Phase 8's build half lands in

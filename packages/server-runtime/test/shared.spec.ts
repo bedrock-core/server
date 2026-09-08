@@ -10,8 +10,12 @@ import type { Bus, EnvelopeHandler, Unsubscribe } from '../../sync/src/bus';
 import { PROTOCOL_MAX } from '../../sync/src/constants';
 import type { Envelope } from '../../sync/src/envelope';
 import { State } from '../../sync/src/state';
-import { SHARED_SHAPE_KEY, SharedRegistry } from '../src/shared/shared-registry';
 import { materialize, type SharedBackend, type SharedTree } from '../src/shared/tree';
+
+// The registry reaches `stateKey` through the sync barrel, which imports the engine; none of it runs here.
+vi.mock('@minecraft/server', () => ({ system: {} }));
+
+const { SharedRegistry } = await import('../src/shared/shared-registry');
 
 const DEF = {
   spawnRate: 5,
@@ -234,7 +238,7 @@ describe('SharedRegistry', () => {
     const shop = owner.registry.define<ShopShared>({ stock: 3, sale: { active: false, percent: 0 } });
 
     expect(owner.state.get('os_shop', 'stock')).toBe(3);
-    expect(owner.state.get('os_shop', SHARED_SHAPE_KEY)).toEqual(['stock', 'sale']);
+    expect(owner.state.get('os_shop', 'core-shared/shape')).toEqual(['stock', 'sale']);
 
     const mirror = peer.registry.of<ShopShared>('os_shop');
 

@@ -36,11 +36,26 @@ emits an event.
 `guideReference(ns)` from `@bedrock-core/guides`, and one whose list page compiles into its pack
 declares `addonPageReference(Page)` from `@bedrock-core/config/compiled`: per screen or reserved
 entry, the compiled title, the baked values and where a press leads — and nothing of what it says,
-since every client already holds it in the pack. `GuidesRegistry.provideReference()` and
+since every client already holds it in the pack. `core.guides.provide()` and
 `core.pages.provide()` publish them under `core-guide/reference` and `core-addon/page`;
-`referenceOf()` and `core.pages.of()` read a peer's. The elected host presents from a reference and
-renders nothing of the owning addon's; a manifest keeps working for hosts that only render
-manifests.
+`core.guides.of()` and `core.pages.of()` read a peer's. The elected host presents from a reference
+and renders nothing of the owning addon's; a manifest, at `core.guides.manifest`, keeps working for
+hosts that only render manifests.
+
+**Every cross-addon feed is an `Announcement`** — one value under a `core-` key in the owner's
+namespace, with `provide` / `own` / `of(ns)` / `namespaces` / `subscribe` and a guard on read.
+`core.pages` is one; `core.guides` is one over the reference, with the manifest at
+`core.guides.manifest`; `core.translations` is one over the bundle, its verbs at `i18n(ns)`;
+`core.features.flags` announces every flag as one record under `core-feature/flags`; the config
+schema and groups sit at `core.config.schema` and `core.config.groups`, and the shared shape at
+`core.shared.shape`. `provideManifest`, `provideReference`, `referenceOf`, `bundleOf`,
+`addonsWithGuides` and `has` are gone with it.
+
+**The package exports what an addon writes against.** Registries are exported as types — the
+runtime constructs them — and the schema, document and wire helpers (`flattenSchema`,
+`defaultsOf`, `normalizeAgainst`, `coerce`, `CONFIG_COLLECTIONS`, `configMethod`,
+`SHARED_SHAPE_KEY`, `validateManifest`, `addonNamespace`, `compareVersions`, `PROTOCOL_MIN` /
+`PROTOCOL_MAX`) are no longer exported.
 
 **`core.state` and `ScopedState` are removed.** A shared key covers every call they had; the raw
 namespace, framework keys included, stays reachable at `core.node.state`.

@@ -50,7 +50,7 @@
  */
 import { system, world } from '@minecraft/server';
 import type { Dimension, Player, World } from '@minecraft/server';
-import type { SyncNode, Unsubscribe } from '@bedrock-core/sync';
+import type { Rpc, SyncNode, Unsubscribe } from '@bedrock-core/sync';
 import { dimensions, players, schema, worldTarget, type Db, type DeepPartial, type MigrateStep, type Schema } from '@bedrock-core/db';
 import {
   type ConfigDefinition,
@@ -66,9 +66,9 @@ import {
   flattenSchema,
   validateConfigSchema,
 } from './schema';
-import { broadcastGroups, broadcastSchema, CONFIG_GROUPS_KEY, CONFIG_SCHEMA_KEY } from './broadcast';
 import { EntityScope, serverScope, type Gate, type ScopeTree } from './scopes/scope';
 import { defaultsOf, normalizeAgainst, type ConfigDocument } from './document';
+import { Announcement, isRecord } from '../announcement';
 import { authorize } from '../authorization';
 import { isUsable } from '../handle';
 
@@ -116,11 +116,34 @@ export interface Config<I extends ConfigDefinition> {
   player: EntityScope<SafePlayer<I>, Player>;
 }
 
-// ─── Remote config accessor (untyped) ─────────────────────────────────────────
+// ─── Announcements ─────────────────────────────────────────────────────────────
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+/** A flat map whose keys carry a scope prefix; the entries are the renderer's to read, so only the envelope is checked. */
+function isFlatMap<T>(value: unknown): value is Record<string, T> {
+  return isRecord(value);
 }
+
+/** One flat map with `server.` / `dimension.` / `player.` prefixed onto every key. */
+function scoped<T>(server: Record<string, T>, dimension: Record<string, T>, player: Record<string, T>): Record<string, T> {
+  const out: Record<string, T> = {};
+
+  for (const [k, v] of Object.entries(server)) { out[`server.${k}`] = v; }
+
+  for (const [k, v] of Object.entries(dimension)) { out[`dimension.${k}`] = v; }
+
+  for (const [k, v] of Object.entries(player)) { out[`player.${k}`] = v; }
+
+  return out;
+}
+
+/** What a remote accessor reads and calls through. */
+interface RemoteSource {
+  rpc: Rpc;
+  schema: Announcement<FlatSchema>;
+  groups: Announcement<FlatGroups>;
+}
+
+// ─── Remote config accessor (untyped) ─────────────────────────────────────────
 
 /**
  * Untyped view of another addon's config. The schema is read synchronously from the shared
@@ -133,7 +156,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * as the addon itself, which is unrestricted — see that file for why.
  */
 export class RemoteConfigAccessor {
-  private readonly _node: SyncNode;
+  private readonly _source: RemoteSource;
   private readonly _addonId: string;
   private readonly _actorId: string | undefined;
 
@@ -155,15 +178,15 @@ export class RemoteConfigAccessor {
     set: async (playerId: string, value: Record<string, unknown>): Promise<unknown> => this._call('player', 'set', playerId, { doc: value }),
   };
 
-  constructor(node: SyncNode, addonId: string, actorId?: string) {
-    this._node = node;
+  constructor(source: RemoteSource, addonId: string, actorId?: string) {
+    this._source = source;
     this._addonId = addonId;
     this._actorId = actorId;
   }
 
   /** Schema with `server.`/`dimension.`/`player.` prefixes on every key. Used by UI to determine scope. */
   get scopedSchema(): FlatSchema {
-    return this._node.state.get(this._addonId, CONFIG_SCHEMA_KEY) ?? {};
+    return this._source.schema.of(this._addonId) ?? {};
   }
 
   /**
@@ -173,7 +196,7 @@ export class RemoteConfigAccessor {
    * key — both mean the same thing to a reader: fall back to the key-derived title.
    */
   get scopedGroups(): FlatGroups {
-    return this._node.state.get(this._addonId, CONFIG_GROUPS_KEY) ?? {};
+    return this._source.groups.of(this._addonId) ?? {};
   }
 
   /** Unprefixed flat schema, derived from {@link scopedSchema} by stripping the scope segment. */
@@ -196,7 +219,7 @@ export class RemoteConfigAccessor {
     params: Record<string, unknown>,
   ): Promise<unknown> {
     const targetParam = TARGET_PARAM[scope];
-    const response = await this._node.rpc.request(this._addonId, configMethod(scope, operation), {
+    const response = await this._source.rpc.request(this._addonId, configMethod(scope, operation), {
       ...params,
       ...(targetParam === undefined ? {} : { [targetParam]: target }),
       actorId: this._actorId,
@@ -294,34 +317,32 @@ export interface ConfigAccessOptions {
 }
 
 export class ConfigRegistry {
+  /**
+   * Every addon's schema, flat and scope-prefixed, announced under `core-config/schema` one tick
+   * after it registers. Its presence is the "this addon has config" signal.
+   */
+  readonly schema: Announcement<FlatSchema>;
+
+  /**
+   * The display strings of the groups those keys nest under, announced under
+   * `core-config/groups` with the same prefixes. Empty for an addon that names no group, which a
+   * reader takes as: fall back to the key-derived title.
+   */
+  readonly groups: Announcement<FlatGroups>;
+
   private readonly _node: SyncNode;
-  private readonly _addonId: string;
   private readonly _db: Db;
+  private readonly _remote: RemoteSource;
   private _defined = false;
   private _local: LocalConfigScopes | undefined;
-  private readonly _addonConfigListeners = new Map<string, Set<(cfg: RemoteConfigAccessor) => void>>();
   private readonly _disposers: Unsubscribe[] = [];
 
   constructor(node: SyncNode, addonId: string, db: Db) {
     this._node = node;
-    this._addonId = addonId;
     this._db = db;
-  }
-
-  start(): void {
-    this._disposers.push(
-      this._node.state.subscribe((change) => {
-        if (change.ns !== this._addonId && change.key === CONFIG_SCHEMA_KEY && !change.deleted) {
-          const listeners = this._addonConfigListeners.get(change.ns);
-
-          if (listeners?.size) {
-            const accessor = new RemoteConfigAccessor(this._node, change.ns);
-
-            for (const l of listeners) { l(accessor); }
-          }
-        }
-      }),
-    );
+    this.schema = new Announcement<FlatSchema>(node.state, addonId, 'config/schema', isFlatMap);
+    this.groups = new Announcement<FlatGroups>(node.state, addonId, 'config/groups', isFlatMap);
+    this._remote = { rpc: node.rpc, schema: this.schema, groups: this.groups };
   }
 
   stop(): void {
@@ -528,8 +549,8 @@ export class ConfigRegistry {
       dimension.warm();
       player.warm();
 
-      broadcastSchema(this._node.state, this._addonId, serverFlat, dimensionFlat, playerFlat);
-      broadcastGroups(this._node.state, this._addonId, flattenGroups(serverTree), flattenGroups(dimensionTree), flattenGroups(playerTree));
+      this.schema.provide(scoped(serverFlat, dimensionFlat, playerFlat));
+      this.groups.provide(scoped(flattenGroups(serverTree), flattenGroups(dimensionTree), flattenGroups(playerTree)));
     });
 
     // A tree kept for a player who left would answer for a handle that is no longer usable.
@@ -561,11 +582,15 @@ export class ConfigRegistry {
   of(addonId: string, options?: ConfigAccessOptions): RemoteConfigAccessor | undefined;
   of<I extends ConfigDefinition>(addonId: string, options?: ConfigAccessOptions): TypedRemoteConfig<I> | undefined;
   of(addonId: string, options?: ConfigAccessOptions): unknown {
-    if (this._node.state.get(addonId, CONFIG_SCHEMA_KEY) === undefined) { return undefined; }
+    if (this.schema.of(addonId) === undefined) { return undefined; }
 
-    return new RemoteConfigAccessor(this._node, addonId, options?.actorId);
+    return new RemoteConfigAccessor(this._remote, addonId, options?.actorId);
   }
 
+  /**
+   * Called with an accessor as soon as `addonId` has announced a schema — now, if it already has
+   * — and again whenever it announces a new one.
+   */
   subscribe(addonId: string, listener: (cfg: RemoteConfigAccessor) => void): Unsubscribe;
   subscribe<I extends ConfigDefinition>(addonId: string, listener: (cfg: TypedRemoteConfig<I>) => void): Unsubscribe;
   subscribe(addonId: string, listener: unknown): Unsubscribe {
@@ -573,17 +598,14 @@ export class ConfigRegistry {
     // runtime object); the accessor's private fields keep TS from relating the two types.
     // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion
     const cb = listener as (cfg: RemoteConfigAccessor) => void;
-    let set = this._addonConfigListeners.get(addonId);
 
-    if (!set) { set = new Set(); this._addonConfigListeners.set(addonId, set); }
+    const notify = (): void => { cb(new RemoteConfigAccessor(this._remote, addonId)); };
 
-    set.add(cb);
+    if (this.schema.of(addonId) !== undefined) { notify(); }
 
-    if (this._node.state.get(addonId, CONFIG_SCHEMA_KEY) !== undefined) {
-      cb(new RemoteConfigAccessor(this._node, addonId));
-    }
-
-    return () => { this._addonConfigListeners.get(addonId)?.delete(cb); };
+    return this.schema.subscribe((namespace) => {
+      if (namespace === addonId && this.schema.of(addonId) !== undefined) { notify(); }
+    });
   }
 }
 

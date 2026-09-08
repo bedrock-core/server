@@ -10,7 +10,7 @@ import './bench';
 import './bench-shared';
 import { world } from '@minecraft/server';
 import { type Test, register } from '@minecraft/server-gametest';
-import { CONFIG_COLLECTIONS, Runtime, authorize, core, event, schema } from '@bedrock-core/server-runtime';
+import { Runtime, authorize, core, event, schema } from '@bedrock-core/server-runtime';
 
 const STRUCTURE = 'core:empty';
 
@@ -354,7 +354,7 @@ gametest('config_stores_through_db', (test) => {
     .thenExecute(() => {
       if (config.server.economy.taxRate.get() !== 1) { test.fail(`the write was not coerced: ${String(config.server.economy.taxRate.get())}`); }
 
-      const collection = addon.db.find(CONFIG_COLLECTIONS.server);
+      const collection = addon.db.find('config-server');
 
       if (collection === undefined) {
         test.fail('config did not declare a server collection on db');
@@ -370,7 +370,7 @@ gametest('config_stores_through_db', (test) => {
 
       // Only overrides are stored, so a key left at its schema default is absent from the bytes —
       // which is what lets a later default change reach a world that never touched the setting.
-      const key = `core-db:${addon.namespace}:world::${CONFIG_COLLECTIONS.server}:doc`;
+      const key = `core-db:${addon.namespace}:world::config-server:doc`;
       const raw = world.getDynamicProperty(key);
 
       if (raw !== '{"v":1,"d":{"economy":{"taxRate":1},"tags":["a","b"]}}') {

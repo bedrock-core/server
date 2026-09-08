@@ -20,6 +20,7 @@
  * a peer's tree has no `set` at all. A peer that wants a change asks the owner over rpc.
  */
 import type { State, StateChange, Unsubscribe } from '@bedrock-core/sync';
+import { Announcement, RESERVED_PREFIX } from '../announcement';
 import {
   isShape,
   materialize,
@@ -30,22 +31,15 @@ import {
   type SharedTree,
 } from './tree';
 
-/**
- * Mirror keys under this prefix belong to the framework, not to the addon whose namespace they
- * ride in: the config schema, the i18n bundle, the compiled guide, feature states and this very
- * shape all replicate under one namespace, so an addon's own key may not collide with them.
- */
-const RESERVED_KEY_PREFIX = 'core-';
-
-/** The mirror key the owner's key names are announced under. */
-export const SHARED_SHAPE_KEY = `${RESERVED_KEY_PREFIX}shared/shape`;
-
 export interface SharedRegistryOptions {
   state: State;
   namespace: string;
 }
 
 export class SharedRegistry {
+  /** The key names each owner announces, under `core-shared/shape`; what a peer's tree is built from. */
+  readonly shape: Announcement<Shape>;
+
   private readonly _state: State;
   private readonly _namespace: string;
   private readonly _peers = new Map<string, { shape: Shape; tree: unknown }>();
@@ -54,6 +48,7 @@ export class SharedRegistry {
   constructor(options: SharedRegistryOptions) {
     this._state = options.state;
     this._namespace = options.namespace;
+    this.shape = new Announcement<Shape>(options.state, options.namespace, 'shared/shape', isShape);
   }
 
   /** This addon's tree, once declared. */
@@ -73,8 +68,8 @@ export class SharedRegistry {
     const keys = Object.keys(def);
 
     for (const key of keys) {
-      if (key.startsWith(RESERVED_KEY_PREFIX)) {
-        throw new Error(`[shared] '${key}' is reserved: keys beginning '${RESERVED_KEY_PREFIX}' belong to the framework`);
+      if (key.startsWith(RESERVED_PREFIX)) {
+        throw new Error(`[shared] '${key}' is reserved: keys beginning '${RESERVED_PREFIX}' belong to the framework`);
       }
     }
 
@@ -87,7 +82,7 @@ export class SharedRegistry {
       this._state.set(this._namespace, key, def[key]);
     }
 
-    this._state.set(this._namespace, SHARED_SHAPE_KEY, keys);
+    this.shape.provide(keys);
 
     return tree;
   }
@@ -97,9 +92,9 @@ export class SharedRegistry {
    * announced its keys. Read-only: only the owner writes its own namespace.
    */
   of<Def extends SharedDef>(namespace: string): PeerSharedTree<Def> | undefined {
-    const announced = this._state.get(namespace, SHARED_SHAPE_KEY);
+    const announced = this.shape.of(namespace);
 
-    if (!isShape(announced)) {
+    if (announced === undefined) {
       return undefined;
     }
 
