@@ -7,7 +7,7 @@
  * `createEngineDb` bind both to the real world.
  */
 import { Block, ContainerSlot, Dimension, Entity, ItemStack, World, system, world, type BlockCustomComponent } from '@minecraft/server';
-import { createDb, parseBlockIdentity, type Db, type Lifecycle, type Locator, type Mirror } from './collection';
+import { createDb, parseBlockIdentity, type Db, type Lifecycle, type Locator } from './collection';
 import { createResolver, structuralClassifier, type Classifier, type Resolver, type TargetKind } from './resolve';
 
 export const engineClassifier: Classifier = {
@@ -131,8 +131,8 @@ export const engineLifecycle: Lifecycle = {
   },
 };
 
-export function createEngineDb(namespace: string, log?: (message: string) => void, mirror?: Mirror): Db {
-  return createDb({ world, namespace, classify: engineClassifier, locate: engineLocator, lifecycle: engineLifecycle, log, mirror });
+export function createEngineDb(namespace: string, log?: (message: string) => void): Db {
+  return createDb({ world, namespace, classify: engineClassifier, locate: engineLocator, lifecycle: engineLifecycle, log });
 }
 
 /**

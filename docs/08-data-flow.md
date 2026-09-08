@@ -10,7 +10,8 @@ flowchart TB
     subgraph owner["Owner realm — the addon that declared the data"]
         st1["observable<br/>observable · computed"]
         cfg["config accessor tree<br/>sync · typed · scalars"]
-        col["db collections<br/>sync · typed · documents"]
+        col["db collections<br/>sync · typed · documents · local"]
+        sv["rpc methods<br/>the owner's own, authorized"]
         sh1["shared mirror<br/>own namespace + announcements"]
         ev1["events<br/>emit · delivered, not kept"]
         ui1["screens<br/>useObservable"]
@@ -46,14 +47,16 @@ flowchart TB
     cfg -->|"schema, once at register"| sh1
     col -->|"the owner maps a document onto a key"| sh1
     col -->|"the owner announces a happening"| ev1
+    col -->|"a handler reads and writes it"| sv
+    cfg -->|"nine methods, by the framework"| sv
 
     sh1 <-->|"deltas, owner-filtered"| bus
     ev1 -->|"one message per emit"| bus
     bus -->|"delivered once, to whoever listens"| ev2
     bus <-->|"deltas"| sh2
-    sh2 -->|"warm read · invalidation"| q
-    q -.->|"RPC read · mutate, next tick"| bus
-    bus -.->|"served + authorized by the owner"| col
+    sh2 -->|"warm read"| q
+    q -.->|"rpc read · mutate, next tick"| bus
+    bus -.->|"authorize(actor), then the handler"| sv
 
     ui2 -->|"useObservable"| q
     ui2 -->|"useObservable"| st2
@@ -110,20 +113,20 @@ sequenceDiagram
     participant U as screen in a peer realm
     participant Q as query cache
     participant B as bus
-    participant O as owner's db
+    participant O as owner's rpc handler
     participant D as dynamic property
-    participant M as every mirror
+    participant M as every listening realm
 
     U->>Q: mutate(patch, actorId)
     Q->>Q: apply optimistically, fetchStatus fetching
-    Q->>B: RPC core:db.patch
+    Q->>B: rpc, the owner's write method
     B->>O: next tick
-    O->>O: denyReason(actor) · schema · validity gate
-    O->>D: write-through
-    O->>O: observable notifies local subscribers
-    O->>B: publish stamp or warm value
-    B->>M: delta
-    O->>B: RPC reply with the authoritative document
+    O->>O: authorize(actor) · schema · validity gate
+    O->>D: write-through, via the owner's own db
+    O->>O: the document notifies its local subscribers
+    O->>B: the owner's own event, if it declared one
+    B->>M: delivered once, to whoever listens
+    O->>B: rpc reply with the authoritative value
     B->>Q: replace cache, status success — or roll back, status error
     Q->>U: useObservable re-renders
 ```

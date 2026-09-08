@@ -1,4 +1,4 @@
-export { EventsRegistry, RESERVED_EVENT_PREFIX } from './events-registry';
+export { EventsRegistry } from './events-registry';
 export type { EventsRegistryOptions } from './events-registry';
 
 export { event, materialize, materializePeer } from './tree';

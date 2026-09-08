@@ -9,7 +9,7 @@
  *
  * Compiled by `tsc`, never run. A shape that stops matching fails the build.
  */
-import type { ConfigGroupAccessor, ConfigLeafAccessor } from '../scopes/accessor';
+import type { ConfigGroupAccessor, ConfigLeafAccessor } from '../scopes/scope';
 
 /**
  * The read half of an observable, as `@bedrock-core/observable` declares it and as

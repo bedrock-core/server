@@ -7,7 +7,11 @@
 
 // ─── Value type ────────────────────────────────────────────────────────────────
 
-export type ConfigValue = boolean | number | string;
+/** What a leaf holds: a scalar, or the array a `list` / `multiselect` entry is. */
+export type ConfigValue = boolean | number | string | readonly string[];
+
+/** The three config scopes, named as they appear on the wire and in the announced schema. */
+export type ConfigScopeName = 'server' | 'dimension' | 'player';
 
 // ─── Entry definitions ─────────────────────────────────────────────────────────
 
@@ -99,6 +103,24 @@ export interface ConfigDefinition {
   server?: ServerScopeSchema;
   dimension?: DimensionScopeSchema;
   player?: PlayerScopeSchema;
+
+  /**
+   * The version this config is stored at. Absent means 1.
+   *
+   * Handed straight to db, which stamps each target's document with it and runs the steps below
+   * when it reads one written at an older version. There is no separate config migration engine.
+   */
+  version?: number;
+
+  /**
+   * A step per version, keyed by the version it produces.
+   *
+   * Each takes one target's stored document — nested as the schema is, overrides only — as the
+   * previous version wrote it, and the scope it belongs to, and returns the next shape: a renamed
+   * key carried across, a dropped one removed. db runs them lazily, per document, so a player who
+   * joins two versions late migrates as they load.
+   */
+  migrate?: Record<number, (stored: Record<string, unknown>, scope: ConfigScopeName) => Record<string, unknown>>;
 }
 
 // ─── Structured value inference ────────────────────────────────────────────────
@@ -127,54 +149,8 @@ export type SchemaToValue<S> = {
               : never
 };
 
-/** All valid subscribe paths in S — includes both leaf keys and group keys. */
-export type DotPath<S> = ChildKeys<S> | {
-  [K in ChildKeys<S>]: S[K] extends { type: string } ? never
-    : S[K] extends Record<string, unknown> ? `${K}.${DotPath<S[K]>}`
-      : never
-}[ChildKeys<S>];
-
-/** Value type at dot-path P within schema S. Works for both leaves and groups. */
-export type PathValue<S, P extends string>
-  = P extends keyof S & string
-    ? S[P] extends { type: 'boolean' } ? boolean
-      : S[P] extends { type: 'number' } ? number
-        : S[P] extends { type: 'string' } ? string
-          : S[P] extends { type: 'enum'; options: readonly (infer O)[] } ? O
-            : S[P] extends { type: 'list' | 'multiselect' } ? string[]
-              : S[P] extends Record<string, unknown> ? SchemaToValue<S[P]>
-                : never
-    : P extends `${infer Head}.${infer Tail}`
-      ? Head extends keyof S & string
-        ? PathValue<S[Head], Tail>
-        : never
-      : never;
-
-/** Recursively-partial version of a schema value type — used for patch inputs. */
-export type DeepPartial<T> = {
-  [K in keyof T]?: T[K] extends Record<string, unknown> ? DeepPartial<T[K]> : T[K]
-};
-
-// ─── Internal flat-key inference (used by DP key generation) ──────────────────
-
-export type FlatKeys<T, P extends string = ''> = {
-  [K in ChildKeys<T>]: T[K] extends { type: 'boolean' | 'number' | 'string' | 'enum' | 'list' | 'multiselect' }
-    ? (P extends '' ? K : `${P}.${K}`)
-    : T[K] extends object
-      ? FlatKeys<T[K], P extends '' ? K : `${P}.${K}`>
-      : never
-}[ChildKeys<T>];
-
-export type FlatValue<T, K extends string>
-  = K extends keyof T & string
-    ? T[K] extends { type: 'boolean' } ? boolean
-      : T[K] extends { type: 'number' } ? number
-        : T[K] extends { type: 'string' } ? string
-          : T[K] extends { type: 'enum'; options: readonly (infer O)[] } ? O
-            : never
-    : K extends `${infer Head}.${infer Tail}`
-      ? Head extends keyof T & string ? FlatValue<T[Head], Tail> : never
-      : never;
+/** A patch for a scope value: db's deep partial, so a group patch names only what changes. */
+export type { DeepPartial } from '@bedrock-core/db';
 
 // ─── Serialized form (broadcast) ──────────────────────────────────────────────
 
@@ -183,8 +159,8 @@ export type SerializedEntry
     | { type: 'number'; default: number; min: number; max: number; step?: number; label: string; description?: string }
     | { type: 'string'; default: string; maxLength?: number; label: string; description?: string }
     | { type: 'enum'; default: string; options: readonly string[]; label: string; description?: string }
-    | { type: 'list'; itemType: 'string' | 'enum'; options?: readonly string[]; maxItems?: number; default: string; label: string; description?: string }
-    | { type: 'multiselect'; options: readonly string[]; default: string; label: string; description?: string };
+    | { type: 'list'; itemType: 'string' | 'enum'; options?: readonly string[]; maxItems?: number; default: readonly string[]; label: string; description?: string }
+    | { type: 'multiselect'; options: readonly string[]; default: readonly string[]; label: string; description?: string };
 
 export type FlatSchema = Record<string, SerializedEntry>;
 
@@ -380,22 +356,19 @@ function serializeEntry(entry: ConfigEntry): SerializedEntry {
         ...common,
       };
     case 'list':
-      // Store the default as a JSON string — list values travel as serialized arrays.
       return {
         type: 'list',
         itemType: entry.itemType,
-        default: JSON.stringify(entry.default),
+        default: entry.default,
         ...(entry.options ? { options: entry.options } : {}),
         ...(entry.maxItems !== undefined ? { maxItems: entry.maxItems } : {}),
         ...common,
       };
     case 'multiselect':
-      // Same JSON-string storage as a list: the value is an array, and a stored value is one
-      // of `ConfigValue`'s three scalars.
       return {
         type: 'multiselect',
         options: entry.options,
-        default: JSON.stringify(entry.default),
+        default: entry.default,
         ...common,
       };
   }

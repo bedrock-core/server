@@ -20,9 +20,6 @@ import {
   type PeerEventsTree,
 } from './tree';
 
-/** Event names beginning here are the framework's. */
-export const RESERVED_EVENT_PREFIX = 'core:';
-
 export interface EventsRegistryOptions {
   events: Events;
   namespace: string;
@@ -48,14 +45,6 @@ export class EventsRegistry {
   define<Def extends EventsDef>(def: Def): EventsTree<Def> {
     if (this._own !== undefined) {
       throw new Error('[events] already declared for this addon');
-    }
-
-    for (const name of Object.keys(def)) {
-      // The framework announces on this channel too — a served endpoint's `core:changed` — so an
-      // addon's own name may not start there.
-      if (name.startsWith(RESERVED_EVENT_PREFIX)) {
-        throw new Error(`[events] '${name}' is reserved: names beginning '${RESERVED_EVENT_PREFIX}' belong to the framework`);
-      }
     }
 
     // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion

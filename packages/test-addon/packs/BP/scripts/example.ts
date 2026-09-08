@@ -7,15 +7,18 @@
  *   cross-addon    : subscribe to Shop's config (test-addon-2)
  *   types          : export EconomyConfigDef so consumers can type cross-addon reads
  *
- * plus the two data layers beside config:
- *   shared         : a declared shape every realm mirrors — `sharedDef`, typed for peers
- *   db             : per-player balances as documents on the player's own dynamic properties (`core.db`)
+ * plus the channels beside config:
+ *   shared         : declared keys every realm mirrors — `sharedDef`, typed for peers
+ *   events         : what this addon announces — `eventsDef`, typed for peers
+ *   rpc            : what peers may ask for — `EconomyApi`, typed for peers
+ *   db             : per-player balances as documents on the player's own dynamic properties (`core.db`), local
  *
  * The schema below is also the UI's reference case — see the note above `configDef`.
  */
-import { core, persisted, players, schema } from '@bedrock-core/server-runtime';
+import { authorize, core, event, players, schema, worldTarget } from '@bedrock-core/server-runtime';
 import type { Registered } from '@bedrock-core/server-runtime';
 import { system, world } from '@minecraft/server';
+import type { Player } from '@minecraft/server';
 
 // ─── Shared ──────────────────────────────────────────────────────────────────
 
@@ -23,14 +26,31 @@ import { system, world } from '@minecraft/server';
  * Declared via the `shared` field of `core.register()` in main.ts. Every realm mirrors it; only
  * this addon writes it. Export the type so a peer gets the typed tree from
  * `core.shared.of<EconomyShared>('drav0011_economy')`.
+ *
+ * Every key is one value, an object included — it travels whole on each write, so keep it small.
+ * The mirror is not storage: `event` survives a restart because it lives in a db document that
+ * this addon maps onto the mirror, below.
  */
 export const sharedDef = {
   currency: 'gold',
-  // Survives restarts: written to the world on change, restored on boot.
-  event: persisted({ name: 'none', active: false, multiplier: 1 }),
+  event: { name: 'none', active: false, multiplier: 1 },
 };
 
 export type EconomyShared = typeof sharedDef;
+
+// ─── Events ──────────────────────────────────────────────────────────────────
+
+/**
+ * What this addon announces to every realm. An event is delivered once and kept by nobody, so it
+ * carries a happening, never a value someone might want to read later — that is `shared` or an
+ * RPC method. Export the type so a peer's listener is typed from
+ * `core.events.of<EconomyEvents>('drav0011_economy')`.
+ */
+export const eventsDef = {
+  balanceChanged: event<{ playerId: string; gold: number }>(),
+};
+
+export type EconomyEvents = typeof eventsDef;
 
 // ─── Db ──────────────────────────────────────────────────────────────────────
 
@@ -39,9 +59,22 @@ interface Balance {
   lastSeen: number;
 }
 
+/** The world's own document: what the mirror's `event` key is published from. */
+interface EconomySettings {
+  event: { name: string; active: boolean; multiplier: number };
+}
+
 // ─── RPC ─────────────────────────────────────────────────────────────────────
 
-export interface EconomyRPC { getBalance(params: { player: string }): number }
+/**
+ * What peers may ask Economy for. This is the type a peer imports to get a typed client from
+ * `core.rpc.typed<EconomyApi>('drav0011_economy')`. Every method takes an optional `actorId`, the
+ * player the request is made on behalf of, which the handler checks with `authorize`.
+ */
+export interface EconomyApi {
+  balance(params: { playerId: string; actorId?: string }): Balance | undefined;
+  deductGold(params: { playerId: string; gold: number; actorId?: string }): Balance;
+}
 
 // ─── Config schema ────────────────────────────────────────────────────────────
 
@@ -132,7 +165,7 @@ export type EconomyConfigDef = typeof configDef;
 
 // ─── Setup ────────────────────────────────────────────────────────────────────
 
-export function setupEconomy({ config, shared }: Registered<EconomyConfigDef, EconomyShared>): void {
+export function setupEconomy({ config, shared, events }: Registered<EconomyConfigDef, EconomyShared, EconomyEvents>): void {
   // ─── Db: one document per player, on the player's own dynamic properties ──
 
   // `core.db` is this addon's db, keyed under its namespace; a player's document dies with the
@@ -142,13 +175,42 @@ export function setupEconomy({ config, shared }: Registered<EconomyConfigDef, Ec
     accept: players(),
   });
 
-  // ─── RPC ──────────────────────────────────────────────────────────────────
+  const settings = core.db.collection('settings', {
+    schema: schema<EconomySettings>({ defaults: { event: { name: 'none', active: false, multiplier: 1 } } }),
+    accept: worldTarget(),
+  });
 
-  core.rpc.serve<EconomyRPC>({
-    getBalance: ({ player }) => {
-      const [target] = world.getPlayers({ name: player });
+  // ─── RPC: what peers may ask for ───────────────────────────────────────────
 
-      return target === undefined ? 0 : balances.for(target).get()?.gold ?? 0;
+  // db is local, so nothing here is reachable until this addon says so. `authorize` is the one
+  // player rule every handler applies: an operator reaches anything, anyone else only their own
+  // entity, and a request with no actor is an addon acting for itself.
+  const playerOf = (playerId: string): Player => {
+    const found = world.getAllPlayers().find(candidate => candidate.id === playerId);
+
+    if (found === undefined) { throw new Error(`player '${playerId}' is not in the world`); }
+
+    return found;
+  };
+
+  core.rpc.serve<EconomyApi>({
+    balance: ({ playerId, actorId }) => {
+      authorize({ entity: playerId }, actorId, 'read');
+
+      return balances.for(playerOf(playerId)).get();
+    },
+
+    deductGold: ({ playerId, gold, actorId }) => {
+      authorize({ entity: playerId }, actorId, 'write');
+
+      const doc = balances.for(playerOf(playerId));
+      const next: Balance = { gold: (doc.get()?.gold ?? 0) - gold, lastSeen: Date.now() };
+
+      doc.set(next);
+      // Peers that care learn from the event, which is what a query cache goes stale on.
+      events.balanceChanged.emit({ playerId, gold: next.gold });
+
+      return next;
     },
   });
 
@@ -156,6 +218,11 @@ export function setupEconomy({ config, shared }: Registered<EconomyConfigDef, Ec
 
   // The mirror follows the config: a peer that mirrors `currency` never needs the config schema.
   config.server.economy.currency.kind.subscribe(kind => shared.currency.set(kind));
+
+  // And it follows a document, which is how a shared value survives a restart. The subscriber
+  // hears the document load, so this is right at boot as well as on every later change.
+  settings.for(world).subscribe((doc) => { if (doc !== undefined) { shared.event.set(doc.event); } });
+
   shared.event.subscribe(event => console.warn(`[economy] event ${event.name} ${event.active ? 'on' : 'off'} ×${String(event.multiplier)}`));
 
   // ─── Deferred setup (requires tick ≥ 1 for DP access) ────────────────────
@@ -174,7 +241,7 @@ export function setupEconomy({ config, shared }: Registered<EconomyConfigDef, Ec
       console.warn(`[economy] group changed, balance now ${String(economy.balances.startingBalance)}`);
     });
 
-    // A list is patched like any other leaf — it is one flat key holding the whole array.
+    // A list is one value: set replaces the whole array.
     config.server.moderation.blockedItems.set(['minecraft:bedrock', 'minecraft:barrier']);
 
     // patch — deep merge, only touched keys change
@@ -213,6 +280,9 @@ export function setupEconomy({ config, shared }: Registered<EconomyConfigDef, Ec
     } else {
       balance.patch({ lastSeen: Date.now() });
     }
+
+    // Announce it: a peer drawing this player's balance learns it changed without polling.
+    events.balanceChanged.emit({ playerId: player.id, gold: balance.get()?.gold ?? 0 });
 
     // The player's own accessor tree — same shape as the server scope past `for()`
     const playerCfg = config.player.for(player);

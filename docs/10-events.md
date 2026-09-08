@@ -47,8 +47,8 @@ release();
 - **`of(ns)` never answers `undefined`.** A subscription is a filter on namespace and name, so a
   listener attached before the owning addon has registered — or before it is installed — simply
   hears the first event it announces. Being late is unrecoverable here, so being early has to be
-  free. The peer tree is the one place the framework uses a `Proxy`: it is touched when a listener
-  is attached, never on a tick.
+  free. The peer tree is a `Proxy`, like `core.rpc.typed`: touched when a listener is attached,
+  never on a tick.
 - **The owner hears its own**, synchronously, before the message leaves. That is how one addon
   decouples its own modules without a second mechanism.
 - **Isolation.** A listener that throws is caught, logged against the namespace and name, and the

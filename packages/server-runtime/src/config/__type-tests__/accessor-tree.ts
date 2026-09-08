@@ -3,13 +3,9 @@
  * the failure, and this package is checked with `noEmit`, so the file costs a compile and
  * nothing else.
  *
- * It exists because group metadata (`$label` / `$description`) broke every one of these at once
- * and nothing caught it. A named group holds a `string` beside its children, so it stops being
- * a `Record<string, SchemaNode>` — and the inference helpers that tested for exactly that
- * collapsed the group, and everything beneath it, to `never`. The accessor tree still COMPILED;
- * it just typed `config.server.economy.balances.start.get()` as an error rather than a number.
- *
- * So: assert the shapes, and assert that `$label` is NOT among them.
+ * A named group holds a `string` (`$label` / `$description`) beside its children, so it is not a
+ * `Record<string, SchemaNode>`; the inference helpers must still see through it to every leaf.
+ * So: assert the shapes at every depth, and assert that `$label` is NOT among them.
  */
 import type { Config } from '../../index';
 
@@ -44,7 +40,7 @@ declare const config: Config<typeof SCHEMA>;
 export const start: number = config.server.economy.balances.start.get();
 export const kind: 'a' | 'b' = config.server.economy.currency.kind.get();
 
-/** Both array-valued types read back as arrays, not as the JSON they are stored as. */
+/** Both array-valued types read back as arrays. */
 export const picks: string[] = config.server.picks.get();
 export const tags: string[] = config.server.tags.get();
 
@@ -64,9 +60,10 @@ config.server.economy.patch({ balances: { start: 2 } });
 // @ts-expect-error -- $label is not a setting, so there is nothing to patch
 config.server.economy.patch({ $label: 'nope' });
 
-// ─── Dot-paths skip metadata and reach the deep leaf ──────────────────────────
+// ─── A subscription at any depth is typed to that node's value ────────────────
 
-config.server.subscribe('economy.balances.start', (next: number) => void next);
+config.server.economy.balances.start.subscribe((next: number, prev: number) => void [next, prev]);
+config.server.economy.subscribe((next: { balances: { start: number } }) => void next);
 
-// @ts-expect-error -- '$label' is not a dot-path
-config.server.subscribe('economy.$label', (next: string) => void next);
+// @ts-expect-error -- a leaf's listener takes the leaf's type
+config.server.economy.balances.start.subscribe((next: string) => void next);

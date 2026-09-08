@@ -11,7 +11,7 @@ import bundle from '@bedrock-core/generated/i18n';
 import guides from '@bedrock-core/generated/guides';
 import { guideReference } from '@bedrock-core/guides';
 import { manifest } from './addon';
-import { configDef, setupEconomy, sharedDef } from './example';
+import { configDef, eventsDef, setupEconomy, sharedDef } from './example';
 import AddonPage from './screens/addon.screen';
 // The compiled screens — the guide's pages among them — registered by the
 // module the ui-compile filter generates.
@@ -21,7 +21,7 @@ import '@bedrock-core/generated/ui';
 // start(). Display fields are translation keys — typed through key(), generated into
 // this addon's .lang by the i18n filter; UIs localize them per player language. The
 // i18n bundle and guide manifest ride along as optional fields; register() returns the typed
-// accessors of everything declared, one key each: `config` and `shared`.
+// accessors of everything declared, one key each: `config`, `shared` and `events`.
 const declared = core.register({
   manifest,
   translations: bundle,
@@ -34,6 +34,7 @@ const declared = core.register({
   page: addonPageReference(AddonPage),
   config: configDef,
   shared: sharedDef,
+  events: eventsDef,
 });
 
 setupEconomy(declared);

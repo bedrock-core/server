@@ -30,7 +30,7 @@ does: a shared mirror. Each is its own package; all of them ride
 | --- | --- | --- | --- | --- | --- |
 | **Observable** | `@bedrock-core/observable` · `observable` | yes | memory | no | you |
 | **Shared** | `@bedrock-core/sync` · `core.shared` | your namespace | every realm's mirror | no — map a document onto it | the owner, nobody else |
-| **DB** | `@bedrock-core/db` · `core.db` | yes | your dynamic properties | yes | you |
+| **DB** | `@bedrock-core/db` · `core.db` | yes | your dynamic properties · local | yes | you |
 | **Events** | `@bedrock-core/sync` · `core.events` | your namespace | nowhere — delivered and forgotten | no | the owner, nobody else |
 | **Query** | `@bedrock-core/query` · `core.query` | **a peer** | your cache | no | the owner, via `mutate` |
 

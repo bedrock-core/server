@@ -4,8 +4,8 @@
  * On disk a document is one JSON string, `{"v":<version>,"d":<doc>}`, under the collection's
  * key. The envelope carries the version so a document written by version 1 of an addon is
  * migrated to version 4 the first time version 4 reads it — lazily, per document, because block
- * and entity documents are never all loaded at once. `defaults` are applied on read and never
- * stored, so changing a default reaches every document without a migration.
+ * and entity documents are never all loaded at once. What is stored is exactly what was written:
+ * a collection fills `defaults` on top of what this reads, so they are never persisted.
  *
  * A string past the host's per-value cap throws in the engine (measured: 32 767 characters on the
  * direct ABI), so a document that does not fit in one value is split into `key#0..n` with the
@@ -18,6 +18,7 @@
  */
 import { DbBudgetError } from './errors';
 import type { DpHost } from './host';
+import type { DeepPartial } from './merge';
 
 /** One migration step: the document as the previous version wrote it, to the next shape. */
 export type MigrateStep = (doc: Record<string, unknown>) => Record<string, unknown>;
@@ -25,10 +26,20 @@ export type MigrateStep = (doc: Record<string, unknown>) => Record<string, unkno
 export interface DocumentSchema<T extends object> {
   /** The version documents are written at. `1` when omitted; documents at that version never migrate. */
   version?: number;
-  /** Filled into missing keys on read. Never persisted. */
-  defaults?: Partial<T>;
+  /**
+   * Filled into missing keys on read, at every depth — a nested object with one key stored still
+   * reads with its siblings' defaults. Never persisted, so changing a default reaches every
+   * document that never wrote that key.
+   */
+  defaults?: DeepPartial<T>;
   /** Keyed by the version the step produces: `migrate[3]` takes a version-2 document to version 3. */
   migrate?: Record<number, MigrateStep>;
+  /**
+   * Runs on every write — `set`, `patch`, and a peer's RPC alike — over the document about to be
+   * stored, before defaults; what it returns is what is written. The place to coerce a value
+   * into range, or to drop a key that equals its default so the default keeps applying.
+   */
+  normalize?: (doc: T) => T;
 }
 
 declare const documentType: unique symbol;
@@ -45,7 +56,7 @@ export function schema<T extends object>(definition: DocumentSchema<T> = {}): Sc
   return definition;
 }
 
-export interface DocumentStoreOptions<T extends object> extends DocumentSchema<T> {
+export interface DocumentStoreOptions<T extends object> extends Pick<DocumentSchema<T>, 'version' | 'migrate'> {
   /** For the error and log lines. */
   collection: string;
   /** Where the log line for a quarantine goes. `console.warn` when omitted. */
@@ -54,7 +65,10 @@ export interface DocumentStoreOptions<T extends object> extends DocumentSchema<T
 
 /** Reads and writes documents of one collection on one resolved host. */
 export interface DocumentStore<T extends object> {
-  /** `undefined` when there is no document, or when it was unreadable and has been quarantined. */
+  /**
+   * The document as stored, migrated to the current version. `undefined` when there is none, or
+   * when it was unreadable and has been quarantined. Defaults are not applied here.
+   */
   read(key: string): T | undefined;
   /** Throws `DbBudgetError` when the document does not fit; nothing is written then. */
   write(key: string, doc: T): void;
@@ -131,7 +145,7 @@ class DocumentStoreImpl<T extends object> implements DocumentStore<T> {
     }
 
     if (envelope.v === this._version) {
-      return this._withDefaults(envelope.d);
+      return this._typed(envelope.d);
     }
 
     let migrated: Record<string, unknown>;
@@ -145,7 +159,7 @@ class DocumentStoreImpl<T extends object> implements DocumentStore<T> {
     // Migrated once, written once: the next read is a plain parse.
     this._writeRaw(key, JSON.stringify({ v: this._version, d: migrated }));
 
-    return this._withDefaults(migrated);
+    return this._typed(migrated);
   }
 
   write(key: string, doc: T): void {
@@ -289,11 +303,8 @@ class DocumentStoreImpl<T extends object> implements DocumentStore<T> {
   }
 
   // The caller's type is the contract for what is on disk; the store cannot check it.
-  private _withDefaults(doc: Record<string, unknown>): T {
-    const defaults = this._options.defaults;
-    const filled: unknown = defaults === undefined ? doc : { ...defaults, ...doc };
-
-    return filled as T; // eslint-disable-line @typescript-eslint/no-unsafe-type-assertion
+  private _typed(doc: Record<string, unknown>): T {
+    return doc as T; // eslint-disable-line @typescript-eslint/no-unsafe-type-assertion
   }
 }
 

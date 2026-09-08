@@ -38,12 +38,12 @@ build against has to match the one your pack's `manifest.json` declares.
 - **Messaging and the shared mirror** — `core.rpc`, and a `shared` shape declared in `register()` that every realm mirrors as a typed tree (`core.shared.of()` for a peer's), with the
   raw sync node available at `core.node`
 - **Events** — declare what this addon announces in `register({ events })`, `emit` it, and any realm listens with `core.events.of()`; delivered in the same tick and kept by nobody
-- **Documents** — `core.db`, this addon's `@bedrock-core/db`: typed, versioned documents keyed by player, entity, block or world, stored on whatever the target itself can hold
+- **Documents** — `core.db`, this addon's `@bedrock-core/db`: typed, versioned documents keyed by player, entity, block or world, stored on whatever the target itself can hold; local until the addon answers an rpc method over it
 
 ## Usage
 
 ```ts
-import { core, event, players, schema } from '@bedrock-core/server-runtime';
+import { authorize, core, event, players, schema } from '@bedrock-core/server-runtime';
 import bundle from '@bedrock-core/generated/i18n';
 import guides from '@bedrock-core/generated/guides';
 
@@ -74,9 +74,21 @@ const { config, shared } = core.register({
 config.server.taxRate.get();          // 0.05 — typed all the way down
 config.server.taxRate.subscribe((next, prev) => console.warn('tax', prev, '→', next));
 
-// Persisted documents keyed by target, on the target's own dynamic properties.
+// Persisted documents keyed by target, on the target's own dynamic properties. Local.
 const balances = core.db.collection('balances', { schema: schema<{ gold: number }>(), accept: players() });
 balances.for(player).patch({ gold: 10 });
+
+// What peers may ask for, and the one player rule every handler applies. Export the interface so
+// a peer gets a typed client from core.rpc.typed<EconomyApi>('drav0011_economy').
+export interface EconomyApi { balance(p: { playerId: string; actorId?: string }): { gold: number } | undefined }
+
+core.rpc.serve<EconomyApi>({
+  balance: ({ playerId, actorId }) => {
+    authorize({ entity: playerId }, actorId, 'read');
+
+    return balances.for(playerOf(playerId)).get();
+  },
+});
 
 shared.currency.set('emerald');       // every realm sees it this tick
 events.purchase.emit({ playerId: player.id, gold: 5 });   // announced once, kept by nobody
@@ -90,9 +102,9 @@ core.events.of<ShopEvents>('os_shop').sale.subscribe(({ item }) => console.warn(
 
 core.registry.onRegister(addon => console.warn('joined:', addon.id));
 
-// Serve a method to other addons, and call one of theirs.
-core.rpc.onRequest('getRate', () => config.server.taxRate.get());
-core.rpc.request('os_shop', 'getStock', {}).then(stock => console.warn('stock', stock));
+// And an action that is not data at all.
+core.rpc.onRequest('openShop', ({ playerId }) => openFor(playerId));
+core.rpc.request('os_shop', 'openShop', { playerId }).catch(console.warn);
 ```
 
 ## Documentation

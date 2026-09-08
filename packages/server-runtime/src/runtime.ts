@@ -27,11 +27,11 @@ import { HostElection } from './host';
 import type { GuideManifest, GuideReference } from './guides/types';
 import type { Rpc } from '@bedrock-core/sync';
 import { createEngineDb } from '@bedrock-core/db/minecraft';
-import { DbRequests } from './db/registry';
 import type { Db } from '@bedrock-core/db';
 import { SharedRegistry } from './shared/shared-registry';
-import { deferToNextTick, worldStore } from './shared/engine';
 import type { SharedDef, SharedTree } from './shared/tree';
+import { EventsRegistry } from './events/events-registry';
+import type { EventsDef, EventsTree } from './events/tree';
 
 /**
  * Everything an addon declares when it registers: the identity `manifest` plus the optional
@@ -42,11 +42,16 @@ import type { SharedDef, SharedTree } from './shared/tree';
  * - `guide` → `core.guides.provideManifest()`
  * - `config` → `core.config.define()` (its typed accessors become `register()`'s return value)
  * - `shared` → `core.shared.define()` (its typed tree is `register()`'s `shared`)
+ * - `events` → `core.events.define()` (its typed tree is `register()`'s `events`)
  *
  * The standalone calls remain available for addons that need to publish late or replace data
  * at runtime.
  */
-export interface RegisterOptions<I extends ConfigDefinition = ConfigDefinition, S extends SharedDef = SharedDef> {
+export interface RegisterOptions<
+  I extends ConfigDefinition | undefined = ConfigDefinition | undefined,
+  S extends SharedDef | undefined = SharedDef | undefined,
+  E extends EventsDef | undefined = EventsDef | undefined,
+> {
 
   /** Who this addon is: creator, pack, display names, version, dependencies. */
   manifest: AddonManifest;
@@ -83,20 +88,27 @@ export interface RegisterOptions<I extends ConfigDefinition = ConfigDefinition, 
   config?: I;
 
   /**
-   * This addon's shared shape: values are leaves every realm can read, plain objects are branches,
-   * `open()` / `persisted()` / `leaf()` mark them. When given, `register()`'s result carries the
-   * typed tree as `shared`.
+   * This addon's shared keys: a flat record whose values every realm mirrors and only this addon
+   * writes. When given, `register()`'s result carries the typed tree as `shared`.
    */
   shared?: S;
+
+  /**
+   * What this addon announces to every realm: `{ purchase: event<{ playerId: string }>() }`.
+   * Delivered once and kept by nobody. When given, `register()`'s result carries the typed tree
+   * as `events`.
+   */
+  events?: E;
 }
 
 /**
  * What `register()` hands back: one entry per declaration that has accessors, each under the key
  * it was declared as — `config` for the scope accessors, `shared` for the shared tree.
  */
-export type Registered<I extends ConfigDefinition | undefined, S extends SharedDef | undefined>
+export type Registered<I extends ConfigDefinition | undefined, S extends SharedDef | undefined, E extends EventsDef | undefined = undefined>
   = (I extends ConfigDefinition ? { config: Config<I> } : unknown)
-    & (S extends SharedDef ? { shared: SharedTree<S> } : unknown);
+    & (S extends SharedDef ? { shared: SharedTree<S> } : unknown)
+    & (E extends EventsDef ? { events: EventsTree<E> } : unknown);
 
 export class Runtime {
   private _node: SyncNode | undefined;
@@ -105,8 +117,8 @@ export class Runtime {
   private _manifest: AddonManifest | undefined;
   private _state: ScopedState | undefined;
   private _shared: SharedRegistry | undefined;
+  private _events: EventsRegistry | undefined;
   private _db: Db | undefined;
-  private _dbRequests: DbRequests | undefined;
   private _config: ConfigRegistry | undefined;
   private _translations: TranslationsRegistry | undefined;
   private _guides: GuidesRegistry | undefined;
@@ -183,9 +195,19 @@ export class Runtime {
   }
 
   /**
+   * Events as typed trees: this addon's own from `register({ events })`, another addon's via
+   * `core.events.of<Def>(ns)`. An owner's node has `emit` and `subscribe`, a peer's `subscribe`
+   * alone, and a listener may be attached before the announcing addon exists.
+   */
+  get events(): EventsRegistry {
+    return this.require(this._events, 'events');
+  }
+
+  /**
    * Persisted documents for this addon, keyed by target — players, entities, blocks, the world —
    * on whatever dynamic properties the target itself can hold: `core.db.collection(name, { schema, accept })`.
-   * Its keys live under this addon's namespace, so two addons never meet.
+   * Its keys live under this addon's namespace, so two addons never meet. Local: nothing here is
+   * reachable from another realm unless this addon serves it.
    */
   get db(): Db {
     return this.require(this._db, 'db');
@@ -218,11 +240,12 @@ export class Runtime {
    * the typed accessors of what was declared, each under its own key: `config` — the same value
    * `core.config.define()` would return — and `shared`.
    */
-  register<I extends ConfigDefinition, S extends SharedDef>(options: RegisterOptions<I, S> & { config: I; shared: S }): Registered<I, S>;
-  register<I extends ConfigDefinition>(options: RegisterOptions<I> & { config: I; shared?: undefined }): Registered<I, undefined>;
-  register<S extends SharedDef>(options: RegisterOptions<ConfigDefinition, S> & { shared: S; config?: undefined }): Registered<undefined, S>;
-  register(options: RegisterOptions & { config?: undefined; shared?: undefined }): void;
-  register<I extends ConfigDefinition, S extends SharedDef>(options: RegisterOptions<I, S>): unknown {
+  register<
+    I extends ConfigDefinition | undefined = undefined,
+    S extends SharedDef | undefined = undefined,
+    E extends EventsDef | undefined = undefined,
+  >(options: RegisterOptions<I, S, E>): Registered<I, S, E>;
+  register(options: RegisterOptions): unknown {
     if (this._manifest) { throw new Error('runtime is already registered'); }
 
     const validated = validateManifest(options.manifest);
@@ -241,30 +264,23 @@ export class Runtime {
     });
     const registry = new Registry(node.discovery, validated);
     const features = new FeatureManager(registry, node.state, namespace);
-    // Documents are announced on this addon's own shared namespace, under a reserved prefix so a
-    // collection can never collide with a key the addon shares itself. Peers read these through
-    // `core.query`, which is what gives them status and staleness; `core.shared` is the transport.
-    //
-    // Before the config registry, which stores its scopes as collections on it.
-    const db = createEngineDb(namespace, message => console.warn(message), {
-      set: (collection, key, value): void => {
-        node.state.set(namespace, `core-db/${collection}/${key}`, value);
-      },
-    });
+    // Local persistence. Before the config registry, which stores its scopes as collections on it.
+    const db = createEngineDb(namespace, message => console.warn(message));
     const config = new ConfigRegistry(node, namespace, db);
     const translations = new TranslationsRegistry(node.state, namespace);
     const guides = new GuidesRegistry(node.state, namespace);
     const pages = new PagesRegistry(node.state, namespace);
     const host = new HostElection(registry, namespace);
-    const shared = new SharedRegistry({ state: node.state, namespace, store: worldStore, defer: deferToNextTick });
+    const shared = new SharedRegistry({ state: node.state, namespace });
+    const events = new EventsRegistry({ events: node.events, namespace });
 
     this._node = node;
     this._registry = registry;
     this._features = features;
     this._state = new ScopedState(node.state, namespace);
     this._shared = shared;
+    this._events = events;
     this._db = db;
-    this._dbRequests = new DbRequests(db, namespace);
     this._config = config;
     this._translations = translations;
     this._guides = guides;
@@ -278,9 +294,6 @@ export class Runtime {
     translations.start();
     guides.start();
     host.start();
-    // Served whether or not this addon declares a collection: a peer asking for one that does not
-    // exist must be answered, not left to time out.
-    this._dbRequests.start(node.rpc);
 
     if (options.translations) { translations.provide(options.translations); }
 
@@ -292,14 +305,16 @@ export class Runtime {
 
     const configTree = options.config ? config.define(options.config) : undefined;
     const sharedTree = options.shared ? shared.define(options.shared) : undefined;
+    const eventsTree = options.events ? events.define(options.events) : undefined;
 
-    if (configTree === undefined && sharedTree === undefined) {
+    if (configTree === undefined && sharedTree === undefined && eventsTree === undefined) {
       return undefined;
     }
 
     return {
       ...(configTree === undefined ? {} : { config: configTree }),
       ...(sharedTree === undefined ? {} : { shared: sharedTree }),
+      ...(eventsTree === undefined ? {} : { events: eventsTree }),
     };
   }
 
@@ -321,6 +336,7 @@ export class Runtime {
     this._registry = undefined;
     this._state = undefined;
     this._shared = undefined;
+    this._events = undefined;
     this._db = undefined;
     this._node = undefined;
     this._manifest = undefined;

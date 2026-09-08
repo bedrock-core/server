@@ -18,6 +18,11 @@ interface Elevator {
   facing: string;
 }
 
+interface Settings {
+  economy: { taxRate: number; currency: string };
+  tags: string[];
+}
+
 /** The stubs are not engine classes, so the typed `for()` is widened for these tests. */
 interface LooseDb {
   collection<T extends object>(
@@ -50,13 +55,90 @@ describe('documents on own hosts', () => {
     expect(player.getDynamicPropertyIds()).toEqual(['core-db:ns:entity::balances:doc']);
   });
 
-  it('patches over defaults when there is no document yet', () => {
+  it('patches over defaults when there is no document yet, and stores only what was written', () => {
     const { db: store } = db();
     const balances = store.collection('balances', { schema: schema<Balance>({ defaults: { gold: 0, lastSeen: 0 } }) });
-    const doc = balances.for(new EntityStub('p1', 'minecraft:player'));
+    const player = new EntityStub('p1', 'minecraft:player');
+    const doc = balances.for(player);
 
     doc.patch({ gold: 5 });
     expect(doc.get()).toEqual({ gold: 5, lastSeen: 0 });
+    expect(player.getDynamicProperty('core-db:ns:entity::balances:doc')).toBe('{"v":1,"d":{"gold":5}}');
+  });
+
+  it('fills defaults at every depth without persisting them', () => {
+    const { db: store } = db();
+    const settings = store.collection('settings', {
+      schema: schema<Settings>({ defaults: { economy: { taxRate: 0.05, currency: 'emerald' }, tags: [] } }),
+    });
+    const player = new EntityStub('p1', 'minecraft:player');
+    const doc = settings.for(player);
+
+    doc.patch({ economy: { taxRate: 0.2 } });
+
+    expect(doc.get()).toEqual({ economy: { taxRate: 0.2, currency: 'emerald' }, tags: [] });
+    expect(player.getDynamicProperty('core-db:ns:entity::settings:doc')).toBe('{"v":1,"d":{"economy":{"taxRate":0.2}}}');
+  });
+
+  it('patches deep: nested objects merge, arrays replace, undefined deletes', () => {
+    const { db: store } = db();
+    const settings = store.collection('settings', { schema: schema<Settings>({ defaults: { economy: { taxRate: 0.05, currency: 'emerald' }, tags: [] } }) });
+    const player = new EntityStub('p1', 'minecraft:player');
+    const doc = settings.for(player);
+    const seen: (Settings | undefined)[] = [];
+
+    doc.subscribe((next) => { seen.push(next); });
+    doc.set({ economy: { taxRate: 0.2, currency: 'gold' }, tags: ['a', 'b'] });
+    doc.patch({ economy: { taxRate: 0.3 }, tags: ['c'] });
+
+    expect(doc.get()).toEqual({ economy: { taxRate: 0.3, currency: 'gold' }, tags: ['c'] });
+
+    // Deleting a key puts it back to its default, and the bytes no longer carry it.
+    doc.patch({ economy: { currency: undefined } });
+
+    expect(doc.get()).toEqual({ economy: { taxRate: 0.3, currency: 'emerald' }, tags: ['c'] });
+    expect(player.getDynamicProperty('core-db:ns:entity::settings:doc')).toBe('{"v":1,"d":{"economy":{"taxRate":0.3},"tags":["c"]}}');
+    // Subscribers see the document as `get` gives it, defaults filled.
+    expect(seen.at(-1)).toEqual({ economy: { taxRate: 0.3, currency: 'emerald' }, tags: ['c'] });
+  });
+
+  it('tells a subscriber attached before the first read when the document loads', () => {
+    const { db: store } = db();
+    const balances = store.collection('balances', { schema: schema<Balance>() });
+    const player = new EntityStub('p1', 'minecraft:player');
+
+    balances.for(player).set({ gold: 3, lastSeen: 0 });
+    balances.forget(player);
+
+    const seen: (Balance | undefined)[] = [];
+
+    balances.for(player).subscribe((next) => { seen.push(next); });
+    expect(seen).toEqual([]);
+
+    expect(balances.for(player).get()).toEqual({ gold: 3, lastSeen: 0 });
+    expect(seen).toEqual([{ gold: 3, lastSeen: 0 }]);
+
+    // Later reads are cached and say nothing.
+    balances.for(player).get();
+    expect(seen).toHaveLength(1);
+  });
+
+  it('runs normalize over every write, before defaults', () => {
+    const { db: store } = db();
+    const normalize = vi.fn((doc: Balance): Balance => ({ ...doc, gold: Math.min(doc.gold, 100) }));
+    const balances = store.collection('balances', { schema: schema<Balance>({ defaults: { gold: 0, lastSeen: 0 }, normalize }) });
+    const player = new EntityStub('p1', 'minecraft:player');
+    const doc = balances.for(player);
+
+    doc.set({ gold: 500, lastSeen: 1 });
+    expect(doc.get()).toEqual({ gold: 100, lastSeen: 1 });
+
+    doc.patch({ gold: 900 });
+    expect(doc.get()).toEqual({ gold: 100, lastSeen: 1 });
+    expect(player.getDynamicProperty('core-db:ns:entity::balances:doc')).toBe('{"v":1,"d":{"gold":100,"lastSeen":1}}');
+    // Once per write, over the document as it will be stored.
+    expect(normalize).toHaveBeenCalledTimes(2);
+    expect(normalize.mock.calls[1]?.[0]).toEqual({ gold: 900, lastSeen: 1 });
   });
 
   it('keeps two collections and two targets apart', () => {

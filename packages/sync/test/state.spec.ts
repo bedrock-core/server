@@ -1,7 +1,7 @@
 /**
  * The mirror's apply rule. Two nodes share a fake bus that delivers synchronously: the owner of a
- * namespace is the only writer a mirror trusts, an `open` key takes anyone's write, a foreign
- * write never opens a key, and snapshots carry the flag so a late joiner learns it.
+ * namespace is the only writer a mirror trusts, whatever the key, and a late joiner gets the
+ * owner's snapshot without inheriting a right to write it.
  */
 import { describe, expect, it } from 'vitest';
 import type { Bus, EnvelopeHandler, Unsubscribe } from '../src/bus';
@@ -93,38 +93,24 @@ describe('owner-only apply', () => {
     expect(b.droppedForeign).toBe(1);
   });
 
-  it('takes anyone on a key the owner opened, and keeps it open', () => {
+  it('drops a foreign write whatever the key, and counts every one', () => {
     const { a, b } = pair();
 
-    a.set('a', 'votes', 0, { open: true });
-    expect(b.isOpen('a', 'votes')).toBe(true);
-
+    a.set('a', 'votes', 0);
     b.set('a', 'votes', 1);
-    expect(a.get('a', 'votes')).toBe(1);
-    expect(b.get('a', 'votes')).toBe(1);
-    expect(a.isOpen('a', 'votes')).toBe(true);
+    b.set('a', 'anything', 2);
 
-    b.delete('a', 'votes');
-    expect(a.get('a', 'votes')).toBeUndefined();
-    expect(a.isOpen('a', 'votes')).toBe(true);
+    expect(a.get('a', 'votes')).toBe(0);
+    expect(a.get('a', 'anything')).toBeUndefined();
+    expect(a.droppedForeign).toBe(2);
   });
 
-  it('ignores open from a node that does not own the namespace', () => {
-    const { a, b } = pair();
-
-    a.set('a', 'price', 10);
-    b.set('a', 'price', 5, { open: true });
-
-    expect(a.get('a', 'price')).toBe(10);
-    expect(a.isOpen('a', 'price')).toBe(false);
-  });
-
-  it('carries the flag in a snapshot, so a late joiner learns which keys are open', () => {
+  it('gives a late joiner the owner snapshot, and still refuses its writes', () => {
     const w = wire();
     const a = new State(fakeBus(w, 'a'), 'a');
 
     a.start();
-    a.set('a', 'votes', 0, { open: true });
+    a.set('a', 'votes', 0);
     a.set('a', 'price', 10);
 
     const late = new State(fakeBus(w, 'late'), 'late');
@@ -132,16 +118,13 @@ describe('owner-only apply', () => {
     late.start();
 
     expect(late.get('a', 'votes')).toBe(0);
-    expect(late.isOpen('a', 'votes')).toBe(true);
-    expect(late.isOpen('a', 'price')).toBe(false);
+    expect(late.get('a', 'price')).toBe(10);
 
     late.set('a', 'votes', 3);
-    late.set('a', 'price', 1);
-    expect(a.get('a', 'votes')).toBe(3);
-    expect(a.get('a', 'price')).toBe(10);
+    expect(a.get('a', 'votes')).toBe(0);
   });
 
-  it('a snapshot relayed from a non-owner is refused for closed keys', () => {
+  it('refuses a snapshot relayed from a node that is not the namespace owner', () => {
     const w = wire();
     const a = new State(fakeBus(w, 'a'), 'a');
     const b = new State(fakeBus(w, 'b'), 'b', { ownedNamespaces: ['b', 'a'] });

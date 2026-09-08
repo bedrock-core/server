@@ -3,6 +3,13 @@
 `core.query` — another addon's data, held in your realm as a cache with a lifecycle. TanStack
 Query's model — keys, a client, hooks — cut to what a game tick can use.
 
+**Reading side only, over the three channels that already exist.** An rpc method is the fetch and
+the mutation; a `shared` key is the warm first read and, when the owner mirrors a value, the
+change signal; an event is the other change signal. The owner writes nothing for query's sake
+beyond what it would publish anyway, and an addon written before query ships is already queryable.
+Everything below is the peer's half; the key shape and the client are the parts still to build.
+Not started, and not until a screen needs it.
+
 ## The concern it names
 
 Realm isolation makes every addon a *client* of every other addon. From your realm a peer's config
@@ -106,19 +113,18 @@ network; there is a registry that knows exactly when a peer comes and goes.
 
 ## Warm caches — how `shared` and query meet
 
-If the owner declared a collection `shared: true` (or `shared: { as: doc => summary }`), the
-mirror already holds the value in every realm. `observe(key)` resolves `success` on first read with
-**no RPC**, and owner writes arrive as mirror deltas instead of stamps. The consumer's code is
-identical either way — the owner made a freshness/cost decision, the consumer never sees which.
+A query definition may name a shared key as `warm`. The mirror already holds that value in every
+realm, so `observe(key)` resolves `success` on first read with **no RPC**, and owner writes arrive
+as mirror deltas. The consumer's code is identical either way — the owner chose to mirror the
+value, the consumer never sees which path it took.
 
 That is the whole relationship between the two: `shared` is one strategy for keeping a query's
-cache warm. Peers read it through `core.query`, never `core.shared`, so they get status,
-staleness and typing, and cannot write to it.
+cache warm, and it is the owner's call to make per value, never per collection.
 
 ## Mutations
 
-`mutate` runs `onMutate`, applies the patch to the cached value immediately (optimistic), sends the
-owner's RPC (`core:config.patch-*` / `core:db.patch`) with the `actorId`, and on the reply either
+`mutate` runs `onMutate`, applies the patch to the cached value immediately (optimistic), calls the
+served `write` endpoint with the `actorId`, and on the reply either
 replaces the cache with the authoritative value or **rolls back** to the `onMutate` snapshot and
 sets `status: 'error'` with the owner's reason. In-flight requests for one key are deduplicated:
 two screens asking for the same document in one tick produce one RPC.
@@ -141,9 +147,9 @@ accident, so they stay different on purpose.
 
 - `RemoteConfigAccessor` / `TypedRemoteConfig` / `core.config.of(ns)` — kept one minor as a
   deprecated alias over `core.query.observe(peerConfig(ns).*)`.
-- The live-value-push proposal (`core:config.watch` / `core:config.changed`) — owner invalidation
-  through the mirror is that feature, without an interest protocol.
-- db's `project` bridge — `shared: { as }` on the collection.
+- The live-value-push proposal (`core:config.watch` / `core:config.changed`) — an owner that wants
+  peers told emits an event or mirrors a value, and a query subscribes to whichever it named. No
+  interest protocol.
 
 ## Measure
 

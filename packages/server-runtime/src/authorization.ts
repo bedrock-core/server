@@ -1,6 +1,6 @@
 /**
- * Who may read and write something on behalf of a player. The one rule every served endpoint,
- * config included, applies before its handler runs.
+ * Who may read and write something on behalf of a player. The one rule an rpc handler applies
+ * before it does anything, config's own methods included.
  *
  * Nothing here defends against a hostile *pack*, which runs arbitrary script and can write the
  * underlying dynamic properties directly. What it enforces is that a **player** driving a UI or a
@@ -14,7 +14,7 @@ import { PlayerPermissionLevel, world } from '@minecraft/server';
 import type { Player } from '@minecraft/server';
 import { isUsable } from './handle';
 
-/** What a request is reaching, named the way a served endpoint's `access` names it. */
+/** What a request is reaching: the thing the rule is applied to. */
 export type AccessTarget
   = | { world: true }
     | { dimension: string }
@@ -65,7 +65,7 @@ export function denyReason(target: AccessTarget, actorId: string | undefined, op
   return undefined;
 }
 
-/** {@link denyReason}, thrown: what a served endpoint calls before its handler runs. */
+/** {@link denyReason}, thrown: what a handler calls first, so the caller's promise rejects with it. */
 export function authorize(target: AccessTarget, actorId: string | undefined, operation: Operation): void {
   const reason = denyReason(target, actorId, operation);
 

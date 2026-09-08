@@ -17,8 +17,8 @@ Temporary. Delete items as they land. Docs sections: `/docs/server` (runtime + A
 
 ## Docs backlog waiting on code (phases 7 and 10 of `09-plan.md`)
 
-- New sections `db`, `observable`, `query`, from the package READMEs.
-- `server` API: the db re-exports, `flattenSchema` / `flattenGroups` / `isGroupMetaKey`, `EntityScope` / `ScopeTree`, `CONFIG_COLLECTIONS`, `defaultsOf` / `normalizeAgainst` / `coerce`, `isUsable`, `isReservedStateKey`, `sharedDpKey`, `AddonPageReference`.
+- New sections `db`, `observable`, `events`, `query`, from the package READMEs and `docs/10-events.md`.
+- `server` API: the db re-exports, `flattenSchema` / `flattenGroups` / `isGroupMetaKey`, `EntityScope` / `ScopeTree`, `CONFIG_COLLECTIONS` / `configMethod`, `defaultsOf` / `normalizeAgainst` / `coerce`, `authorize` / `denyReason` / `isOperator`, `event` / `EventsRegistry`, `last`, `isUsable`, `isReservedStateKey`, `AddonPageReference`.
 - `sync`: `SELF_CAPS`, `capsFor`, `negotiateProtocol`.
 - The trust-model page and the "installing is trusting" sentence in get-started.
 

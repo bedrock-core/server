@@ -7,6 +7,10 @@ the world, entities and container slots; three on a block entity's component —
 on a dimension or a vanilla block. This package puts one adapter over all of it, a **resolver**
 that decides, per target, where a document can live, and typed **collections** on top.
 
+Local by design: a collection is this addon's, and nothing in it reaches another realm unless the
+addon answers an rpc method over it. A document handle is an observable, so an owner that wants
+peers told when one changes subscribes to it and announces its own event.
+
 ## Install
 
 ```bash

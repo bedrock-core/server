@@ -1,86 +1,79 @@
 /**
- * The shared tree and its registry, without the engine: the declaration compiles to leaves with
- * inherited markers, nodes read and write dotted keys through a backend, branches fire for any
- * child, and two registries over a synchronous fake bus behave as owner and peer — initial values,
- * shape announcement, owner-only writes, opened leaves, persistence written and restored.
+ * The shared tree and its registry, without the engine: a node reads the mirror and falls back to
+ * the declared value, notifies with the new value and the one before it, holds one backend
+ * subscription for as long as it has listeners, and isolates a listener that throws. Two
+ * registries over a synchronous fake bus behave as owner and peer — initial values, the announced
+ * key names, and a peer that can read everything and write nothing.
  */
 import { describe, expect, it, vi } from 'vitest';
 import type { Bus, EnvelopeHandler, Unsubscribe } from '../../sync/src/bus';
 import { PROTOCOL_MAX } from '../../sync/src/constants';
 import type { Envelope } from '../../sync/src/envelope';
 import { State } from '../../sync/src/state';
-import { leaf, open, persisted } from '../src/shared/markers';
-import { SHARED_SHAPE_KEY, SharedRegistry, sharedDpKey, type PersistenceStore } from '../src/shared/shared-registry';
-import { compileShared, materialize, type LeafSpec, type SharedBackend, type SharedTree } from '../src/shared/tree';
-
-// ─── The declaration ───────────────────────────────────────────────────────────
+import { SHARED_SHAPE_KEY, SharedRegistry } from '../src/shared/shared-registry';
+import { materialize, type SharedBackend, type SharedTree } from '../src/shared/tree';
 
 const DEF = {
   spawnRate: 5,
-  highScore: open(0),
   tags: ['a', 'b'],
-  event: persisted({ name: 'none', active: false, votes: open(0) }),
-  blob: leaf({ x: 1, y: 2 }),
+  event: { name: 'none', active: false },
 };
-
-describe('compileShared', () => {
-  it('flattens to dotted leaves and inherits markers downward', () => {
-    const leaves = compileShared(DEF);
-
-    expect(leaves.map(l => l.path)).toEqual(['spawnRate', 'highScore', 'tags', 'event.name', 'event.active', 'event.votes', 'blob']);
-    expect(leaves.find(l => l.path === 'highScore')).toMatchObject({ open: true, persisted: false, initial: 0 });
-    expect(leaves.find(l => l.path === 'event.name')).toMatchObject({ open: false, persisted: true, initial: 'none' });
-    expect(leaves.find(l => l.path === 'event.votes')).toMatchObject({ open: true, persisted: true });
-    expect(leaves.find(l => l.path === 'tags')?.initial).toEqual(['a', 'b']);
-    expect(leaves.find(l => l.path === 'blob')?.initial).toEqual({ x: 1, y: 2 });
-  });
-
-  it('refuses reserved names and dots', () => {
-    expect(() => compileShared({ get: 1 })).toThrow(/reserved/);
-    expect(() => compileShared({ a: { subscribe: 1 } })).toThrow(/a\.subscribe/);
-    expect(() => compileShared({ 'a.b': 1 })).toThrow(/dot/);
-  });
-});
 
 // ─── The tree over a fake backend ──────────────────────────────────────────────
 
-function fakeBackend(): { backend: SharedBackend; values: Map<string, unknown>; emit(path: string, value: unknown): void; writes: LeafSpec[] } {
+interface Fake {
+  backend: SharedBackend;
+  values: Map<string, unknown>;
+  emit(key: string): void;
+  /** How many backend subscriptions are open right now. */
+  readonly attached: number;
+}
+
+function fakeBackend(): Fake {
   const values = new Map<string, unknown>();
-  const listeners = new Set<(path: string, value: unknown) => void>();
-  const writes: LeafSpec[] = [];
+  const listeners = new Map<string, Set<() => void>>();
 
-  const emit = (path: string, value: unknown): void => {
-    for (const listener of listeners) {
-      listener(path, value);
-    }
-  };
-
-  return {
+  const fake: Fake = {
     values,
-    writes,
-    emit,
-    backend: {
-      read: path => values.get(path),
-      write: (path, value, spec): void => {
-        values.set(path, value);
-        writes.push(spec);
-        emit(path, value);
-      },
-      onChange: (listener): Unsubscribe => {
-        listeners.add(listener);
+    emit: (key): void => {
+      for (const listener of [...listeners.get(key) ?? []]) { listener(); }
+    },
+    get attached(): number {
+      let total = 0;
 
-        return (): void => {
-          listeners.delete(listener);
-        };
+      for (const set of listeners.values()) { total += set.size; }
+
+      return total;
+    },
+    backend: {
+      read: key => values.get(key),
+      write: (key, value): void => {
+        values.set(key, value);
+        fake.emit(key);
+      },
+      onChange: (key, listener): Unsubscribe => {
+        let set = listeners.get(key);
+
+        if (set === undefined) {
+          set = new Set();
+          listeners.set(key, set);
+        }
+
+        set.add(listener);
+
+        return (): void => { set.delete(listener); };
       },
     },
   };
+
+  return fake;
 }
 
-function tree(): { t: SharedTree<typeof DEF>; fake: ReturnType<typeof fakeBackend> } {
+function tree(): { t: SharedTree<typeof DEF>; fake: Fake } {
   const fake = fakeBackend();
 
-  return { t: materialize(fake.backend, compileShared(DEF), true) as SharedTree<typeof DEF>, fake }; // eslint-disable-line @typescript-eslint/no-unsafe-type-assertion
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion
+  return { t: materialize(fake.backend, Object.keys(DEF), DEF) as SharedTree<typeof DEF>, fake };
 }
 
 describe('tree', () => {
@@ -88,59 +81,75 @@ describe('tree', () => {
     const { t, fake } = tree();
 
     expect(t.spawnRate.get()).toBe(5);
-    expect(t.event.name.get()).toBe('none');
-    expect(t.event.get()).toEqual({ name: 'none', active: false, votes: 0 });
+    expect(t.tags.get()).toEqual(['a', 'b']);
+    expect(t.event.get()).toEqual({ name: 'none', active: false });
 
     fake.values.set('spawnRate', 9);
     expect(t.spawnRate.get()).toBe(9);
-    expect(t.get()).toMatchObject({ spawnRate: 9, blob: { x: 1, y: 2 }, tags: ['a', 'b'] });
   });
 
-  it('writes leaves, branches and patches through the backend with their specs', () => {
+  it('writes whole values through the backend, an object included', () => {
     const { t, fake } = tree();
 
     t.spawnRate.set(6);
-    t.event.set({ name: 'race', active: true, votes: 1 });
-    t.event.patch({ active: false });
-    t.patch({ event: { votes: 2 } });
+    t.event.set({ name: 'race', active: true });
 
     expect(fake.values.get('spawnRate')).toBe(6);
-    expect(fake.values.get('event.name')).toBe('race');
-    expect(fake.values.get('event.active')).toBe(false);
-    expect(fake.values.get('event.votes')).toBe(2);
-    expect(fake.writes.map(w => w.path)).toEqual(['spawnRate', 'event.name', 'event.active', 'event.votes', 'event.active', 'event.votes']);
+    expect(fake.values.get('event')).toEqual({ name: 'race', active: true });
   });
 
-  it('notifies a leaf, its branches and the root, and releases the backend when the last listener leaves', () => {
+  it('notifies with the new value and the previous one, and only for its own key', () => {
     const { t, fake } = tree();
-    const leafSeen: unknown[] = [];
-    const branchSeen: unknown[] = [];
-    const rootSeen: unknown[] = [];
-    const stopLeaf = t.event.active.subscribe(v => leafSeen.push(v));
-    const stopBranch = t.event.subscribe(v => branchSeen.push(v));
-    const stopRoot = t.subscribe(v => rootSeen.push(v));
+    const seen: [number, number][] = [];
 
-    fake.values.set('event.active', true);
-    fake.emit('event.active', true);
-    fake.emit('spawnRate', 7);
+    t.spawnRate.subscribe((next, prev) => { seen.push([next, prev]); });
+    t.event.subscribe(() => { throw new Error('the sibling must not fire'); });
 
-    expect(leafSeen).toEqual([true]);
-    expect(branchSeen).toHaveLength(1);
-    expect(branchSeen[0]).toMatchObject({ active: true });
-    expect(rootSeen).toHaveLength(2);
+    t.spawnRate.set(6);
+    t.spawnRate.set(7);
 
-    stopLeaf();
-    stopBranch();
-    stopRoot();
-    fake.emit('event.active', false);
-    expect(leafSeen).toEqual([true]);
+    expect(seen).toEqual([[6, 5], [7, 6]]);
+    expect(fake.values.get('event')).toBeUndefined();
+  });
+
+  it('holds one backend subscription while it has listeners, and drops it with the last', () => {
+    const { t, fake } = tree();
+    const stopA = t.spawnRate.subscribe(() => {});
+    const stopB = t.spawnRate.subscribe(() => {});
+
+    expect(fake.attached).toBe(1);
+
+    stopA();
+    expect(fake.attached).toBe(1);
+
+    stopB();
+    expect(fake.attached).toBe(0);
+
+    // Releasing twice is a no-op, not a second decrement.
+    stopB();
+    expect(fake.attached).toBe(0);
+  });
+
+  it('isolates a listener that throws', () => {
+    const { t } = tree();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const seen: number[] = [];
+
+    t.spawnRate.subscribe(() => { throw new Error('boom'); });
+    t.spawnRate.subscribe((next) => { seen.push(next); });
+
+    expect(() => { t.spawnRate.set(6); }).not.toThrow();
+    expect(seen).toEqual([6]);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('spawnRate'));
+
+    warn.mockRestore();
   });
 
   it('satisfies the observable shape', () => {
     const { t } = tree();
-    const readonlyObservable: { get(): number; subscribe(l: (v: number) => void): Unsubscribe } = t.spawnRate;
+    const readable: { get(): number; subscribe(l: (next: number, prev: number) => void): Unsubscribe } = t.spawnRate;
 
-    expect(readonlyObservable.get()).toBe(5);
+    expect(readable.get()).toBe(5);
   });
 });
 
@@ -204,62 +213,30 @@ function fakeBus(w: Wire, id: string): Bus {
   return bus as unknown as Bus; // eslint-disable-line @typescript-eslint/no-unsafe-type-assertion
 }
 
-function memoryStore(): PersistenceStore & { data: Map<string, string> } {
-  const data = new Map<string, string>();
-
-  return {
-    data,
-    read: key => data.get(key),
-    write: (key, value): void => {
-      if (value === undefined) {
-        data.delete(key);
-      } else {
-        data.set(key, value);
-      }
-    },
-  };
-}
-
-function realm(w: Wire, id: string, store = memoryStore()): { state: State; registry: SharedRegistry; store: ReturnType<typeof memoryStore>; deferred: (() => void)[]; tick(): void } {
+function realm(w: Wire, id: string): { state: State; registry: SharedRegistry } {
   const state = new State(fakeBus(w, id), id);
-  const deferred: (() => void)[] = [];
 
   state.start();
 
-  const registry = new SharedRegistry({
-    state,
-    namespace: id,
-    store,
-    defer: (fn): void => {
-      deferred.push(fn);
-    },
-    log: vi.fn(),
-  });
+  return { state, registry: new SharedRegistry({ state, namespace: id }) };
+}
 
-  return {
-    state,
-    registry,
-    store,
-    deferred,
-    tick: (): void => {
-      for (const fn of deferred.splice(0)) {
-        fn();
-      }
-    },
-  };
+interface ShopShared {
+  stock: number;
+  sale: { active: boolean; percent: number };
 }
 
 describe('SharedRegistry', () => {
-  it('writes initial values, announces the shape, and a peer reads through its typed tree', () => {
+  it('writes initial values, announces the key names, and a peer reads through its typed tree', () => {
     const w = wire();
     const owner = realm(w, 'os_shop');
     const peer = realm(w, 'bt_hud');
-    const shop = owner.registry.define({ stock: 3, sale: { active: false, percent: 0 } });
+    const shop = owner.registry.define<ShopShared>({ stock: 3, sale: { active: false, percent: 0 } });
 
     expect(owner.state.get('os_shop', 'stock')).toBe(3);
-    expect(owner.state.get('os_shop', SHARED_SHAPE_KEY)).toEqual({ 'stock': {}, 'sale.active': {}, 'sale.percent': {} });
+    expect(owner.state.get('os_shop', SHARED_SHAPE_KEY)).toEqual(['stock', 'sale']);
 
-    const mirror = peer.registry.of<{ stock: number; sale: { active: boolean; percent: number } }>('os_shop');
+    const mirror = peer.registry.of<ShopShared>('os_shop');
 
     expect(mirror).toBeDefined();
     expect(mirror?.stock.get()).toBe(3);
@@ -269,64 +246,56 @@ describe('SharedRegistry', () => {
 
     mirror?.stock.subscribe(n => seen.push(n));
     shop.stock.set(2);
-    shop.sale.patch({ percent: 20 });
+    shop.sale.set({ active: true, percent: 20 });
 
     expect(seen).toEqual([2]);
-    expect(mirror?.sale.percent.get()).toBe(20);
-    expect(peer.registry.of('nobody')).toBeUndefined();
-    expect(peer.registry.of('os_shop')).toBe(mirror);
+    expect(mirror?.sale.get()).toEqual({ active: true, percent: 20 });
+    expect(owner.registry.own).toBe(shop);
   });
 
-  it('a peer writes only what the owner opened', () => {
+  it('has no tree for an addon that has announced nothing, and reuses the one it built', () => {
     const w = wire();
     const owner = realm(w, 'os_shop');
     const peer = realm(w, 'bt_hud');
 
-    owner.registry.define({ stock: 3, votes: open(0) });
+    expect(peer.registry.of('os_shop')).toBeUndefined();
 
-    const mirror = peer.registry.of<{ stock: number; votes: ReturnType<typeof open<number>> }>('os_shop');
+    owner.registry.define({ stock: 3 });
 
-    mirror?.votes.set(5);
-    expect(owner.state.get('os_shop', 'votes')).toBe(5);
+    const mirror = peer.registry.of('os_shop');
 
-    const closed: { set?(value: number): void } | undefined = mirror?.stock;
-
-    expect(() => closed?.set?.(1)).toThrow(/did not open/);
-    expect(owner.state.get('os_shop', 'stock')).toBe(3);
+    expect(mirror).toBeDefined();
+    expect(peer.registry.of('os_shop')).toBe(mirror);
+    expect(peer.registry.of('nobody')).toBeUndefined();
   });
 
-  it('persists marked leaves on write and restores them one tick after registration', () => {
+  it('gives a peer no way to write, and the mirror refuses one that tries anyway', () => {
     const w = wire();
-    const store = memoryStore();
-    const first = realm(w, 'os_shop', store);
-    const tree = first.registry.define({ stock: 3, event: persisted({ name: 'none', active: false }) });
+    const owner = realm(w, 'os_shop');
+    const peer = realm(w, 'bt_hud');
 
-    // Persisted leaves are not written before the world is readable; the tree still answers.
-    expect(first.state.get('os_shop', 'event.name')).toBeUndefined();
-    expect(tree.event.name.get()).toBe('none');
+    owner.registry.define({ stock: 3 });
 
-    first.tick();
-    expect(first.state.get('os_shop', 'event.name')).toBe('none');
-    expect(store.data.size).toBe(0);
+    const mirror = peer.registry.of<{ stock: number }>('os_shop');
+    const forced: { set?(value: number): void } | undefined = mirror?.stock;
 
-    tree.event.set({ name: 'race', active: true });
-    expect(store.data.get(sharedDpKey('os_shop', 'event.name'))).toBe('"race"');
-    expect(store.data.get(sharedDpKey('os_shop', 'event.active'))).toBe('true');
-    expect(store.data.has(sharedDpKey('os_shop', 'stock'))).toBe(false);
+    expect(forced?.set).toBeTypeOf('function');
+    expect(() => forced?.set?.(1)).toThrow(/only its owner/);
 
-    // A new session: same store, fresh mirror.
-    const second = realm(wire(), 'os_shop', store);
-    const restored = second.registry.define({ stock: 3, event: persisted({ name: 'none', active: false }) });
-
-    second.tick();
-    expect(restored.event.get()).toEqual({ name: 'race', active: true });
-    expect(restored.stock.get()).toBe(3);
+    // Even reaching past the tree to the mirror itself changes nothing anywhere.
+    peer.state.set('os_shop', 'stock', 99);
+    expect(owner.state.get('os_shop', 'stock')).toBe(3);
+    expect(peer.state.get('os_shop', 'stock')).toBe(3);
+    expect(peer.state.droppedForeign).toBe(1);
   });
 
-  it('refuses a second declaration', () => {
-    const owner = realm(wire(), 'os_shop');
+  it('refuses a second declaration and a key in the framework prefix', () => {
+    const w = wire();
+    const owner = realm(w, 'os_shop');
 
-    owner.registry.define({ a: 1 });
-    expect(() => owner.registry.define({ b: 2 })).toThrow(/already/);
+    expect(() => owner.registry.define({ 'core-shared/shape': 1 })).toThrow(/reserved/);
+
+    owner.registry.define({ stock: 3 });
+    expect(() => owner.registry.define({ other: 1 })).toThrow(/already declared/);
   });
 });

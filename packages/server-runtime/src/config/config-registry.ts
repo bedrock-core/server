@@ -3,15 +3,21 @@
  *
  * Accessible as `core.config` after `core.register()`.
  *
- * Discovery is push, values are pull: each addon publishes only its (small, static)
- * schema to replicated state; values live with the owning addon and are fetched on
- * demand via RPC. Write semantics (all scopes, local and remote): `patch` deep-merges
- * the provided keys; `set` replaces the whole scope — it requires the full object, and
- * any schema key missing from the payload reverts to its schema default (its persisted
- * override is deleted).
+ * Config is three db collections with a form on top: `config-server` holds the world's document,
+ * `config-dimension` one per dimension, `config-player` one per player. Each document is nested
+ * exactly as the schema is and holds only overrides — the schema's defaults are db's `defaults`,
+ * and its write-time `normalize` coerces every value and keeps what is at a default out of the
+ * bytes. Persistence, migration and quarantine are db's; this file adds the schema, the dotted
+ * accessor trees, and the rpc methods the config UI in another realm calls — three scopes, each
+ * with `get`, `patch` and `set`, authorized against the acting player.
  *
- * Addon defining config (usually via the `config` field of `core.register()`, which
- * delegates here and returns the same typed accessors):
+ * Discovery is push, values are pull: each addon publishes its (small, static) schema to the
+ * shared mirror; values live with the owning addon. Write semantics, local and remote: `patch`
+ * deep-merges the provided keys; `set` replaces the whole scope — any schema key missing from the
+ * payload reverts to its schema default.
+ *
+ * Addon defining config (usually via the `config` field of `core.register()`, which delegates
+ * here and returns the same typed accessors):
  * ```ts
  * const { config } = core.register({
  *   manifest,
@@ -22,9 +28,8 @@
  *   },
  * });
  *
- * // Every scope is a dotted accessor tree mirroring the schema — every node, group or leaf,
- * // carries get / set / subscribe (groups also patch), in the style of
- * // world.afterEvents.playerSpawn.subscribe(...). Entity scopes pick the entity with for().
+ * // Every scope is a dotted accessor tree mirroring the schema — every node, group or leaf, is an
+ * // observable with get / set / subscribe (groups also patch). Entity scopes pick the entity with for().
  * config.server.pricing.taxRate.get()            // number — local, sync
  * config.server.pricing.taxRate.set(0.1)
  * config.server.pricing.taxRate.subscribe((next, prev) => { ... })
@@ -33,28 +38,26 @@
  *
  * config.server.get()                            // { pricing: { taxRate: number } } — whole scope
  * config.server.patch({ pricing: { taxRate: 0.1 } })
- * config.dimension.patch(dim, { miningBonus: 2.0 })
- * config.server.subscribe('pricing.taxRate', (next, prev) => { ... })   // runtime-computed path
- * config.server.subscribe(full => console.warn(full.pricing.taxRate))
+ * config.dimension.for(dim).patch({ miningBonus: 2.0 })
  * ```
  *
- * Cross-addon access (reads and writes go over RPC):
+ * Cross-addon access goes over those methods:
  * ```ts
- * const shopCfg = core.config.of<ShopConfigDef>('vendor_shop');
- * await shopCfg?.server.get()                    // structured, typed
+ * const shopCfg = core.config.of<ShopConfigDef>('vendor_shop', { actorId: player.id });
+ * await shopCfg?.server.get()                    // structured, typed, defaults filled
  * await shopCfg?.server.patch({ pricing: { taxRate: 0.1 } })
  * ```
  */
 import { system, world } from '@minecraft/server';
-import type { Dimension, Player } from '@minecraft/server';
+import type { Dimension, Player, World } from '@minecraft/server';
 import type { SyncNode, Unsubscribe } from '@bedrock-core/sync';
+import { dimensions, players, schema, worldTarget, type Db, type DeepPartial, type MigrateStep, type Schema } from '@bedrock-core/db';
 import {
   type ConfigDefinition,
-  type ConfigValue,
+  type ConfigScopeName,
   type FlatSchema,
-  type SchemaNode,
+  type SchemaGroup,
   type SchemaToValue,
-  type DeepPartial,
   type ServerScopeSchema,
   type DimensionScopeSchema,
   type PlayerScopeSchema,
@@ -63,34 +66,33 @@ import {
   flattenSchema,
   validateConfigSchema,
 } from './schema';
-import {
-  loadServerValues,
-  loadDimensionValues,
-  loadPlayerValues,
-  saveServerValue,
-  saveDimensionValue,
-  savePlayerValue,
-  loadedDimensionIds,
-} from './persistence';
 import { broadcastGroups, broadcastSchema, CONFIG_GROUPS_KEY, CONFIG_SCHEMA_KEY } from './broadcast';
-import { ServerConfigScope, EntityConfigScope, type ServerConfigTree } from './scopes';
-import { buildNestedObject, flattenObject } from './scopes/utils';
-import { registerConfigRpc } from './rpc';
-import { denyReason, type ConfigScopeName } from './authorization';
+import { EntityScope, serverScope, type Gate, type ScopeTree } from './scopes/scope';
+import { defaultsOf, normalizeAgainst, type ConfigDocument } from './document';
+import { authorize } from '../authorization';
 import { isUsable } from '../handle';
 
-type Flat = Record<string, ConfigValue>;
+/** The db collections a scope's documents live in, under the owning addon's namespace. */
+export const CONFIG_COLLECTIONS: Record<ConfigScopeName, string> = {
+  server: 'config-server',
+  dimension: 'config-dimension',
+  player: 'config-player',
+};
 
-/** True when an RPC response is a flat dot-path → primitive config map. */
-function isFlatValues(value: unknown): value is Flat {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) { return false; }
-
-  for (const entry of Object.values(value)) {
-    if (typeof entry !== 'boolean' && typeof entry !== 'number' && typeof entry !== 'string') { return false; }
-  }
-
-  return true;
+/**
+ * The rpc method one config scope answers on: `core:config.<scope>.<op>`. Under the framework's
+ * own prefix, since the runtime registers these for every addon rather than the addon doing it.
+ */
+export function configMethod(scope: ConfigScopeName, operation: 'get' | 'patch' | 'set'): string {
+  return `core:config.${scope}.${operation}`;
 }
+
+/** How a scope's target is named in the params of its methods. */
+const TARGET_PARAM: Record<ConfigScopeName, string | undefined> = {
+  server: undefined,
+  dimension: 'dimId',
+  player: 'playerId',
+};
 
 // ─── Return types ──────────────────────────────────────────────────────────────
 
@@ -109,25 +111,26 @@ type SafePlayer<I extends ConfigDefinition>
  * (`config.player.for(player).allowGifts.get()`), which yields the identical tree shape.
  */
 export interface Config<I extends ConfigDefinition> {
-  server: ServerConfigTree<SafeServer<I>>;
-  dimension: EntityConfigScope<SafeDimension<I>, Dimension>;
-  player: EntityConfigScope<SafePlayer<I>, Player>;
+  server: ScopeTree<SafeServer<I>>;
+  dimension: EntityScope<SafeDimension<I>, Dimension>;
+  player: EntityScope<SafePlayer<I>, Player>;
 }
 
 // ─── Remote config accessor (untyped) ─────────────────────────────────────────
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 /**
- * Untyped view of another addon's config. The schema is read synchronously from the
- * state mirror; values are fetched (and written) via RPC — `patch` merges, `set`
- * replaces (missing keys revert to schema defaults). Writes resolve with the updated
- * effective flat values.
+ * Untyped view of another addon's config. The schema is read synchronously from the shared
+ * mirror; values are fetched and written through the endpoints the owner's runtime serves —
+ * `patch` merges deep, `set` replaces (missing keys revert to schema defaults). Reads and writes
+ * resolve with the scope's effective value, defaults filled.
  *
- * An accessor obtained with an `actorId` acts **on behalf of that player**, and the owning
- * addon authorizes every request against them (see `authorization.ts`). Without one the
- * accessor acts as the addon itself, which is unrestricted — see that file for why.
- *
- * The actor rides along in the request payload, which is why server-scope writes wrap their
- * flat map in `values` instead of being the params (see `rpc.ts`).
+ * An accessor obtained with an `actorId` acts **on behalf of that player**, and the owning addon
+ * authorizes every request against them (see `authorization.ts`). Without one the accessor acts
+ * as the addon itself, which is unrestricted — see that file for why.
  */
 export class RemoteConfigAccessor {
   private readonly _node: SyncNode;
@@ -135,21 +138,21 @@ export class RemoteConfigAccessor {
   private readonly _actorId: string | undefined;
 
   readonly server = {
-    get: async (): Promise<unknown> => this.nested(await this._node.rpc.request(this._addonId, 'core:config.get-server', {})),
-    patch: async (value: Record<string, unknown>): Promise<unknown> => this._node.rpc.request(this._addonId, 'core:config.patch', { values: Object.fromEntries(flattenObject(value)), actorId: this._actorId }),
-    set: async (value: Record<string, unknown>): Promise<unknown> => this._node.rpc.request(this._addonId, 'core:config.set', { values: Object.fromEntries(flattenObject(value)), actorId: this._actorId }),
+    get: async (): Promise<unknown> => this._call('server', 'get', undefined, {}),
+    patch: async (value: Record<string, unknown>): Promise<unknown> => this._call('server', 'patch', undefined, { changes: value }),
+    set: async (value: Record<string, unknown>): Promise<unknown> => this._call('server', 'set', undefined, { doc: value }),
   };
 
   readonly dimension = {
-    get: async (dimId: string): Promise<unknown> => this.nested(await this._node.rpc.request(this._addonId, 'core:config.get-dim', { dimId })),
-    patch: async (dimId: string, value: Record<string, unknown>): Promise<unknown> => this._node.rpc.request(this._addonId, 'core:config.patch-dim', { dimId, values: Object.fromEntries(flattenObject(value)), actorId: this._actorId }),
-    set: async (dimId: string, value: Record<string, unknown>): Promise<unknown> => this._node.rpc.request(this._addonId, 'core:config.set-dim', { dimId, values: Object.fromEntries(flattenObject(value)), actorId: this._actorId }),
+    get: async (dimId: string): Promise<unknown> => this._call('dimension', 'get', dimId, {}),
+    patch: async (dimId: string, value: Record<string, unknown>): Promise<unknown> => this._call('dimension', 'patch', dimId, { changes: value }),
+    set: async (dimId: string, value: Record<string, unknown>): Promise<unknown> => this._call('dimension', 'set', dimId, { doc: value }),
   };
 
   readonly player = {
-    get: async (playerId: string): Promise<unknown> => this.nested(await this._node.rpc.request(this._addonId, 'core:config.get-player', { playerId, actorId: this._actorId })),
-    patch: async (playerId: string, value: Record<string, unknown>): Promise<unknown> => this._node.rpc.request(this._addonId, 'core:config.patch-player', { playerId, values: Object.fromEntries(flattenObject(value)), actorId: this._actorId }),
-    set: async (playerId: string, value: Record<string, unknown>): Promise<unknown> => this._node.rpc.request(this._addonId, 'core:config.set-player', { playerId, values: Object.fromEntries(flattenObject(value)), actorId: this._actorId }),
+    get: async (playerId: string): Promise<unknown> => this._call('player', 'get', playerId, {}),
+    patch: async (playerId: string, value: Record<string, unknown>): Promise<unknown> => this._call('player', 'patch', playerId, { changes: value }),
+    set: async (playerId: string, value: Record<string, unknown>): Promise<unknown> => this._call('player', 'set', playerId, { doc: value }),
   };
 
   constructor(node: SyncNode, addonId: string, actorId?: string) {
@@ -186,9 +189,54 @@ export class RemoteConfigAccessor {
     return flat;
   }
 
-  /** Shape a get-response into the nested value object, or `undefined` on a malformed payload. */
-  private nested(response: unknown): Record<string, unknown> | undefined {
-    return isFlatValues(response) ? buildNestedObject(response, this.schema) : undefined;
+  private async _call(
+    scope: ConfigScopeName,
+    operation: 'get' | 'patch' | 'set',
+    target: string | undefined,
+    params: Record<string, unknown>,
+  ): Promise<unknown> {
+    const targetParam = TARGET_PARAM[scope];
+    const response = await this._node.rpc.request(this._addonId, configMethod(scope, operation), {
+      ...params,
+      ...(targetParam === undefined ? {} : { [targetParam]: target }),
+      actorId: this._actorId,
+    });
+
+    return this._shape(scope, response);
+  }
+
+  /**
+   * A response as the scope's value: what the owner's scope reads, defaults already filled — or,
+   * from a runtime that answers nothing for a target it cannot reach, every default the announced
+   * schema declares. `undefined` on a malformed payload.
+   */
+  private _shape(scope: ConfigScopeName, response: unknown): Record<string, unknown> | undefined {
+    if (response === null) { return this._defaults(scope); }
+
+    return isRecord(response) ? response : undefined;
+  }
+
+  private _defaults(scope: ConfigScopeName): Record<string, unknown> {
+    const prefix = `${scope}.`;
+    const nested: Record<string, unknown> = {};
+
+    for (const [key, entry] of Object.entries(this.scopedSchema)) {
+      if (!key.startsWith(prefix)) { continue; }
+
+      const parts = key.slice(prefix.length).split('.');
+      let node = nested;
+
+      for (let i = 0; i < parts.length - 1; i++) {
+        const part = parts[i];
+        const next = node[part];
+
+        node = isRecord(next) ? next : (node[part] = {});
+      }
+
+      node[parts[parts.length - 1]] = entry.default;
+    }
+
+    return nested;
   }
 }
 
@@ -248,15 +296,16 @@ export interface ConfigAccessOptions {
 export class ConfigRegistry {
   private readonly _node: SyncNode;
   private readonly _addonId: string;
+  private readonly _db: Db;
   private _defined = false;
   private _local: LocalConfigScopes | undefined;
   private readonly _addonConfigListeners = new Map<string, Set<(cfg: RemoteConfigAccessor) => void>>();
   private readonly _disposers: Unsubscribe[] = [];
-  private readonly _onlinePlayers = new Map<string, Player>();
 
-  constructor(node: SyncNode, addonId: string) {
+  constructor(node: SyncNode, addonId: string, db: Db) {
     this._node = node;
     this._addonId = addonId;
+    this._db = db;
   }
 
   start(): void {
@@ -287,9 +336,10 @@ export class ConfigRegistry {
   define<I extends ConfigDefinition>(input: I): Config<I> {
     if (this._defined) { throw new Error('core.config.define() called more than once'); }
 
-    const serverTree = (input.server ?? {}) as Record<string, SchemaNode>;
-    const dimensionTree = (input.dimension ?? {}) as Record<string, SchemaNode>;
-    const playerTree = (input.player ?? {}) as Record<string, SchemaNode>;
+    // Scope schemas are groups without the display strings; the index signature is the same.
+    const serverTree = (input.server ?? {}) as SchemaGroup;
+    const dimensionTree = (input.dimension ?? {}) as SchemaGroup;
+    const playerTree = (input.player ?? {}) as SchemaGroup;
 
     // Before anything is built, and before the registry marks itself defined: a key that
     // collides with an accessor verb has no sane runtime recovery, so the declaration is
@@ -304,203 +354,200 @@ export class ConfigRegistry {
     const dimensionFlat = flattenSchema(dimensionTree);
     const playerFlat = flattenSchema(playerTree);
 
-    const serverGroups = flattenGroups(serverTree);
-    const dimensionGroups = flattenGroups(dimensionTree);
-    const playerGroups = flattenGroups(playerTree);
+    const serverDefaults = defaultsOf(serverTree);
+    const dimensionDefaults = defaultsOf(dimensionTree);
+    const playerDefaults = defaultsOf(playerTree);
 
-    const serverValues = new Map<string, ConfigValue>(
-      Object.entries(serverFlat).map(([k, e]) => [k, e.default]),
-    );
-    const dimensionValues = new Map<string, Map<string, ConfigValue>>();
-    const playerValues = new Map<string, Map<string, ConfigValue>>();
+    // ─── Collections ─────────────────────────────────────────────────────────────
+    // One document schema per scope: the same version and steps, told which scope's document
+    // they are looking at; that scope's defaults; and the write pass over its entries.
 
-    // ─── Scope accessors ────────────────────────────────────────────────────────
-    // Each scope hands applied batches back here for persistence; an `undefined`
-    // value in a batch deletes the persisted override (set-revert). No broadcast —
-    // consumers fetch values via the RPC handlers below.
-
-    // The constructor assigns one accessor node per top-level schema key onto the instance;
-    // TS cannot see properties produced by a schema walk, so this widening is inherent.
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion
-    const serverScope = new ServerConfigScope<SafeServer<I>>(
-      serverTree,
-      serverFlat,
-      serverValues,
-      (changes) => {
-        for (const [key, value] of changes) { saveServerValue(this._addonId, key, value); }
-      },
-    ) as ServerConfigTree<SafeServer<I>>;
-
-    const dimensionScope = new EntityConfigScope<NonNullable<I['dimension']>, Dimension>(
-      dimensionTree,
-      dimensionFlat,
-      dimensionValues,
-      (dimId, changes) => {
-        for (const [key, value] of changes) { saveDimensionValue(this._addonId, dimId, key, value); }
-      },
-    );
-
-    const playerScope = new EntityConfigScope<NonNullable<I['player']>, Player>(
-      playerTree,
-      playerFlat,
-      playerValues,
-      (playerId, changes) => {
-        const player = this._onlinePlayers.get(playerId);
-
-        // A stored handle goes stale the moment the player leaves. Writing through it would throw
-        // InvalidEntityError, so this reports the dropped write rather than letting it escape.
-        if (!isUsable(player)) {
-          console.warn(`[bedrock-core] '${this._addonId}' config: player '${playerId}' is offline; values not persisted`);
-
-          return;
-        }
-
-        for (const [key, value] of changes) { savePlayerValue(player, this._addonId, key, value); }
-      },
-    );
-
-    // ─── RPC handlers ───────────────────────────────────────────────────────────
-    // Every handler responds with the scope's updated effective values, so remote
-    // callers get read-after-write in one round trip.
-
-    const requireOnline = (playerId: string, method: string): boolean => {
-      if (isUsable(this._onlinePlayers.get(playerId))) { return true; }
-
-      console.warn(`[bedrock-core] '${this._addonId}' config: ${method} for offline player '${playerId}' ignored`);
-
-      return false;
-    };
-
-    // Throwing rejects the RPC, so the caller learns why instead of watching a write silently
-    // do nothing. A request with no actor is an addon acting for itself and passes untouched.
-    const requireAllowed = (scope: ConfigScopeName, actorId: string | undefined, targetId?: string): void => {
-      const reason = denyReason(scope, actorId, targetId);
-
-      if (reason !== undefined) {
-        throw new Error(`'${this._addonId}' config: ${scope} request refused - ${reason}`);
-      }
-    };
-
-    registerConfigRpc(this._node.rpc, {
-      onGetServer: () => serverScope.getFlat(),
-      onPatchServer: (flat, actorId) => {
-        requireAllowed('server', actorId);
-        serverScope.applyRemotePatch(flat);
-
-        return serverScope.getFlat();
-      },
-      onSetServer: (flat, actorId) => {
-        requireAllowed('server', actorId);
-        serverScope.applyRemoteSet(flat);
-
-        return serverScope.getFlat();
-      },
-      onGetDimension: dimId => dimensionScope.getFlat(dimId),
-      onPatchDimension: (dimId, flat, actorId) => {
-        requireAllowed('dimension', actorId);
-        dimensionScope.applyRemotePatch(dimId, flat);
-
-        return dimensionScope.getFlat(dimId);
-      },
-      onSetDimension: (dimId, flat, actorId) => {
-        requireAllowed('dimension', actorId);
-        dimensionScope.applyRemoteSet(dimId, flat);
-
-        return dimensionScope.getFlat(dimId);
-      },
-      // Reads are unrestricted for server and dimension — those are world settings, not
-      // secrets. One player's settings are another matter, so this scope checks reads too.
-      onGetPlayer: (playerId, actorId) => {
-        requireAllowed('player', actorId, playerId);
-
-        return playerScope.getFlat(playerId);
-      },
-      onPatchPlayer: (playerId, flat, actorId) => {
-        requireAllowed('player', actorId, playerId);
-
-        if (requireOnline(playerId, 'patch')) { playerScope.applyRemotePatch(playerId, flat); }
-
-        return playerScope.getFlat(playerId);
-      },
-      onSetPlayer: (playerId, flat, actorId) => {
-        requireAllowed('player', actorId, playerId);
-
-        if (requireOnline(playerId, 'set')) { playerScope.applyRemoteSet(playerId, flat); }
-
-        return playerScope.getFlat(playerId);
-      },
+    const documentSchema = (scope: ConfigScopeName, tree: SchemaGroup, defaults: ConfigDocument): Schema<ConfigDocument> => schema<ConfigDocument>({
+      version: input.version,
+      migrate: migrationsFor(input.migrate, scope),
+      defaults,
+      normalize: normalizeAgainst(tree),
     });
 
-    // ─── Deferred DP loading ────────────────────────────────────────────────────
-    // Dynamic properties are readable from tick 1 onward. Loading emits change events
-    // for keys whose persisted value differs from the schema default, so subscribers
-    // attached right after define() still learn the real values.
+    const collections = {
+      server: this._db.collection(CONFIG_COLLECTIONS.server, { schema: documentSchema('server', serverTree, serverDefaults), accept: worldTarget() }),
+      dimension: this._db.collection(CONFIG_COLLECTIONS.dimension, { schema: documentSchema('dimension', dimensionTree, dimensionDefaults), accept: dimensions() }),
+      player: this._db.collection(CONFIG_COLLECTIONS.player, { schema: documentSchema('player', playerTree, playerDefaults), accept: players() }),
+    };
 
+    // ─── Scopes ───────────────────────────────────────────────────────────────────
+
+    const gate: Gate = { ready: false };
+    const server = serverScope<SafeServer<I>, World>(collections.server, world, serverTree, serverDefaults, serverFlat, gate);
+    const dimension = new EntityScope<SafeDimension<I>, Dimension>(collections.dimension, dimensionTree, dimensionDefaults, dimensionFlat, gate);
+    const player = new EntityScope<SafePlayer<I>, Player>(collections.player, playerTree, playerDefaults, playerFlat, gate);
+
+    // ─── RPC ─────────────────────────────────────────────────────────────────────
+    // What the config UI in another realm calls. A read answers the scope's effective value; a
+    // write applies through the same tree the owner uses — so `normalize` coerces it — and answers
+    // what the tree now reads, which is read-after-write in one round trip.
+    //
+    // The player rule runs first, on every one: the world and a dimension are an operator's to
+    // change, a player's own scope is theirs, and a request with no actor is an addon acting for
+    // itself. A refusal is thrown, so the caller's promise rejects with the reason.
+
+    type Changes = Record<string, unknown>;
+
+    const asChanges = (value: unknown): Changes => (isRecord(value) ? value : {});
+    // The trees are typed against the schema; a document off the wire is a record the write pass
+    // will coerce anyway.
+    const patchOf = (value: unknown): DeepPartial<SchemaToValue<SafeServer<I>>> => asChanges(value) as DeepPartial<SchemaToValue<SafeServer<I>>>; // eslint-disable-line @typescript-eslint/no-unsafe-type-assertion
+    const docOf = (value: unknown): SchemaToValue<SafeServer<I>> => asChanges(value) as SchemaToValue<SafeServer<I>>; // eslint-disable-line @typescript-eslint/no-unsafe-type-assertion
+
+    const requireDimension = (dimId: string): Dimension => {
+      try {
+        return world.getDimension(dimId);
+      } catch {
+        throw new Error(`no dimension named '${dimId}'`);
+      }
+    };
+
+    const requirePlayer = (playerId: string): Player => {
+      const found = world.getAllPlayers().find(candidate => candidate.id === playerId);
+
+      if (!isUsable(found)) { throw new Error(`player '${playerId}' is not in the world`); }
+
+      return found;
+    };
+
+    const actorOf = (params: unknown): string | undefined => {
+      const actorId = isRecord(params) ? params.actorId : undefined;
+
+      return typeof actorId === 'string' ? actorId : undefined;
+    };
+
+    const idOf = (params: unknown, key: string): string => {
+      const value = isRecord(params) ? params[key] : undefined;
+
+      if (typeof value !== 'string') { throw new Error(`'${key}' is required`); }
+
+      return value;
+    };
+
+    const changesOf = (params: unknown, key: 'changes' | 'doc'): Changes => asChanges(isRecord(params) ? params[key] : undefined);
+
+    const method = (name: string, handler: (params: unknown) => unknown): void => {
+      this._disposers.push(this._node.rpc.onRequest(name, handler));
+    };
+
+    method(configMethod('server', 'get'), (params): unknown => {
+      authorize({ world: true }, actorOf(params), 'read');
+
+      return server.get();
+    });
+
+    method(configMethod('server', 'patch'), (params): unknown => {
+      authorize({ world: true }, actorOf(params), 'write');
+      server.patch(patchOf(changesOf(params, 'changes')));
+
+      return server.get();
+    });
+
+    method(configMethod('server', 'set'), (params): unknown => {
+      authorize({ world: true }, actorOf(params), 'write');
+      server.set(docOf(changesOf(params, 'doc')));
+
+      return server.get();
+    });
+
+    method(configMethod('dimension', 'get'), (params): unknown => {
+      const dimId = idOf(params, 'dimId');
+
+      authorize({ dimension: dimId }, actorOf(params), 'read');
+
+      return dimension.for(requireDimension(dimId)).get();
+    });
+
+    method(configMethod('dimension', 'patch'), (params): unknown => {
+      const dimId = idOf(params, 'dimId');
+
+      authorize({ dimension: dimId }, actorOf(params), 'write');
+
+      const tree = dimension.for(requireDimension(dimId));
+
+      tree.patch(patchOf(changesOf(params, 'changes')));
+
+      return tree.get();
+    });
+
+    method(configMethod('dimension', 'set'), (params): unknown => {
+      const dimId = idOf(params, 'dimId');
+
+      authorize({ dimension: dimId }, actorOf(params), 'write');
+
+      const tree = dimension.for(requireDimension(dimId));
+
+      tree.set(docOf(changesOf(params, 'doc')));
+
+      return tree.get();
+    });
+
+    method(configMethod('player', 'get'), (params): unknown => {
+      const playerId = idOf(params, 'playerId');
+
+      authorize({ entity: playerId }, actorOf(params), 'read');
+
+      return player.for(requirePlayer(playerId)).get();
+    });
+
+    method(configMethod('player', 'patch'), (params): unknown => {
+      const playerId = idOf(params, 'playerId');
+
+      authorize({ entity: playerId }, actorOf(params), 'write');
+
+      const tree = player.for(requirePlayer(playerId));
+
+      tree.patch(patchOf(changesOf(params, 'changes')));
+
+      return tree.get();
+    });
+
+    method(configMethod('player', 'set'), (params): unknown => {
+      const playerId = idOf(params, 'playerId');
+
+      authorize({ entity: playerId }, actorOf(params), 'write');
+
+      const tree = player.for(requirePlayer(playerId));
+
+      tree.set(docOf(changesOf(params, 'doc')));
+
+      return tree.get();
+    });
+
+    // Dynamic properties are readable from tick 1 onward. Until then every tree answers with the
+    // defaults; opening the gate reads what is stored, and the subscribers attached during
+    // registration hear the values that differ. The schema reaches peers on the same tick.
     system.run(() => {
-      serverScope.loadInitial(loadServerValues(this._addonId, serverFlat));
-
-      if (Object.keys(dimensionFlat).length > 0) {
-        for (const dimId of loadedDimensionIds(this._addonId, dimensionFlat)) {
-          const loaded = loadDimensionValues(this._addonId, dimId, dimensionFlat);
-
-          if (loaded.size > 0) { dimensionScope.loadInitial(dimId, loaded); }
-        }
-      }
-
-      // Seed players that are already connected — after a script reload (e.g. /reload)
-      // no playerSpawn fires for them, so relying on the event alone would leave
-      // player-scope config dead until they rejoin.
-      for (const player of world.getAllPlayers()) {
-        if (!isUsable(player)) { continue; }
-
-        this._onlinePlayers.set(player.id, player);
-
-        if (Object.keys(playerFlat).length > 0) {
-          playerScope.init(player.id, loadPlayerValues(player, this._addonId, playerFlat));
-        }
-      }
+      gate.ready = true;
+      server.get();
+      dimension.warm();
+      player.warm();
 
       broadcastSchema(this._node.state, this._addonId, serverFlat, dimensionFlat, playerFlat);
-      broadcastGroups(this._node.state, this._addonId, serverGroups, dimensionGroups, playerGroups);
+      broadcastGroups(this._node.state, this._addonId, flattenGroups(serverTree), flattenGroups(dimensionTree), flattenGroups(playerTree));
     });
 
-    // ─── Player lifecycle ────────────────────────────────────────────────────────
-
-    const onSpawn = world.afterEvents.playerSpawn.subscribe(({ player, initialSpawn }) => {
-      if (!initialSpawn) { return; }
-
-      // Nothing is lost by skipping an invalidated player: they are not in the world to read
-      // config, and a real connection fires this event again with a live handle.
-      if (!isUsable(player)) { return; }
-
-      this._onlinePlayers.set(player.id, player);
-
-      if (Object.keys(playerFlat).length === 0) { return; }
-
-      playerScope.init(player.id, loadPlayerValues(player, this._addonId, playerFlat));
-    });
-
-    this._disposers.push(() => { world.afterEvents.playerSpawn.unsubscribe(onSpawn); });
-
+    // A tree kept for a player who left would answer for a handle that is no longer usable.
     const onLeave = world.afterEvents.playerLeave.subscribe(({ playerId }) => {
-      this._onlinePlayers.delete(playerId);
-
-      if (Object.keys(playerFlat).length === 0) { return; }
-
-      playerScope.clear(playerId);
+      player.forgetId(playerId);
     });
 
     this._disposers.push(() => { world.afterEvents.playerLeave.unsubscribe(onLeave); });
 
-    this._local = { server: serverScope, dimension: dimensionScope, player: playerScope };
+    this._local = { server, dimension, player };
 
-    return { server: serverScope, dimension: dimensionScope, player: playerScope };
+    return { server, dimension, player };
   }
 
   /**
    * This addon's own config scopes, or `undefined` before `define()` has run. Available
-   * synchronously — unlike {@link of}, which needs the schema to have reached replicated state
-   * one tick later — so startup-time consumers such as command registration can read it.
+   * synchronously — unlike {@link of}, which needs the schema to have reached the mirror one
+   * tick later — so startup-time consumers such as command registration can read it.
    */
   get local(): LocalConfigScopes | undefined {
     return this._local;
@@ -538,4 +585,20 @@ export class ConfigRegistry {
 
     return () => { this._addonConfigListeners.get(addonId)?.delete(cb); };
   }
+}
+
+/** The definition's steps as db takes them, each told which scope's document it is given. */
+function migrationsFor(
+  steps: ConfigDefinition['migrate'],
+  scope: ConfigScopeName,
+): Record<number, MigrateStep> | undefined {
+  if (steps === undefined) { return undefined; }
+
+  const bound: Record<number, MigrateStep> = {};
+
+  for (const [version, step] of Object.entries(steps)) {
+    bound[Number(version)] = (doc): Record<string, unknown> => step(doc, scope);
+  }
+
+  return bound;
 }

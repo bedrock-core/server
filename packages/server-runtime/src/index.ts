@@ -124,13 +124,10 @@ export type { GuidesChangeListener } from './guides/guides-registry';
 export type { GuideManifest, GuideReference } from './guides/types';
 export type { AddonPageReference } from './pages/pages-registry';
 
-export { CONFIG_COLLECTIONS, ConfigRegistry, configEndpoint } from './config/config-registry';
+export { CONFIG_COLLECTIONS, ConfigRegistry, configMethod } from './config/config-registry';
 export type { Config, ConfigAccessOptions, LocalConfigScopes, RemoteConfigAccessor, TypedRemoteConfig } from './config/config-registry';
 export { authorize, denyReason, isOperator } from './authorization';
 export type { AccessTarget, Operation } from './authorization';
-
-export { CHANGED_EVENT, ServeRegistry, keyOf, read, write } from './serve';
-export type { ActorParams, Api, Changed, Context, Endpoint, ReadEndpoint, ServeDef, Watchable, WriteEndpoint } from './serve';
 export { EntityScope } from './config/scopes';
 export type {
   ChangeListener,

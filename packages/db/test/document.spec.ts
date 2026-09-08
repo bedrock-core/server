@@ -1,7 +1,7 @@
 /**
  * The document codec on a direct host and on a component host: the envelope, lazy migration,
- * defaults on read, quarantine instead of loss, chunking under the per-value cap, and refusal on a
- * block entity's budget.
+ * quarantine instead of loss, chunking under the per-value cap, and refusal on a block entity's
+ * budget.
  */
 import { describe, expect, it, vi } from 'vitest';
 import { COMPONENT_BUDGET, DIRECT_BUDGET, DbBudgetError, componentHost, createDocumentStore, directHost, prefixed } from '../src/index';
@@ -39,15 +39,6 @@ describe('envelope', () => {
     store.remove('doc');
     expect(store.read('doc')).toBeUndefined();
     expect(entity.getDynamicPropertyIds()).toEqual([]);
-  });
-
-  it('fills defaults on read without persisting them', () => {
-    const { entity, store } = onEntity({ defaults: { tags: [], gold: 0 } });
-
-    store.write('doc', { gold: 3, name: 'b' });
-
-    expect(store.read('doc')).toEqual({ gold: 3, name: 'b', tags: [] });
-    expect(entity.getDynamicProperty('core-db:ns:entity::balances:doc')).not.toContain('tags');
   });
 
   it('lists document keys only, not chunks or quarantines', () => {

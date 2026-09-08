@@ -13,8 +13,8 @@ The authoring API is the accessor tree; everything else is db's.
 | coercion | min/max, enum options, list item rules | db's `normalize`, on every write — a peer's RPC included |
 | change events | every node is an observable | a `computed` over the document, compared structurally |
 | schema announcement | `core-config/schema` and `core-config/groups` on `core.shared` | unchanged |
-| a peer reads it | `core.config.of(ns).server.get()` | `core:db.get` on `config-server`; `core.query` once phase 6 lands ([04-query](./04-query.md)) |
-| a peer writes it | `core.config.of(ns, { actorId }).server.patch(p)` | `core:db.patch`, authorized by the owner's `denyReason` |
+| a peer reads it | `core.config.of(ns).server.get()` | the rpc method `core:config.server.get`; `core.query` once phase 6 lands |
+| a peer writes it | `core.config.of(ns, { actorId }).server.patch(p)` | the rpc method `core:config.server.patch`, the player rule in front |
 
 ## 1. A scope is a document
 
@@ -71,19 +71,21 @@ config: {
 
 ## 3. What peers see
 
-| Collection | Announced on the mirror | Why |
-| --- | --- | --- |
-| `config-server` | the document, `shared: true` | one small document per addon, written when an operator changes a setting; what every peer reads |
-| `config-dimension` | a version stamp | almost nobody reads a peer's dimension settings |
-| `config-player` | a version stamp | a warm copy in every realm would skip the owner's read check |
+Nine rpc methods, `core:config.<scope>.<get | patch | set>`, registered by the config registry for
+every addon. A read answers the scope's effective value with defaults filled; a write applies
+through the same tree the owner uses, so `normalize` coerces it, and answers what the tree now
+reads — read-after-write in one round trip.
 
-Peers write only through the owner: `core:db.patch` / `core:db.set` on the scope's collection,
-carrying the `actorId`, refused by `denyReason`. Never through the mirror, which only its owner
-writes at all ([02-shared](./02-shared.md)). A write with no actor is an addon acting for itself
-and passes ([07-trust-model](./07-trust-model.md)).
+`authorize` runs first on every one: an operator reaches anything; anyone else reads world and
+dimension settings, and reads and writes only their own player scope. A request with no actor is an
+addon acting for itself and passes ([07-trust-model](./07-trust-model.md)). A refusal is thrown, so
+the caller's promise rejects with the reason.
 
-Authorization is db's one rule: an operator reaches anything; anyone else reads world and
-dimension documents, and reads and writes only their own player document.
+Nothing of config is on the mirror but the schema, and only the owner writes that
+([02-shared](./02-shared.md)). Peers are not told when a value changes: an addon that wants them
+told mirrors the value or emits an event, which is what a query cache would go stale on.
+
+`core.config.of(ns)` is the client over these methods, kept for the config UI until query lands.
 
 ## 4. Entity and block scopes — *On hold*
 
