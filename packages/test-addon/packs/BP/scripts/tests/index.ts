@@ -9,7 +9,7 @@
 import './bench';
 import './bench-shared';
 import { type Test, register } from '@minecraft/server-gametest';
-import { Runtime, core, open } from '@bedrock-core/server-runtime';
+import { Runtime, core, open, schema } from '@bedrock-core/server-runtime';
 
 const STRUCTURE = 'core:empty';
 
@@ -175,6 +175,108 @@ gametest('cross_pack_shop_present', (test) => {
       if (!core.registry.has('drav0011_shop')) {
         test.fail('shop addon not present — is test-addon-2 installed and enabled?');
       }
+    })
+    .thenSucceed();
+});
+
+// A collection's documents reach a peer through the shared mirror. The owner writes, and another
+// runtime reads the announced value out of replicated state without any RPC — the warm read a
+// cross-addon query is built on.
+gametest('db_shared_announce', (test) => {
+  const owner = new Runtime();
+
+  owner.register({ manifest: { creator: 'test', pack: 'db_share_a', packName: 'A', version: '1.0.0' } });
+
+  const peer = new Runtime();
+
+  peer.register({ manifest: { creator: 'test', pack: 'db_share_b', packName: 'B', version: '1.0.0' } });
+
+  const stats = owner.db.collection('stats', {
+    schema: schema<{ score: number; log: string[] }>({ defaults: { score: 0, log: [] } }),
+    shared: { as: doc => doc.score },
+  });
+
+  test.startSequence()
+    .thenIdle(20)
+    .thenExecute(() => {
+      // The log is the bulk of the document and must never leave the owner.
+      stats.for(test.getDimension()).set({ score: 42, log: ['a', 'b', 'c'] });
+    })
+    .thenIdle(20)
+    .thenExecute(() => {
+      const keys = peer.node.state.snapshot(owner.namespace).map(entry => entry.k);
+      const announced = keys.filter(key => key.startsWith('core-db/stats/'));
+
+      if (announced.length !== 1) {
+        test.fail(`expected one announced document, saw ${announced.length}: ${keys.join(', ')}`);
+
+        return;
+      }
+
+      const value = peer.node.state.get(owner.namespace, announced[0]);
+
+      if (value !== 42) { test.fail(`peer saw ${JSON.stringify(value)}, expected the derived score 42`); }
+
+      owner.stop();
+      peer.stop();
+    })
+    .thenSucceed();
+});
+
+// A peer reads and writes another addon's document over `core:db.*`, addressed by the identity the
+// index keeps. No actor rides along, so this is the programmatic addon-to-addon path.
+gametest('db_rpc_cross_addon', (test) => {
+  const owner = new Runtime();
+
+  owner.register({ manifest: { creator: 'test', pack: 'db_rpc_a', packName: 'A', version: '1.0.0' } });
+
+  const peer = new Runtime();
+
+  peer.register({ manifest: { creator: 'test', pack: 'db_rpc_b', packName: 'B', version: '1.0.0' } });
+
+  const notes = owner.db.collection('notes', {
+    schema: schema<{ text: string; seen: number }>({ defaults: { text: '', seen: 0 } }),
+  });
+
+  const dimension = test.getDimension();
+
+  notes.for(dimension).set({ text: 'hello', seen: 1 });
+
+  let read: unknown;
+  let patched: unknown;
+  let refused: string | undefined;
+
+  const address = { collection: 'notes', kind: 'dimension', identity: dimension.id };
+
+  test.startSequence()
+    .thenIdle(20)
+    .thenExecute(() => {
+      void peer.rpc.request(owner.id, 'core:db.get', address).then((r) => { read = r; });
+      void peer.rpc.request(owner.id, 'core:db.patch', { ...address, changes: { seen: 2 } })
+        .then((r) => { patched = r; });
+      void peer.rpc.request(owner.id, 'core:db.get', { ...address, collection: 'nope' })
+        .catch((error: unknown) => { refused = String(error); });
+    })
+    .thenIdle(30)
+    .thenExecute(() => {
+      if (JSON.stringify(read) !== JSON.stringify({ text: 'hello', seen: 1 })) {
+        test.fail(`peer read ${JSON.stringify(read)}`);
+      }
+
+      // The reply carries the document after the write, so no second round trip is needed.
+      if (JSON.stringify(patched) !== JSON.stringify({ text: 'hello', seen: 2 })) {
+        test.fail(`patch replied ${JSON.stringify(patched)}`);
+      }
+
+      // And the owner's own copy really changed.
+      if (notes.for(dimension).get()?.seen !== 2) { test.fail('the owner document did not change'); }
+
+      if (refused === undefined || !refused.includes('nope')) {
+        test.fail(`an unknown collection should be refused by name, got ${String(refused)}`);
+      }
+
+      owner.stop();
+      peer.stop();
     })
     .thenSucceed();
 });

@@ -27,6 +27,7 @@ import { HostElection } from './host';
 import type { GuideManifest, GuideReference } from './guides/types';
 import type { Rpc } from '@bedrock-core/sync';
 import { createEngineDb } from '@bedrock-core/db/minecraft';
+import { DbRequests } from './db/registry';
 import type { Db } from '@bedrock-core/db';
 import { SharedRegistry } from './shared/shared-registry';
 import { deferToNextTick, worldStore } from './shared/engine';
@@ -105,6 +106,7 @@ export class Runtime {
   private _state: ScopedState | undefined;
   private _shared: SharedRegistry | undefined;
   private _db: Db | undefined;
+  private _dbRequests: DbRequests | undefined;
   private _config: ConfigRegistry | undefined;
   private _translations: TranslationsRegistry | undefined;
   private _guides: GuidesRegistry | undefined;
@@ -245,7 +247,14 @@ export class Runtime {
     const pages = new PagesRegistry(node.state, namespace);
     const host = new HostElection(registry, namespace);
     const shared = new SharedRegistry({ state: node.state, namespace, store: worldStore, defer: deferToNextTick });
-    const db = createEngineDb(namespace, message => console.warn(message));
+    // Documents are announced on this addon's own shared namespace, under a reserved prefix so a
+    // collection can never collide with a key the addon shares itself. Peers read these through
+    // `core.query`, which is what gives them status and staleness; `core.shared` is the transport.
+    const db = createEngineDb(namespace, message => console.warn(message), {
+      set: (collection, key, value): void => {
+        node.state.set(namespace, `core-db/${collection}/${key}`, value);
+      },
+    });
 
     this._node = node;
     this._registry = registry;
@@ -253,6 +262,7 @@ export class Runtime {
     this._state = new ScopedState(node.state, namespace);
     this._shared = shared;
     this._db = db;
+    this._dbRequests = new DbRequests(db, namespace);
     this._config = config;
     this._translations = translations;
     this._guides = guides;
@@ -266,6 +276,9 @@ export class Runtime {
     translations.start();
     guides.start();
     host.start();
+    // Served whether or not this addon declares a collection: a peer asking for one that does not
+    // exist must be answered, not left to time out.
+    this._dbRequests.start(node.rpc);
 
     if (options.translations) { translations.provide(options.translations); }
 

@@ -22,7 +22,7 @@ export { createResolver, structuralClassifier } from './resolve';
 export type { Accepted, Classifier, Refused, Resolution, Resolver, ResolverOptions, TargetKind } from './resolve';
 
 export { createDb, parseBlockIdentity, structuralLocator } from './collection';
-export type { Collection, CollectionOptions, Db, DbOptions, Document, IndexedDocument, Lifecycle, Locator, Where } from './collection';
+export type { Collection, CollectionOptions, Db, DbOptions, Document, IndexedDocument, Lifecycle, Locator, Mirror, Where } from './collection';
 
 export { createIndexSet } from './indexed';
 export type { IndexSet } from './indexed';

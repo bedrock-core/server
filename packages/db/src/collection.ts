@@ -46,6 +46,23 @@ export interface CollectionOptions<T extends object, Target, R extends Requireme
    * before the flush.
    */
   coalesce?: boolean;
+
+  /**
+   * What peers see of this collection through the shared mirror. Peers read it with `core.query`,
+   * never `core.shared`, which is what gives them status, staleness and a refused write.
+   *
+   * - omitted — a **version stamp** per document. A peer's query for that key goes stale the same
+   *   tick and refetches on its next read. Cheap: the announcement is a number whatever the
+   *   document weighs.
+   * - `true` — the **document itself**, so a peer's query resolves warm with no round trip.
+   * - `{ as }` — a **derived subset**, for a large document whose peers only need part of it.
+   *
+   * Size is the thing to weigh: announcing is serialization on this addon's own tick, 380 µs at
+   * 1 KB and 3.1 ms at 10 KB ([S6](../../../docs/spikes/S6-shared-bus-cost.md)). Delivery is not
+   * the cost — a delta reaches four peers in the same tick — so prefer `{ as }` over `true` for
+   * anything large. Announcements are coalesced to one per document per tick regardless.
+   */
+  shared?: boolean | { as(doc: T): unknown };
 }
 
 export interface Document<T extends object> {
@@ -88,6 +105,12 @@ export interface Collection<T extends object, Target> {
    * `available` false — or readable when its document lives on the world. Slots are never indexed.
    */
   all(): IterableIterator<IndexedDocument<T>>;
+  /**
+   * The document for one indexed identity, without holding the target — what a remote caller has,
+   * since a `Block` or an `Entity` cannot travel over the wire. `undefined` when the collection
+   * has no such entry.
+   */
+  at(kind: TargetKind, identity: string): IndexedDocument<T> | undefined;
   /** How many documents the index knows of. */
   readonly size: number;
 }
@@ -146,9 +169,29 @@ export interface Lifecycle {
   attach(hooks: { loaded(target: unknown): void; leaving(target: unknown): void }): void;
 }
 
+/**
+ * Where a collection's documents are announced to other addons.
+ *
+ * This package cannot reach the shared mirror itself — it depends on the engine and nothing else —
+ * so the runtime injects one backed by `core.shared`. Without it a db announces nothing and costs
+ * nothing, which is what keeps an addon that shares no documents off this path entirely.
+ */
+export interface Mirror {
+  /**
+   * Announce `value` for one document, or `undefined` to withdraw it.
+   *
+   * Called at most once per document per tick: publishing is serialization on the caller's tick,
+   * measured at 3.1 ms for a 10 KB value ([S6](../../../docs/spikes/S6-shared-bus-cost.md)), so a
+   * counter bumped a hundred times a tick must still announce once.
+   */
+  set(collection: string, key: string, value: unknown): void;
+}
+
 export interface DbOptions {
   /** The world: proxied documents and the indexes live on it. */
   world: DirectDp;
+  /** Announces documents to peers. Omit and nothing is announced. */
+  mirror?: Mirror;
   /** The addon's namespace — the first segment of every key on the world. */
   namespace: string;
   classify?: Classifier;
@@ -179,6 +222,13 @@ export interface Db {
   blockRemoved(dimensionId: string, location: { x: number; y: number; z: number }, typeId: string): void;
   /** Write every coalesced document and every dirty index chunk now — all of them, or one target's documents. */
   flush(target?: unknown): void;
+  /**
+   * A collection already declared under `name`, or `undefined`.
+   *
+   * Loosely typed on purpose: the caller is the RPC layer, which has a name off the wire and no
+   * document type to go with it. Anything that knows the type holds the collection itself.
+   */
+  find(name: string): Collection<object, unknown> | undefined;
   readonly resolver: Resolver;
 }
 
@@ -239,9 +289,13 @@ interface Shared {
   readonly tick: (() => number) | undefined;
   readonly scheduleIndex: ((flush: () => void) => void) | undefined;
   readonly parkFor: number;
+  /** Whether a mirror is wired at all. Without one no collection announces. */
+  readonly announces: boolean;
   log(message: string): void;
   attach(): void;
   scheduleFlush(): void;
+  /** Queue an announcement for `collection`/`key`; coalesced and sent once per tick. */
+  announce(collection: string, key: string, value: unknown): void;
 }
 
 /** Documents are cached, subscribed and indexed by identity; a slot has none, so each handle stands alone. */
@@ -339,6 +393,8 @@ class Handle<T extends object> implements Document<T> {
 
     if (this.key !== undefined) {
       c.cache.delete(this.key);
+      // A peer holding the old value has to learn it is gone, or its query stays warm forever.
+      c.announce(this.key, undefined);
     }
 
     if (this._indexKey !== undefined) {
@@ -491,6 +547,7 @@ class Handle<T extends object> implements Document<T> {
 
     if (key !== undefined) {
       c.cache.set(key, doc);
+      c.announce(key, doc);
     }
 
     if (this._indexKey !== undefined) {
@@ -511,6 +568,9 @@ class IndexedHandle<T extends object> extends Handle<T> implements IndexedDocume
 
 class CollectionImpl<T extends object> implements Collection<T, unknown> {
   readonly coalesce: boolean;
+
+  /** How a write is announced to peers. `null` when this collection announces nothing. */
+  readonly share: 'stamp' | true | ((doc: T) => unknown) | null;
   readonly defaults: Partial<T> | undefined;
   readonly cache = new Map<string, T | undefined>();
   readonly streams = new Map<string, Stream<T>>();
@@ -522,6 +582,7 @@ class CollectionImpl<T extends object> implements Collection<T, unknown> {
   private readonly _require: Requirements | undefined;
   private readonly _schema: DocumentSchema<T>;
   private readonly _accepted = new Map<string, boolean>();
+  private _stamp = 0;
 
   constructor(readonly shared: Shared, readonly name: string, options: CollectionOptions<T, unknown, Requirements>) {
     this._acceptor = options.accept;
@@ -529,6 +590,16 @@ class CollectionImpl<T extends object> implements Collection<T, unknown> {
     this._schema = options.schema;
     this.defaults = options.schema.defaults;
     this.coalesce = options.coalesce === true;
+
+    // A db with no mirror announces nothing at all, so an addon that shares no documents never
+    // reaches the publish path. With one, the default is the stamp: peers learn a key changed
+    // without this addon paying to serialize a document nobody asked for.
+    this.share = !shared.announces
+      ? null
+      : options.shared === undefined || options.shared === false
+        ? 'stamp'
+        : options.shared === true ? true : options.shared.as;
+
     this.kinds = options.accept?.kinds;
     this.index = createIndexSet(prefixed(shared.worldHost, `core-db:${shared.namespace}:index:${name}:`), { schedule: shared.scheduleIndex });
 
@@ -586,6 +657,10 @@ class CollectionImpl<T extends object> implements Collection<T, unknown> {
     }
   }
 
+  at(kind: TargetKind, identity: string): IndexedDocument<T> | undefined {
+    return this._handleForEntry(kind, identity);
+  }
+
   admit(resolution: Resolution): Admitted {
     if (!resolution.ok) {
       return { ok: false, kind: resolution.kind, reason: resolution.reason };
@@ -640,6 +715,37 @@ class CollectionImpl<T extends object> implements Collection<T, unknown> {
 
     if (key !== undefined && this.index.has(key)) {
       this._dropIdentity(key, this.shared.resolver.absent(kind, typeId, identity));
+      // A peer holding the old value has to learn it is gone, or its query stays warm forever.
+      this.announce(key, undefined);
+    }
+  }
+
+  /**
+   * Queue what peers should see of one document. `undefined` withdraws it.
+   *
+   * The stamp is a counter rather than the document's schema version: a write that does not change
+   * the version still has to invalidate a peer's query, and a peer only compares the value with
+   * what it last saw.
+   */
+  announce(key: string, doc: T | undefined): void {
+    const share = this.share;
+
+    if (share === null) {
+      return;
+    }
+
+    if (doc === undefined) {
+      this.shared.announce(this.name, key, undefined);
+
+      return;
+    }
+
+    if (share === 'stamp') {
+      this.shared.announce(this.name, key, ++this._stamp);
+    } else if (share === true) {
+      this.shared.announce(this.name, key, doc);
+    } else {
+      this.shared.announce(this.name, key, share(doc));
     }
   }
 
@@ -776,6 +882,29 @@ export function createDb(options: DbOptions): Db {
     }
   };
 
+  const mirror = options.mirror;
+
+  /**
+   * Announcements waiting for the end of the tick, latest value per document.
+   *
+   * Coalesced because publishing is serialization on this addon's own tick — 3.1 ms for a 10 KB
+   * value ([S6](../../../docs/spikes/S6-shared-bus-cost.md)) — so a document written a hundred
+   * times in one tick must still be announced once. Delivery is not the cost: a delta reaches four
+   * peers in the same tick either way.
+   */
+  const pending = new Map<string, { collection: string; key: string; value: unknown }>();
+  let announceScheduled = false;
+
+  const announceAll = (): void => {
+    announceScheduled = false;
+
+    for (const { collection, key, value } of pending.values()) {
+      mirror?.set(collection, key, value);
+    }
+
+    pending.clear();
+  };
+
   const shared: Shared = {
     namespace,
     resolver,
@@ -784,6 +913,25 @@ export function createDb(options: DbOptions): Db {
     tick: lifecycle?.tick?.bind(lifecycle),
     scheduleIndex: lifecycle === undefined ? undefined : lifecycle.schedule.bind(lifecycle),
     parkFor: options.parkFor ?? PARK_FOR,
+    announces: mirror !== undefined,
+
+    announce: (collection, key, value): void => {
+      pending.set(`${collection}/${key}`, { collection, key, value });
+
+      if (announceScheduled) {
+        return;
+      }
+
+      announceScheduled = true;
+
+      // Without a lifecycle there is no tick to wait for, so this stays synchronous — which is
+      // also what the unit tests see.
+      if (lifecycle === undefined) {
+        announceAll();
+      } else {
+        lifecycle.schedule(announceAll);
+      }
+    },
 
     log: options.log ?? ((message: string): void => {
       console.warn(message);
@@ -838,6 +986,8 @@ export function createDb(options: DbOptions): Db {
     flush: (target): void => {
       flushAll(target === undefined ? undefined : keyOf(target));
     },
+
+    find: (name): Collection<object, unknown> | undefined => collections.find(collection => collection.name === name),
 
     blockRemoved: (dimensionId, location, typeId): void => {
       const identity = `${dimensionId}:${location.x},${location.y},${location.z}:${typeId}`;
