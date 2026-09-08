@@ -9,9 +9,11 @@
  * target is unloaded, since the world needs no chunk.
  *
  * Write-through: a `set` or `patch` updates the in-memory document and the dynamic property in the
- * same call — measured at 17 µs there is nothing to flush and nothing to lose. Documents are cached
- * by identity once read; a container slot has no identity, so its documents are read each time and
- * never indexed.
+ * same call — measured at 17 µs there is nothing to flush and nothing to lose. `patch` merges deep:
+ * a nested object merges key by key, an array replaces, `undefined` deletes. What is stored is
+ * what was written; the schema's `defaults` are filled in on the way out, so a key nobody wrote
+ * keeps following its default. Documents are cached by identity once read; a container slot has
+ * no identity, so its documents are read each time and never indexed.
  *
  * `all()` walks the collection's index — world properties listing the identities that hold a
  * document — and self-heals: a block found replaced by another type drops out of the index, and its
@@ -28,6 +30,7 @@
 import { observable, type Observable, type Unsubscribe } from '@bedrock-core/observable';
 import { accepts, type Acceptor, type Conflicts, type Requirements, type StorableTarget } from './accept';
 import { createDocumentStore, type DocumentSchema, type DocumentStore, type Schema } from './document';
+import { fill, merge, type DeepPartial } from './merge';
 import { DbBudgetError, DbTargetError } from './errors';
 import { directHost, prefixed, type Capabilities, type DirectDp, type DpHost } from './host';
 import { createIndexSet, type IndexSet } from './indexed';
@@ -46,23 +49,6 @@ export interface CollectionOptions<T extends object, Target, R extends Requireme
    * before the flush.
    */
   coalesce?: boolean;
-
-  /**
-   * What peers see of this collection through the shared mirror. Peers read it with `core.query`,
-   * never `core.shared`, which is what gives them status, staleness and a refused write.
-   *
-   * - omitted — a **version stamp** per document. A peer's query for that key goes stale the same
-   *   tick and refetches on its next read. Cheap: the announcement is a number whatever the
-   *   document weighs.
-   * - `true` — the **document itself**, so a peer's query resolves warm with no round trip.
-   * - `{ as }` — a **derived subset**, for a large document whose peers only need part of it.
-   *
-   * Size is the thing to weigh: announcing is serialization on this addon's own tick, 380 µs at
-   * 1 KB and 3.1 ms at 10 KB ([S6](../../../docs/spikes/S6-shared-bus-cost.md)). Delivery is not
-   * the cost — a delta reaches four peers in the same tick — so prefer `{ as }` over `true` for
-   * anything large. Announcements are coalesced to one per document per tick regardless.
-   */
-  shared?: boolean | { as(doc: T): unknown };
 }
 
 export interface Document<T extends object> {
@@ -70,15 +56,26 @@ export interface Document<T extends object> {
   readonly available: boolean;
   /** Why `available` is false, or `undefined`. */
   readonly reason: string | undefined;
-  /** The document, `undefined` when there is none or the target cannot be reached. Treat it as immutable; change it with `patch`. */
+  /** The document with its defaults filled in, `undefined` when there is none or the target cannot be reached. Treat it as immutable; change it with `patch`. */
   get(): T | undefined;
+  /** Stores `doc` as it is, after the schema's `normalize`. */
   set(doc: T): void;
-  /** Merges over the current document, or over `defaults` when there is none. */
-  patch(changes: Partial<T>): void;
+  /**
+   * Merges `changes` into the stored document, deep: a nested object merges key by key, an array
+   * replaces the one there, `undefined` deletes a key — which puts it back to its default.
+   */
+  patch(changes: DeepPartial<T>): void;
   /** Removes the document. Never throws: a document whose target is gone is removed where it can be. */
   delete(): void;
-  /** Local change events for this document; fires with the new document or `undefined` on delete. */
-  subscribe(listener: (doc: T | undefined) => void): Unsubscribe;
+  /**
+   * Local change events for this document; fires with the new document or `undefined` on delete,
+   * and the one before it. A listener attached before the document was first read hears it load.
+   *
+   * `get` and `subscribe` together are `@bedrock-core/observable`'s `ReadonlyObservable`, which is
+   * what lets a document be `computed` over or handed to a UI hook directly. A listener that only
+   * wants the new value still takes one argument.
+   */
+  subscribe(listener: (doc: T | undefined, prev: T | undefined) => void): Unsubscribe;
 }
 
 /** A document reached through the index rather than a target the caller holds. */
@@ -169,29 +166,9 @@ export interface Lifecycle {
   attach(hooks: { loaded(target: unknown): void; leaving(target: unknown): void }): void;
 }
 
-/**
- * Where a collection's documents are announced to other addons.
- *
- * This package cannot reach the shared mirror itself — it depends on the engine and nothing else —
- * so the runtime injects one backed by `core.shared`. Without it a db announces nothing and costs
- * nothing, which is what keeps an addon that shares no documents off this path entirely.
- */
-export interface Mirror {
-  /**
-   * Announce `value` for one document, or `undefined` to withdraw it.
-   *
-   * Called at most once per document per tick: publishing is serialization on the caller's tick,
-   * measured at 3.1 ms for a 10 KB value ([S6](../../../docs/spikes/S6-shared-bus-cost.md)), so a
-   * counter bumped a hundred times a tick must still announce once.
-   */
-  set(collection: string, key: string, value: unknown): void;
-}
-
 export interface DbOptions {
   /** The world: proxied documents and the indexes live on it. */
   world: DirectDp;
-  /** Announces documents to peers. Omit and nothing is announced. */
-  mirror?: Mirror;
   /** The addon's namespace — the first segment of every key on the world. */
   namespace: string;
   classify?: Classifier;
@@ -269,6 +246,12 @@ interface Stream<T> {
   listeners: number;
 }
 
+/** One cached document: as stored, and as read with defaults filled. `undefined` when there is none. */
+interface Cached<T> {
+  stored: T | undefined;
+  doc: T | undefined;
+}
+
 interface Dirty<T> {
   doc: T;
   last: Accepted;
@@ -289,13 +272,9 @@ interface Shared {
   readonly tick: (() => number) | undefined;
   readonly scheduleIndex: ((flush: () => void) => void) | undefined;
   readonly parkFor: number;
-  /** Whether a mirror is wired at all. Without one no collection announces. */
-  readonly announces: boolean;
   log(message: string): void;
   attach(): void;
   scheduleFlush(): void;
-  /** Queue an announcement for `collection`/`key`; coalesced and sent once per tick. */
-  announce(collection: string, key: string, value: unknown): void;
 }
 
 /** Documents are cached, subscribed and indexed by identity; a slot has none, so each handle stands alone. */
@@ -354,18 +333,21 @@ class Handle<T extends object> implements Document<T> {
   get(): T | undefined {
     const state = this._current();
 
-    return state.ok ? this._read(state.resolution) : undefined;
+    return state.ok ? this._read(state.resolution).doc : undefined;
   }
 
   set(doc: T): void {
-    this._write(this._reachable(), doc);
+    this._write(this._reachable(), this._c.normalize(doc));
   }
 
-  patch(changes: Partial<T>): void {
+  patch(changes: DeepPartial<T>): void {
     const resolution = this._reachable();
-    const merged: unknown = { ...this._c.defaults, ...this._read(resolution), ...changes };
+    const stored: unknown = this._read(resolution).stored;
+    // Both are JSON objects; `merge` is untyped because the document type is the caller's contract.
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion
+    const merged = merge(stored as Record<string, unknown> | undefined, changes) as T;
 
-    this._write(resolution, merged as T); // eslint-disable-line @typescript-eslint/no-unsafe-type-assertion
+    this._write(resolution, this._c.normalize(merged));
   }
 
   delete(): void {
@@ -393,8 +375,6 @@ class Handle<T extends object> implements Document<T> {
 
     if (this.key !== undefined) {
       c.cache.delete(this.key);
-      // A peer holding the old value has to learn it is gone, or its query stays warm forever.
-      c.announce(this.key, undefined);
     }
 
     if (this._indexKey !== undefined) {
@@ -404,7 +384,7 @@ class Handle<T extends object> implements Document<T> {
     this._notify(undefined);
   }
 
-  subscribe(listener: (doc: T | undefined) => void): Unsubscribe {
+  subscribe(listener: (doc: T | undefined, prev: T | undefined) => void): Unsubscribe {
     if (!this._first.ok) {
       return NO_LISTENER;
     }
@@ -413,7 +393,7 @@ class Handle<T extends object> implements Document<T> {
     const key = this.key;
     const entry = key === undefined
       ? (this._local ??= { source: observable<T | undefined>(undefined, { label: `${c.name}/slot` }), listeners: 0 })
-      : c.stream(key, c.cache.get(key));
+      : c.stream(key, c.cache.get(key)?.doc);
     const release = entry.source.subscribe(listener);
     let released = false;
 
@@ -505,35 +485,41 @@ class Handle<T extends object> implements Document<T> {
     (this.key === undefined ? this._local : this._c.streams.get(this.key))?.source.set(doc);
   }
 
-  private _read(resolution: Accepted): T | undefined {
+  private _read(resolution: Accepted): Cached<T> {
     const c = this._c;
     const key = this.key;
+    const cached = key === undefined ? undefined : c.cache.get(key);
 
-    if (key !== undefined && c.cache.has(key)) {
-      return c.cache.get(key);
+    if (cached !== undefined) {
+      return cached;
     }
 
-    const doc = this._storeOf(resolution).read(DOC);
+    const stored = this._storeOf(resolution).read(DOC);
+    const entry: Cached<T> = { stored, doc: c.fill(stored) };
 
     if (key !== undefined) {
-      c.cache.set(key, doc);
+      c.cache.set(key, entry);
+      // A subscriber attached before the first read has been holding `undefined`; the load is
+      // the change it was waiting for.
+      c.streams.get(key)?.source.set(entry.doc);
     }
 
-    return doc;
+    return entry;
   }
 
-  private _write(resolution: Accepted, doc: T): void {
+  /** Stores `stored` as it is; what subscribers and peers see is it with defaults filled. */
+  private _write(resolution: Accepted, stored: T): void {
     const c = this._c;
     const key = this.key;
 
     if (c.coalesce && key !== undefined) {
-      c.dirty.set(key, { doc, last: resolution, find: (): unknown => this._find() });
+      c.dirty.set(key, { doc: stored, last: resolution, find: (): unknown => this._find() });
       c.shared.scheduleFlush();
     } else {
       // An engine throw on a target the memo still trusted — removed by this very script this
       // tick — becomes ours.
       try {
-        this._storeOf(resolution).write(DOC, doc);
+        this._storeOf(resolution).write(DOC, stored);
       } catch (error) {
         this._memo = undefined;
 
@@ -545,9 +531,10 @@ class Handle<T extends object> implements Document<T> {
       }
     }
 
+    const doc = c.fill(stored);
+
     if (key !== undefined) {
-      c.cache.set(key, doc);
-      c.announce(key, doc);
+      c.cache.set(key, { stored, doc });
     }
 
     if (this._indexKey !== undefined) {
@@ -568,11 +555,7 @@ class IndexedHandle<T extends object> extends Handle<T> implements IndexedDocume
 
 class CollectionImpl<T extends object> implements Collection<T, unknown> {
   readonly coalesce: boolean;
-
-  /** How a write is announced to peers. `null` when this collection announces nothing. */
-  readonly share: 'stamp' | true | ((doc: T) => unknown) | null;
-  readonly defaults: Partial<T> | undefined;
-  readonly cache = new Map<string, T | undefined>();
+  readonly cache = new Map<string, Cached<T>>();
   readonly streams = new Map<string, Stream<T>>();
   readonly dirty = new Map<string, Dirty<T>>();
   readonly parked = new Map<string, Parked<T>>();
@@ -582,24 +565,12 @@ class CollectionImpl<T extends object> implements Collection<T, unknown> {
   private readonly _require: Requirements | undefined;
   private readonly _schema: DocumentSchema<T>;
   private readonly _accepted = new Map<string, boolean>();
-  private _stamp = 0;
 
   constructor(readonly shared: Shared, readonly name: string, options: CollectionOptions<T, unknown, Requirements>) {
     this._acceptor = options.accept;
     this._require = options.require;
     this._schema = options.schema;
-    this.defaults = options.schema.defaults;
     this.coalesce = options.coalesce === true;
-
-    // A db with no mirror announces nothing at all, so an addon that shares no documents never
-    // reaches the publish path. With one, the default is the stamp: peers learn a key changed
-    // without this addon paying to serialize a document nobody asked for.
-    this.share = !shared.announces
-      ? null
-      : options.shared === undefined || options.shared === false
-        ? 'stamp'
-        : options.shared === true ? true : options.shared.as;
-
     this.kinds = options.accept?.kinds;
     this.index = createIndexSet(prefixed(shared.worldHost, `core-db:${shared.namespace}:index:${name}:`), { schedule: shared.scheduleIndex });
 
@@ -695,7 +666,29 @@ class CollectionImpl<T extends object> implements Collection<T, unknown> {
   }
 
   storeFor(resolution: Accepted): DocumentStore<T> {
-    return createDocumentStore<T>(prefixed(resolution.host, resolution.prefixFor(this.name)), { ...this._schema, collection: this.name, log: this.shared.log });
+    const { version, migrate } = this._schema;
+
+    return createDocumentStore<T>(prefixed(resolution.host, resolution.prefixFor(this.name)), { version, migrate, collection: this.name, log: this.shared.log });
+  }
+
+  /** `stored` with the schema's defaults filled in, at every depth. */
+  fill(stored: T | undefined): T | undefined {
+    const defaults: unknown = this._schema.defaults;
+
+    if (stored === undefined || defaults === undefined) {
+      return stored;
+    }
+
+    // Both are JSON objects; `fill` is untyped because the document type is the caller's contract.
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion
+    return fill(defaults as Record<string, unknown>, stored as Record<string, unknown>) as T;
+  }
+
+  /** What the schema's `normalize` makes of a document about to be stored. */
+  normalize(doc: T): T {
+    const normalize = this._schema.normalize;
+
+    return normalize === undefined ? doc : normalize(doc);
   }
 
   stream(key: string, initial: T | undefined): Stream<T> {
@@ -715,37 +708,6 @@ class CollectionImpl<T extends object> implements Collection<T, unknown> {
 
     if (key !== undefined && this.index.has(key)) {
       this._dropIdentity(key, this.shared.resolver.absent(kind, typeId, identity));
-      // A peer holding the old value has to learn it is gone, or its query stays warm forever.
-      this.announce(key, undefined);
-    }
-  }
-
-  /**
-   * Queue what peers should see of one document. `undefined` withdraws it.
-   *
-   * The stamp is a counter rather than the document's schema version: a write that does not change
-   * the version still has to invalidate a peer's query, and a peer only compares the value with
-   * what it last saw.
-   */
-  announce(key: string, doc: T | undefined): void {
-    const share = this.share;
-
-    if (share === null) {
-      return;
-    }
-
-    if (doc === undefined) {
-      this.shared.announce(this.name, key, undefined);
-
-      return;
-    }
-
-    if (share === 'stamp') {
-      this.shared.announce(this.name, key, ++this._stamp);
-    } else if (share === true) {
-      this.shared.announce(this.name, key, doc);
-    } else {
-      this.shared.announce(this.name, key, share(doc));
     }
   }
 
@@ -882,29 +844,6 @@ export function createDb(options: DbOptions): Db {
     }
   };
 
-  const mirror = options.mirror;
-
-  /**
-   * Announcements waiting for the end of the tick, latest value per document.
-   *
-   * Coalesced because publishing is serialization on this addon's own tick — 3.1 ms for a 10 KB
-   * value ([S6](../../../docs/spikes/S6-shared-bus-cost.md)) — so a document written a hundred
-   * times in one tick must still be announced once. Delivery is not the cost: a delta reaches four
-   * peers in the same tick either way.
-   */
-  const pending = new Map<string, { collection: string; key: string; value: unknown }>();
-  let announceScheduled = false;
-
-  const announceAll = (): void => {
-    announceScheduled = false;
-
-    for (const { collection, key, value } of pending.values()) {
-      mirror?.set(collection, key, value);
-    }
-
-    pending.clear();
-  };
-
   const shared: Shared = {
     namespace,
     resolver,
@@ -913,25 +852,6 @@ export function createDb(options: DbOptions): Db {
     tick: lifecycle?.tick?.bind(lifecycle),
     scheduleIndex: lifecycle === undefined ? undefined : lifecycle.schedule.bind(lifecycle),
     parkFor: options.parkFor ?? PARK_FOR,
-    announces: mirror !== undefined,
-
-    announce: (collection, key, value): void => {
-      pending.set(`${collection}/${key}`, { collection, key, value });
-
-      if (announceScheduled) {
-        return;
-      }
-
-      announceScheduled = true;
-
-      // Without a lifecycle there is no tick to wait for, so this stays synchronous — which is
-      // also what the unit tests see.
-      if (lifecycle === undefined) {
-        announceAll();
-      } else {
-        lifecycle.schedule(announceAll);
-      }
-    },
 
     log: options.log ?? ((message: string): void => {
       console.warn(message);

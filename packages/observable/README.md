@@ -20,7 +20,7 @@ yarn add @bedrock-core/observable
 ## Usage
 
 ```ts
-import { observable, computed, effect, batch } from '@bedrock-core/observable';
+import { observable, computed, effect, batch, last } from '@bedrock-core/observable';
 
 const phase = observable<'lobby' | 'fight' | 'end'>('lobby');
 const alive = observable(new Set<string>());
@@ -33,6 +33,10 @@ batch(() => {                                            // one notification per
   phase.set('end');
   alive.set(new Set());
 });
+
+const spawn = last(world.afterEvents.playerSpawn);       // undefined, then each payload
+const lastName = computed(() => spawn.get()?.player.name, [spawn]);
+spawn.dispose();                                          // releases the engine subscription
 ```
 
 - **Synchronous.** A listener runs inside the `set` that changed the value, in the same tick.
@@ -45,6 +49,10 @@ batch(() => {                                            // one notification per
   the rest still run.
 - **`ReadonlyObservable<T>`** is what `computed` returns and what anything exposing a value it owns
   hands out, so a consumer cannot `set` what is not theirs.
+- **`last(signal)`** turns an event into a value: the most recent payload, `undefined` before the
+  first. Any `subscribe` works — the engine's, which returns the callback and releases through
+  `unsubscribe(cb)`, and the framework's, which returns a release function. Eager, so nothing is
+  missed; `dispose()` ends it. Use it on `afterEvents`, never `beforeEvents`.
 
 ## Binding to a data-driven form
 

@@ -50,6 +50,8 @@ interface Observable<T> extends ReadonlyObservable<T> {
 computed<T>(compute: () => T, deps: readonly ReadonlyObservable<unknown>[], options?): ReadonlyObservable<T>
 effect(run: () => void, deps: readonly ReadonlyObservable<unknown>[]): Unsubscribe
 batch(fn: () => void): void
+
+last<E>(signal: Signal<E>, options?): ReadonlyObservable<E | undefined> & { dispose(): void }
 ```
 
 - **Immutable values, `Object.is` by default.** `set` replaces; it never mutates in place. An
@@ -60,6 +62,14 @@ batch(fn: () => void): void
 - **`ReadonlyObservable<T>`** is what `computed` returns and what anything exposing a value it owns
   hands out — a db document, a query, a peer's shared key — so a consumer cannot `set` what is not
   theirs.
+- **`last(signal)` is the bridge from an event to a value**: `undefined` until the first event,
+  then each payload. It takes anything with `subscribe` — the engine's signals, whose `subscribe`
+  hands the callback back and whose `unsubscribe(cb)` releases it, and the framework's own
+  events, whose `subscribe` hands back a release — so `last(world.afterEvents.playerSpawn)` and
+  `last(core.events.of(ns).purchase)` are the same thing. It subscribes when created, since a value
+  that skipped events while nobody watched would be wrong; `dispose()` ends it. `afterEvents` and
+  script events only: a `beforeEvents` handler runs inside the engine's read-only window. A fold
+  over events into accumulated state is deliberately not here; write the reducer.
 - **Measured against the engine's own observable** ([S7](./spikes/S7-observable-bench.md)): a bare
   `set` is parity (0.43 vs 0.41 µs), a set with listeners is faster (0.11 µs per listener vs 0.31),
   `get` half the cost, `computed` faster than a hand-wired native chain. Listener storage is

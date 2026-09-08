@@ -53,7 +53,7 @@
 		"lint": "eslint .",
 		"test": "yarn workspaces foreach -ptA run test",
 		"bench": "yarn workspace @bedrock-core/sync run bench",
-		"test:mc": "yarn workspaces foreach -A --jobs=1 run build:test && bc-bds run --packs packages/test-addon/build/test --packs packages/test-addon-2/build/test --tag core --expect-registered 8",
+		"test:mc": "yarn workspaces foreach -A --jobs=1 run build:test && bc-bds run --packs packages/test-addon/build/test --packs packages/test-addon-2/build/test --tag core --expect-registered 10",
 		"test:mc:bench": "yarn workspaces foreach -A --jobs=1 run build:test && bc-bds run --packs packages/test-addon/build/test --packs packages/test-addon-2/build/test --tag bench --expect-registered 9 --idle 120 && node scripts/bench-report.mjs",
 		"bench:report": "node scripts/bench-report.mjs",
 		"bds:fetch": "bc-bds fetch",

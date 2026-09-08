@@ -36,9 +36,17 @@
  * core.rpc.onRequest('buy', params => purchase(params));
  *
  * // The shared mirror, typed: declare the shape, every realm reads it, this one writes it.
- * const { config, shared } = core.register({ manifest, config: configDef, shared: { price: 10, event: persisted({ active: false }) } });
+ * const { config, shared, events } = core.register({
+ *   manifest, config: configDef,
+ *   shared: { price: 10, sale: { active: false } },
+ *   events: { restocked: event<{ item: string }>() },
+ * });
  * shared.price.set(12);
  * core.shared.of<typeof otherAddonShared>('os_shop')?.stock.subscribe(n => hud.set(n));
+ *
+ * // Events: announced once, kept by nobody. A listener may attach before the addon exists.
+ * events.restocked.emit({ item: 'diamond' });
+ * core.events.of<typeof otherAddonEvents>('os_shop').sale.subscribe(({ item }) => hud.flash(item));
  * ```
  */
 export { Runtime, core } from './runtime';
@@ -77,19 +85,24 @@ export {
 } from '@bedrock-core/db';
 export type { Collection, Db, Document, IndexedDocument, Schema } from '@bedrock-core/db';
 
-export { leaf, open, persisted, SharedRegistry, SHARED_SHAPE_KEY, sharedDpKey } from './shared';
+export { EventsRegistry, event } from './events';
 export type {
-  Marked,
-  OpenPeerLeaf,
-  PeerBranch,
-  PeerLeaf,
-  PeerNode,
+  EventListener,
+  EventMarker,
+  EventsDef,
+  EventsTree,
+  OwnEvent,
+  PayloadOf,
+  PeerEvent,
+  PeerEventsTree,
+} from './events';
+
+export { SharedRegistry, SHARED_SHAPE_KEY } from './shared';
+export type {
   PeerSharedTree,
   PeerValue,
-  SharedBranch,
+  Shape,
   SharedDef,
-  SharedLeaf,
-  SharedNode,
   SharedTree,
   SharedValue,
 } from './shared';
@@ -111,14 +124,17 @@ export type { GuidesChangeListener } from './guides/guides-registry';
 export type { GuideManifest, GuideReference } from './guides/types';
 export type { AddonPageReference } from './pages/pages-registry';
 
-export { ConfigRegistry } from './config/config-registry';
+export { CONFIG_COLLECTIONS, ConfigRegistry, configEndpoint } from './config/config-registry';
 export type { Config, ConfigAccessOptions, LocalConfigScopes, RemoteConfigAccessor, TypedRemoteConfig } from './config/config-registry';
-export { denyReason, isOperator } from './config/authorization';
-export type { ConfigScopeName } from './config/authorization';
-export { EntityConfigScope } from './config/scopes';
-export { ServerConfigScope } from './config/scopes';
+export { authorize, denyReason, isOperator } from './authorization';
+export type { AccessTarget, Operation } from './authorization';
+
+export { CHANGED_EVENT, ServeRegistry, keyOf, read, write } from './serve';
+export type { ActorParams, Api, Changed, Context, Endpoint, ReadEndpoint, ServeDef, Watchable, WriteEndpoint } from './serve';
+export { EntityScope } from './config/scopes';
 export type {
-  ServerConfigTree,
+  ChangeListener,
+  ScopeTree,
   ConfigTree,
   ConfigNode,
   ConfigChildren,
@@ -126,6 +142,8 @@ export type {
   ConfigLeafAccessor,
   NodeValue,
 } from './config/scopes';
+export { coerce, defaultsOf, normalizeAgainst } from './config/document';
+export type { ConfigDocument } from './config/document';
 export { RESERVED_KEYS, flattenGroups, flattenSchema, isGroupMetaKey, validateConfigSchema } from './config/schema';
 export type {
   ConfigDefinition,
@@ -143,7 +161,6 @@ export type {
   SerializedEntry,
   SerializedGroup,
   SchemaToValue,
-  DotPath,
-  PathValue,
   DeepPartial,
+  ConfigScopeName,
 } from './config/schema';

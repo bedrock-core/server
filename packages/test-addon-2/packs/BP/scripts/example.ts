@@ -1,6 +1,6 @@
 /**
- * The "Shop" example behavior: react to the Economy addon, call it over RPC, and toggle an
- * optional feature based on whether a `leaderboard` addon is installed.
+ * The "Shop" example behavior: react to the Economy addon, call an endpoint it serves, and toggle
+ * an optional feature based on whether a `leaderboard` addon is installed.
  *
  * The config schema (server-scope pricing and player-scope preferences) is declared via the
  * `config` field of `core.register()` in main.ts.
@@ -8,8 +8,11 @@
 import { core } from '@bedrock-core/server-runtime';
 
 // In a real project this interface lives in the economy addon's published types package
-// (e.g. `@drav0011/economy-types`) and you install it as a devDependency.
-interface EconomyRPC { getBalance(params: { player: string }): number }
+// (e.g. `@drav0011/economy-types`) and you install it as a devDependency. It is what Economy's
+// rpc handlers answer to; the typed client below is built from it.
+interface EconomyApi {
+  balance(params: { playerId: string; actorId?: string }): { gold: number; lastSeen: number } | undefined;
+}
 
 export const configDef = {
   server: {
@@ -40,9 +43,10 @@ export function setupShop(): void {
       return;
     }
 
-    const economyRpc = core.rpc.typed<EconomyRPC>(economy.id);
+    const economyApi = core.rpc.typed<EconomyApi>(economy.id);
 
-    economyRpc.getBalance({ player: 'Steve' })
+    // No actor: the shop asking for its own reasons, which the owner's rule leaves open.
+    economyApi.balance({ playerId: 'steve' })
       .catch((error: unknown) => console.warn(`[shop] balance request failed: ${String(error)}`));
   });
 }

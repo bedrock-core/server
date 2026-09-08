@@ -1,24 +1,29 @@
 /**
  * `core.shared` — the replicated mirror every realm holds, as typed trees.
  *
- * The owner declares a shape in `register({ shared })` and gets its tree back; the registry writes
- * the initial values, announces the leaf paths under `core-shared/shape`, and keeps `persisted()`
- * leaves on the world. A peer's tree, `core.shared.of<Def>(ns)`, is materialized from that
- * announcement and reads the same mirror; it writes only where the owner said `open()`, and the
- * mirror's owner-only rule (`@bedrock-core/sync`) is what makes that hold everywhere at once.
+ * The owner declares a flat record in `register({ shared })` and gets its tree back; the registry
+ * writes the initial values and announces the key names under `core-shared/shape`. A peer's tree,
+ * `core.shared.of<Def>(ns)`, is materialized from that announcement and reads the same mirror.
  *
- * Persisted values are read back one tick after registration — dynamic properties are not readable
- * before the first tick — so the first snapshot a peer receives may lack them by a tick; the
- * write that restores them broadcasts a delta like any other.
+ * The mirror does exactly one job: the owner sets a value, every realm can read it now, and is
+ * told when it changes. It is not storage — nothing here touches the world. A value that must
+ * survive a restart lives in a db document, and the owner maps it across in one line:
+ *
+ * ```ts
+ * settings.for(world).subscribe(doc => shared.event.set(doc.event));
+ * ```
+ *
+ * A document's subscriber hears the document load, so that line is correct at boot as well as on
+ * every later change.
+ *
+ * Only the owner writes: sync applies a value for namespace `ns` only when the sender is `ns`, and
+ * a peer's tree has no `set` at all. A peer that wants a change asks the owner over rpc.
  */
 import type { State, StateChange, Unsubscribe } from '@bedrock-core/sync';
 import { RESERVED_STATE_PREFIX } from '../scoped-state';
 import {
-  compileShared,
-  leavesOfShape,
+  isShape,
   materialize,
-  shapeOf,
-  type LeafSpec,
   type PeerSharedTree,
   type Shape,
   type SharedBackend,
@@ -26,51 +31,23 @@ import {
   type SharedTree,
 } from './tree';
 
-/** The mirror key the owner's leaf paths are announced under. */
+/** The mirror key the owner's key names are announced under. */
 export const SHARED_SHAPE_KEY = `${RESERVED_STATE_PREFIX}shared/shape`;
-
-/** Where a `persisted()` leaf lives on the world. */
-export function sharedDpKey(namespace: string, path: string): string {
-  return `core-shared:${namespace}:${path}`;
-}
-
-/** The world's dynamic properties, as much of them as persistence needs; injected so the registry runs without the engine. */
-export interface PersistenceStore {
-  read(key: string): string | undefined;
-  write(key: string, value: string | undefined): void;
-}
 
 export interface SharedRegistryOptions {
   state: State;
   namespace: string;
-  store: PersistenceStore;
-  /** Run `fn` once the world is readable — `system.run` in the engine. */
-  defer(fn: () => void): void;
-  log?(message: string): void;
-}
-
-function isShape(value: unknown): value is Shape {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 export class SharedRegistry {
   private readonly _state: State;
   private readonly _namespace: string;
-  private readonly _store: PersistenceStore;
-  private readonly _defer: (fn: () => void) => void;
-  private readonly _log: (message: string) => void;
   private readonly _peers = new Map<string, { shape: Shape; tree: unknown }>();
   private _own: unknown;
-  private _leaves: readonly LeafSpec[] = [];
 
   constructor(options: SharedRegistryOptions) {
     this._state = options.state;
     this._namespace = options.namespace;
-    this._store = options.store;
-    this._defer = options.defer;
-    this._log = options.log ?? ((message: string): void => {
-      console.warn(message);
-    });
   }
 
   /** This addon's tree, once declared. */
@@ -79,41 +56,41 @@ export class SharedRegistry {
   }
 
   /**
-   * Declare this addon's shared shape: writes initial values, announces the leaf paths, restores
-   * persisted leaves one tick later. Once per addon.
+   * Declare this addon's shared keys: writes the initial values and announces the key names.
+   * Once per addon.
    */
   define<Def extends SharedDef>(def: Def): SharedTree<Def> {
     if (this._own !== undefined) {
       throw new Error('[shared] already declared for this addon');
     }
 
-    const leaves = compileShared(def);
-    const backend = this._ownBackend();
-    const tree = materialize(backend, leaves, true) as SharedTree<Def>; // eslint-disable-line @typescript-eslint/no-unsafe-type-assertion
+    const keys = Object.keys(def);
 
-    this._leaves = leaves;
-    this._own = tree;
-
-    for (const spec of leaves) {
-      if (!spec.persisted) {
-        this._state.set(this._namespace, spec.path, spec.initial, { open: spec.open });
+    for (const key of keys) {
+      // Framework announcements — the config schema, guides, this very shape — ride the same
+      // mirror under `core-` keys, so an addon's own key may not start there.
+      if (key.startsWith(RESERVED_STATE_PREFIX)) {
+        throw new Error(`[shared] '${key}' is reserved: keys beginning '${RESERVED_STATE_PREFIX}' belong to the framework`);
       }
     }
 
-    this._state.set(this._namespace, SHARED_SHAPE_KEY, shapeOf(leaves));
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion
+    const tree = materialize(this._ownBackend(), keys, def) as SharedTree<Def>;
 
-    if (leaves.some(spec => spec.persisted)) {
-      this._defer(() => {
-        this._restore();
-      });
+    this._own = tree;
+
+    for (const key of keys) {
+      this._state.set(this._namespace, key, def[key]);
     }
+
+    this._state.set(this._namespace, SHARED_SHAPE_KEY, keys);
 
     return tree;
   }
 
   /**
    * A peer's tree, typed by the declaration the peer exports, or `undefined` until the peer has
-   * announced its shape. Read-only except for leaves the peer opened.
+   * announced its keys. Read-only: only the owner writes its own namespace.
    */
   of<Def extends SharedDef>(namespace: string): PeerSharedTree<Def> | undefined {
     const announced = this._state.get(namespace, SHARED_SHAPE_KEY);
@@ -128,7 +105,7 @@ export class SharedRegistry {
       return cached.tree as PeerSharedTree<Def>; // eslint-disable-line @typescript-eslint/no-unsafe-type-assertion
     }
 
-    const tree = materialize(this._peerBackend(namespace), leavesOfShape(announced), false);
+    const tree = materialize(this._peerBackend(namespace), announced);
 
     this._peers.set(namespace, { shape: announced, tree });
 
@@ -139,69 +116,25 @@ export class SharedRegistry {
     const namespace = this._namespace;
 
     return {
-      read: (path): unknown => this._state.get(namespace, path),
-      write: (path, value, spec): void => {
-        this._state.set(namespace, path, value, { open: spec.open });
-
-        if (spec.persisted) {
-          this._persist(spec, value);
-        }
-      },
-      onChange: listener => this._changesOf(namespace, listener),
+      read: (key): unknown => this._state.get(namespace, key),
+      write: (key, value): void => { this._state.set(namespace, key, value); },
+      onChange: (key, listener) => this._changesOf(namespace, key, listener),
     };
   }
 
+  /** No `write`: a peer's node refuses at the call, and sync would drop the message anyway. */
   private _peerBackend(namespace: string): SharedBackend {
     return {
-      read: (path): unknown => this._state.get(namespace, path),
-      write: (path, value, spec): void => {
-        if (!spec.open) {
-          throw new Error(`[shared] '${namespace}' did not open '${path}': only its owner may write it`);
-        }
-
-        this._state.set(namespace, path, value);
-      },
-      onChange: listener => this._changesOf(namespace, listener),
+      read: (key): unknown => this._state.get(namespace, key),
+      onChange: (key, listener) => this._changesOf(namespace, key, listener),
     };
   }
 
-  private _changesOf(namespace: string, listener: (path: string, value: unknown) => void): Unsubscribe {
+  private _changesOf(namespace: string, key: string, listener: () => void): Unsubscribe {
     return this._state.subscribe((change: StateChange) => {
-      if (change.ns === namespace && !change.key.startsWith(RESERVED_STATE_PREFIX)) {
-        listener(change.key, change.value);
+      if (change.ns === namespace && change.key === key) {
+        listener();
       }
     });
-  }
-
-  private _persist(spec: LeafSpec, value: unknown): void {
-    const key = sharedDpKey(this._namespace, spec.path);
-
-    try {
-      this._store.write(key, value === undefined ? undefined : JSON.stringify(value));
-    } catch (error) {
-      this._log(`[shared] could not persist '${spec.path}': ${String(error)}`);
-    }
-  }
-
-  /** Persisted leaves come back from the world, or start at their declared value. */
-  private _restore(): void {
-    for (const spec of this._leaves) {
-      if (!spec.persisted) {
-        continue;
-      }
-
-      const raw = this._store.read(sharedDpKey(this._namespace, spec.path));
-      let value: unknown = spec.initial;
-
-      if (raw !== undefined) {
-        try {
-          value = JSON.parse(raw);
-        } catch (error) {
-          this._log(`[shared] '${spec.path}' on the world is not JSON, using the declared value: ${String(error)}`);
-        }
-      }
-
-      this._state.set(this._namespace, spec.path, value, { open: spec.open });
-    }
   }
 }

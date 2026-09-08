@@ -116,6 +116,9 @@ export const MessageType = {
 
   /** A full namespace dump used to (re)build a mirror. */
   StateSnapshot: 'state-snapshot',
+
+  /** A happening the sender announces to every realm; delivered once, kept by nobody. */
+  Event: 'event',
 } as const;
 
 export type MessageType = typeof MessageType[keyof typeof MessageType];

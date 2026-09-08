@@ -1,368 +1,157 @@
 /**
- * The shared tree: a `shared` declaration materialized once into nodes, every node carrying
- * `get` / `subscribe`, own leaves and branches also `set` / `patch`. Nested keys flatten to dotted
- * mirror keys (`event.active`); the tree is the typed view over them, and each leaf is a
- * `ReadonlyObservable` in the `@bedrock-core/observable` sense — `computed`, `effect`,
- * `useObservable` and `toNative` take it as it is.
+ * The shared tree: one node per declared key, each an observable over the mirror.
+ *
+ * A declaration is a flat record — every top-level key is one value, an object included, written
+ * and replicated whole. There is no nesting, no dotted key, no branch: a shape that wants
+ * structure puts an object in one key and pays for it on every write, which is the honest cost
+ * (publishing serializes on the owner's tick).
+ *
+ * A node's `get` / `subscribe` pair is `@bedrock-core/observable`'s `ReadonlyObservable`, so a
+ * shared value can be `computed` over or handed to a UI hook exactly like a config leaf or a db
+ * document. The owner's nodes also have `set`; a peer's never do — a peer that wants a change asks
+ * the owner over rpc.
  *
  * Nothing here knows the engine or the transport: a tree talks to a {@link SharedBackend}, which
  * the registry implements over sync's `State`. That is what lets the tree be tested in vitest and
  * lets the same code build a peer's read-only tree from an announced shape.
  */
 import type { Unsubscribe } from '@bedrock-core/sync';
-import { isMarked, type Marked, type Unmarked } from './markers';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
-/** A declaration: values are leaves, plain objects are branches, markers wrap either. */
+/** A declaration: a flat record of keys to their initial values. */
 export type SharedDef = Readonly<Record<string, unknown>>;
 
-type IsPlain<V> = V extends readonly unknown[] ? false : V extends (...args: never[]) => unknown ? false : V extends object ? true : false;
+/** The observable listener signature: the new value and the one before it. */
+export type Listener<T> = (next: T, prev: T) => void;
 
-type IsBranch<N> = N extends Marked<infer V, infer L, boolean> ? (L extends true ? false : IsPlain<V>) : IsPlain<N>;
-
-type IsOpen<N> = N extends Marked<unknown, boolean, infer O> ? O : false;
-
-/** The runtime value a node holds: a leaf's value, or a branch's leaves as a nested object. */
-export type SharedValue<N> = IsBranch<N> extends true
-  ? { -readonly [K in keyof Unmarked<N>]: SharedValue<Unmarked<N>[K]> }
-  : Unmarked<N>;
-
-export type Listener<T> = (value: T) => void;
-
-export interface SharedLeaf<T> {
+/** The owner's view of one key. */
+export interface SharedValue<T> {
   get(): T;
   set(value: T): void;
   subscribe(listener: Listener<T>): Unsubscribe;
 }
 
-export interface SharedBranch<V> {
-  get(): V;
-  set(value: V): void;
-  /** Writes only the leaves present in `changes`, at any depth. */
-  patch(changes: DeepPartial<V>): void;
-  /** Fires with the whole branch when any leaf under it changes. */
-  subscribe(listener: Listener<V>): Unsubscribe;
-}
-
-export type DeepPartial<V> = V extends readonly unknown[] ? V : V extends object ? { [K in keyof V]?: DeepPartial<V[K]> } : V;
-
-export type SharedNode<N> = IsBranch<N> extends true
-  ? SharedBranch<SharedValue<N>> & { readonly [K in keyof Unmarked<N>]: SharedNode<Unmarked<N>[K]> }
-  : SharedLeaf<SharedValue<N>>;
-
-/** The owner's tree: the declaration, typed. */
-export type SharedTree<Def extends SharedDef> = SharedBranch<SharedValue<Def>> & { readonly [K in keyof Def]: SharedNode<Def[K]> };
-
-/** A peer's value can lag its shape: a leaf the mirror has not received yet reads `undefined`. */
-export type PeerValue<N> = IsBranch<N> extends true
-  ? { -readonly [K in keyof Unmarked<N>]: PeerValue<Unmarked<N>[K]> }
-  : Unmarked<N> | undefined;
-
-export interface PeerLeaf<T> {
+/** A peer's view of one key: readable, and `undefined` until the owner's value has arrived. */
+export interface PeerValue<T> {
   get(): T | undefined;
   subscribe(listener: Listener<T | undefined>): Unsubscribe;
 }
 
-export interface OpenPeerLeaf<T> extends PeerLeaf<T> {
-  /** The owner opened this leaf: any realm may write it. */
-  set(value: T): void;
-}
+/** The owner's tree: the declaration, typed. */
+export type SharedTree<Def extends SharedDef> = { readonly [K in keyof Def]: SharedValue<Def[K]> };
 
-export interface PeerBranch<V> {
-  get(): V;
-  subscribe(listener: Listener<V>): Unsubscribe;
-}
+/** A peer's tree: the same keys, read-only. */
+export type PeerSharedTree<Def extends SharedDef> = { readonly [K in keyof Def]: PeerValue<Def[K]> };
 
-export type PeerNode<N> = IsBranch<N> extends true
-  ? PeerBranch<PeerValue<N>> & { readonly [K in keyof Unmarked<N>]: PeerNode<Unmarked<N>[K]> }
-  : IsOpen<N> extends true ? OpenPeerLeaf<Unmarked<N>> : PeerLeaf<Unmarked<N>>;
+/** What the owner announces: its key names. Values travel as themselves, never here. */
+export type Shape = readonly string[];
 
-/** A peer's tree: read-only except where the owner said otherwise. */
-export type PeerSharedTree<Def extends SharedDef> = PeerBranch<PeerValue<Def>> & { readonly [K in keyof Def]: PeerNode<Def[K]> };
-
-// ─── The compiled declaration ──────────────────────────────────────────────────
-
-export interface LeafSpec {
-  /** The dotted mirror key. */
-  readonly path: string;
-  readonly initial: unknown;
-  readonly open: boolean;
-  readonly persisted: boolean;
-}
-
-/** What the owner announces: every leaf path, and which are open. Values never travel here. */
-export type Shape = Readonly<Record<string, { readonly o?: true }>>;
-
-/** Names a branch cannot give a child, because the branch itself answers to them. */
-export const RESERVED_SHARED_KEYS: readonly string[] = ['get', 'set', 'patch', 'subscribe'];
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value) && Object.getPrototypeOf(value) === Object.prototype;
-}
-
-/** Walk a declaration into leaf specs; markers on a branch are inherited by everything under it. */
-export function compileShared(def: SharedDef): LeafSpec[] {
-  const leaves: LeafSpec[] = [];
-
-  const walk = (node: unknown, path: string, open: boolean, persisted: boolean): void => {
-    let value = node;
-    let forcedLeaf = false;
-
-    if (isMarked(node)) {
-      value = node.value;
-      forcedLeaf = node.leaf;
-      open = open || node.open;
-      persisted = persisted || node.persisted;
-    }
-
-    if (!forcedLeaf && isPlainObject(value)) {
-      for (const key of Object.keys(value)) {
-        if (RESERVED_SHARED_KEYS.includes(key)) {
-          throw new Error(`[shared] '${path === '' ? key : `${path}.${key}`}' is reserved — a branch answers to ${RESERVED_SHARED_KEYS.join(', ')}`);
-        }
-
-        if (key.includes('.')) {
-          throw new Error(`[shared] '${key}' cannot contain a dot: dots separate the mirror key`);
-        }
-
-        walk(value[key], path === '' ? key : `${path}.${key}`, open, persisted);
-      }
-
-      return;
-    }
-
-    if (path === '') {
-      throw new Error('[shared] the declaration itself must be an object of keys');
-    }
-
-    leaves.push({ path, initial: value, open, persisted });
-  };
-
-  walk(def, '', false, false);
-
-  return leaves;
-}
-
-export function shapeOf(leaves: readonly LeafSpec[]): Shape {
-  const shape: Record<string, { o?: true }> = {};
-
-  for (const spec of leaves) {
-    shape[spec.path] = spec.open ? { o: true } : {};
-  }
-
-  return shape;
-}
-
-export function leavesOfShape(shape: Shape): LeafSpec[] {
-  return Object.keys(shape).map(path => ({ path, initial: undefined, open: shape[path]?.o === true, persisted: false }));
+export function isShape(value: unknown): value is Shape {
+  return Array.isArray(value) && value.every(key => typeof key === 'string');
 }
 
 // ─── The backend ───────────────────────────────────────────────────────────────
 
-/** What a tree needs from the mirror. Keys are the dotted leaf paths. */
+/** What a tree needs from the mirror. */
 export interface SharedBackend {
-  read(path: string): unknown;
-  /** Throws when this realm may not write the key. */
-  write(path: string, value: unknown, spec: LeafSpec): void;
-  /** Every change to a key of this namespace, local or remote. */
-  onChange(listener: (path: string, value: unknown) => void): Unsubscribe;
+  read(key: string): unknown;
+  /** Only an owner's backend has one; a peer's tree never writes. */
+  write?(key: string, value: unknown): void;
+  /** Called whenever `key` changes in this namespace, local or remote. */
+  onChange(key: string, listener: () => void): Unsubscribe;
 }
 
-// ─── Materialization ───────────────────────────────────────────────────────────
+// ─── The node ──────────────────────────────────────────────────────────────────
 
-interface Dispatcher {
-  on(path: string, listener: (path: string, value: unknown) => void): Unsubscribe;
-}
+/**
+ * One key, as an observable.
+ *
+ * The mirror is the value: `get` reads it every time rather than caching, so a node is always
+ * right even before anything has subscribed. The backend subscription is attached with the first
+ * listener and released with the last, so a tree nobody watches costs nothing per change.
+ */
+class Node {
+  private readonly _listeners = new Set<Listener<unknown>>();
+  private _release: Unsubscribe | undefined;
+  private _prev: unknown;
 
-/** One backend subscription per tree, attached on the first subscriber and released on the last. */
-function createDispatcher(backend: SharedBackend): Dispatcher {
-  const listeners = new Map<string, Set<(path: string, value: unknown) => void>>();
-  let release: Unsubscribe | undefined;
-  let count = 0;
-
-  const dispatch = (path: string, value: unknown): void => {
-    for (const [prefix, set] of listeners) {
-      if (prefix === '' || path === prefix || path.startsWith(`${prefix}.`)) {
-        for (const listener of [...set]) {
-          listener(path, value);
-        }
-      }
-    }
-  };
-
-  return {
-    on: (path, listener): Unsubscribe => {
-      let set = listeners.get(path);
-
-      if (set === undefined) {
-        set = new Set();
-        listeners.set(path, set);
-      }
-
-      set.add(listener);
-      count++;
-      release ??= backend.onChange(dispatch);
-
-      let released = false;
-
-      return (): void => {
-        if (released) {
-          return;
-        }
-
-        released = true;
-        set.delete(listener);
-
-        if (set.size === 0) {
-          listeners.delete(path);
-        }
-
-        if (--count === 0 && release !== undefined) {
-          release();
-          release = undefined;
-        }
-      };
-    },
-  };
-}
-
-class LeafNode {
   constructor(
     private readonly _backend: SharedBackend,
-    private readonly _dispatcher: Dispatcher,
-    private readonly _spec: LeafSpec,
-    private readonly _fallback: boolean,
+    private readonly _key: string,
+    private readonly _initial: unknown,
+    private readonly _hasInitial: boolean,
   ) {}
 
   get(): unknown {
-    const value = this._backend.read(this._spec.path);
+    const value = this._backend.read(this._key);
 
-    return value === undefined && this._fallback ? this._spec.initial : value;
+    return value === undefined && this._hasInitial ? this._initial : value;
   }
 
   set(value: unknown): void {
-    this._backend.write(this._spec.path, value, this._spec);
+    const write = this._backend.write;
+
+    if (write === undefined) {
+      throw new Error(`[shared] '${this._key}' belongs to another addon: only its owner may write it`);
+    }
+
+    write.call(this._backend, this._key, value);
   }
 
   subscribe(listener: Listener<unknown>): Unsubscribe {
-    return this._dispatcher.on(this._spec.path, (_path, value) => {
-      listener(value === undefined && this._fallback ? this._spec.initial : value);
-    });
-  }
-}
-
-class BranchNode {
-  constructor(
-    private readonly _backend: SharedBackend,
-    private readonly _dispatcher: Dispatcher,
-    private readonly _path: string,
-    private readonly _leaves: readonly LeafSpec[],
-    private readonly _fallback: boolean,
-  ) {}
-
-  get(): Record<string, unknown> {
-    const value: Record<string, unknown> = {};
-    const from = this._path === '' ? 0 : this._path.length + 1;
-
-    for (const spec of this._leaves) {
-      const read = this._backend.read(spec.path);
-
-      setAtPath(value, spec.path.slice(from), read === undefined && this._fallback ? spec.initial : read);
+    if (this._listeners.size === 0) {
+      this._prev = this.get();
+      this._release = this._backend.onChange(this._key, () => { this._fire(); });
     }
 
-    return value;
+    this._listeners.add(listener);
+
+    let released = false;
+
+    return (): void => {
+      if (released) { return; }
+
+      released = true;
+      this._listeners.delete(listener);
+
+      if (this._listeners.size === 0 && this._release !== undefined) {
+        this._release();
+        this._release = undefined;
+      }
+    };
   }
 
-  set(value: unknown): void {
-    this._writeFrom(value, true);
-  }
+  /** One listener that throws must not stop the others, and must not escape into the engine. */
+  private _fire(): void {
+    const next = this.get();
+    const prev = this._prev;
 
-  patch(changes: unknown): void {
-    this._writeFrom(changes, false);
-  }
+    this._prev = next;
 
-  subscribe(listener: Listener<Record<string, unknown>>): Unsubscribe {
-    return this._dispatcher.on(this._path, () => {
-      listener(this.get());
-    });
-  }
-
-  /** Writes each leaf under this branch from a nested value; a leaf absent from the value is skipped on patch, written as `undefined` on set. */
-  private _writeFrom(value: unknown, whole: boolean): void {
-    const from = this._path === '' ? 0 : this._path.length + 1;
-
-    for (const spec of this._leaves) {
-      const found = valueAtPath(value, spec.path.slice(from));
-
-      if (found.present || whole) {
-        this._backend.write(spec.path, found.value, spec);
+    for (const listener of [...this._listeners]) {
+      try {
+        listener(next, prev);
+      } catch (error) {
+        console.warn(`[shared] a listener for '${this._key}' threw: ${String(error)}`);
       }
     }
   }
 }
 
-function setAtPath(target: Record<string, unknown>, path: string, value: unknown): void {
-  const parts = path.split('.');
-  let cursor = target;
-
-  for (let i = 0; i < parts.length - 1; i++) {
-    const part = parts[i] ?? '';
-    const next = cursor[part];
-
-    if (isPlainObject(next)) {
-      cursor = next;
-    } else {
-      const created: Record<string, unknown> = {};
-
-      cursor[part] = created;
-      cursor = created;
-    }
-  }
-
-  cursor[parts[parts.length - 1] ?? ''] = value;
-}
-
-function valueAtPath(source: unknown, path: string): { present: boolean; value: unknown } {
-  let cursor: unknown = source;
-
-  for (const part of path.split('.')) {
-    if (!isPlainObject(cursor) || !(part in cursor)) {
-      return { present: false, value: undefined };
-    }
-
-    cursor = cursor[part];
-  }
-
-  return { present: cursor !== undefined, value: cursor };
-}
-
 /**
- * Build the node tree for a set of leaves. `fallback` makes a leaf read its declared initial value
- * while the mirror has none — the owner's tree before its first write lands; a peer's tree reads
- * `undefined` there instead, since it never knows the initial values.
+ * A node per key.
+ *
+ * `initial` is the owner's declared values, read while the mirror has none — the owner's tree
+ * answers correctly before its first write lands. A peer passes nothing and reads `undefined`
+ * there instead, since it never knows what the owner declared.
  */
-export function materialize(backend: SharedBackend, leaves: readonly LeafSpec[], fallback: boolean): Record<string, unknown> {
-  const dispatcher = createDispatcher(backend);
+export function materialize(backend: SharedBackend, keys: Shape, initial?: SharedDef): Record<string, unknown> {
+  const tree: Record<string, unknown> = {};
 
-  const build = (path: string): unknown => {
-    const under = path === '' ? leaves : leaves.filter(spec => spec.path === path || spec.path.startsWith(`${path}.`));
-    const exact = under.find(spec => spec.path === path);
+  for (const key of keys) {
+    tree[key] = new Node(backend, key, initial?.[key], initial !== undefined);
+  }
 
-    if (exact !== undefined) {
-      return new LeafNode(backend, dispatcher, exact, fallback);
-    }
-
-    const node: Record<string, unknown> = Object.create(new BranchNode(backend, dispatcher, path, under, fallback)) as Record<string, unknown>; // eslint-disable-line @typescript-eslint/no-unsafe-type-assertion
-    const from = path === '' ? 0 : path.length + 1;
-    const childNames = new Set(under.map(spec => spec.path.slice(from).split('.')[0] ?? ''));
-
-    for (const name of childNames) {
-      node[name] = build(path === '' ? name : `${path}.${name}`);
-    }
-
-    return node;
-  };
-
-  return build('') as Record<string, unknown>; // eslint-disable-line @typescript-eslint/no-unsafe-type-assertion
+  return tree;
 }

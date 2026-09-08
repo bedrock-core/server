@@ -241,20 +241,22 @@ export class Runtime {
     });
     const registry = new Registry(node.discovery, validated);
     const features = new FeatureManager(registry, node.state, namespace);
-    const config = new ConfigRegistry(node, namespace);
-    const translations = new TranslationsRegistry(node.state, namespace);
-    const guides = new GuidesRegistry(node.state, namespace);
-    const pages = new PagesRegistry(node.state, namespace);
-    const host = new HostElection(registry, namespace);
-    const shared = new SharedRegistry({ state: node.state, namespace, store: worldStore, defer: deferToNextTick });
     // Documents are announced on this addon's own shared namespace, under a reserved prefix so a
     // collection can never collide with a key the addon shares itself. Peers read these through
     // `core.query`, which is what gives them status and staleness; `core.shared` is the transport.
+    //
+    // Before the config registry, which stores its scopes as collections on it.
     const db = createEngineDb(namespace, message => console.warn(message), {
       set: (collection, key, value): void => {
         node.state.set(namespace, `core-db/${collection}/${key}`, value);
       },
     });
+    const config = new ConfigRegistry(node, namespace, db);
+    const translations = new TranslationsRegistry(node.state, namespace);
+    const guides = new GuidesRegistry(node.state, namespace);
+    const pages = new PagesRegistry(node.state, namespace);
+    const host = new HostElection(registry, namespace);
+    const shared = new SharedRegistry({ state: node.state, namespace, store: worldStore, defer: deferToNextTick });
 
     this._node = node;
     this._registry = registry;

@@ -27,7 +27,7 @@ const db = createEngineDb('drav0011_economy');
 const balances = db.collection('balances', { schema: schema<{ gold: number; lastSeen: number }>() });
 
 balances.for(player).get();                 // undefined until written; cached after the first read
-balances.for(player).patch({ gold: 10 });   // written through, one dynamic property
+balances.for(player).patch({ gold: 10 });   // written through, one dynamic property; merges deep
 balances.for(player).subscribe(doc => hud.refresh(doc));
 
 // With an acceptor `for()` only takes a Block, and `require` is checked against what a Block can do.
@@ -50,7 +50,13 @@ elevators.where(stone);                     // { ok: false, reason: "minecraft:s
 
 - **One JSON string per document**, `{"v":3,"d":{…}}`. The version travels with the bytes, so an
   old document is migrated **lazily, on first read**, step by step, and rewritten once. `defaults`
-  fill missing keys on read and are never stored.
+  fill missing keys on read, at every depth, and are never stored.
+- **`patch` merges deep**: a nested object merges key by key, an array replaces the one there,
+  `undefined` deletes a key. What is stored is exactly what was written. A schema's `normalize`
+  runs over every write — `set`, `patch`, a peer's RPC — and what it returns is what is stored:
+  the place to clamp a value or drop one that should not be kept.
+- **A subscriber attached before the first read hears the document load**, so subscribing at
+  registration and reading a tick later — when the world can first be read — works.
 - **A document that cannot be read is quarantined** under `<key>#bad` and logged, never deleted.
 - **Budget checked before the engine sees it.** A block entity holds ~950 bytes per pack; more
   throws `DbBudgetError` naming the collection. On the world, entities and slots a document past

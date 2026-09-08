@@ -12,12 +12,14 @@ flowchart TB
         cfg["config accessor tree<br/>sync · typed · scalars"]
         col["db collections<br/>sync · typed · documents"]
         sh1["shared mirror<br/>own namespace + announcements"]
+        ev1["events<br/>emit · delivered, not kept"]
         ui1["screens<br/>useObservable"]
     end
 
     subgraph peer["Peer realm — any other bedrock-core addon"]
         q["query cache<br/>data · status · staleness"]
-        sh2["shared mirror<br/>read any · write own or open"]
+        sh2["shared mirror<br/>read any · owner writes"]
+        ev2["event listeners<br/>subscribe by ns + name"]
         st2["observable"]
         ui2["screens<br/>useObservable"]
     end
@@ -40,12 +42,14 @@ flowchart TB
     col -->|"own host, write-through"| bdp
     col -->|"own host, write-through"| sdp
     col -->|"proxied host"| wdp
-    sh1 -->|"persisted(), via world host"| wdp
 
     cfg -->|"schema, once at register"| sh1
-    col -->|"shared: true — warm value or version stamp"| sh1
+    col -->|"the owner maps a document onto a key"| sh1
+    col -->|"the owner announces a happening"| ev1
 
     sh1 <-->|"deltas, owner-filtered"| bus
+    ev1 -->|"one message per emit"| bus
+    bus -->|"delivered once, to whoever listens"| ev2
     bus <-->|"deltas"| sh2
     sh2 -->|"warm read · invalidation"| q
     q -.->|"RPC read · mutate, next tick"| bus
@@ -54,6 +58,7 @@ flowchart TB
     ui2 -->|"useObservable"| q
     ui2 -->|"useObservable"| st2
     sh2 -->|"of(ns).get"| ui2
+    ev2 -->|"marks an entry stale"| q
 ```
 
 ## Where a value can be seen

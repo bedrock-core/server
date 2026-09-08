@@ -29,20 +29,21 @@ build against has to match the one your pack's `manifest.json` declares.
 - **Features** — `core.features.add()` declares a capability that auto-enables when its condition
   holds, driven by registry presence, replicated state, or another addon's published features
 - **Config** — declare a schema once and get typed accessor trees over three scopes (`server`,
-  `dimension`, `player`), persisted in dynamic properties, readable and writable cross-addon over
-  RPC with player-level authorization
+  `dimension`, `player`), each a db document with a form on top, readable and writable cross-addon
+  over db's RPC with player-level authorization
 - **Translations and guides** — publish your i18n bundle and compiled guide manifest, and resolve
   any peer's strings server-side for text measurement
 - **Host election** — `core.host` picks the realm running the newest runtime, with no negotiation
   messages, so exactly one realm serves shared UI for the whole world
 - **Messaging and the shared mirror** — `core.rpc`, and a `shared` shape declared in `register()` that every realm mirrors as a typed tree (`core.shared.of()` for a peer's), with the
   raw sync node available at `core.node`
+- **Events** — declare what this addon announces in `register({ events })`, `emit` it, and any realm listens with `core.events.of()`; delivered in the same tick and kept by nobody
 - **Documents** — `core.db`, this addon's `@bedrock-core/db`: typed, versioned documents keyed by player, entity, block or world, stored on whatever the target itself can hold
 
 ## Usage
 
 ```ts
-import { core, persisted, players, schema } from '@bedrock-core/server-runtime';
+import { core, event, players, schema } from '@bedrock-core/server-runtime';
 import bundle from '@bedrock-core/generated/i18n';
 import guides from '@bedrock-core/generated/guides';
 
@@ -63,7 +64,10 @@ const { config, shared } = core.register({
   },
   shared: {                       // optional — what every realm mirrors; only this one writes it
     currency: 'gold',
-    event: persisted({ name: 'none', active: false }),   // survives restarts
+    event: { name: 'none', active: false },   // one key, one value, written whole
+  },
+  events: {                       // optional — what this addon announces to every realm
+    purchase: event<{ playerId: string; gold: number }>(),
   },
 });
 
@@ -75,10 +79,14 @@ const balances = core.db.collection('balances', { schema: schema<{ gold: number 
 balances.for(player).patch({ gold: 10 });
 
 shared.currency.set('emerald');       // every realm sees it this tick
+events.purchase.emit({ playerId: player.id, gold: 5 });   // announced once, kept by nobody
 shared.event.subscribe(event => console.warn('event', event.name, event.active));
 
-// A peer's shared tree, typed by the declaration the peer exports; read-only unless it said open().
+// A peer's shared tree, typed by the declaration the peer exports. Read-only: only an owner writes.
 core.shared.of<ShopShared>('os_shop')?.stock.subscribe(stock => console.warn('stock', stock));
+
+// A peer's events. Attaching before that addon exists is fine — an event missed is missed for good.
+core.events.of<ShopEvents>('os_shop').sale.subscribe(({ item }) => console.warn('sold', item));
 
 core.registry.onRegister(addon => console.warn('joined:', addon.id));
 
@@ -98,7 +106,8 @@ core.rpc.request('os_shop', 'getStock', {}).then(stock => console.warn('stock', 
   scopes, cross-addon access, authorization
 - [Translations](https://bedrock-core.drav.dev/docs/server/server-runtime/translations) ·
   [Guides](https://bedrock-core.drav.dev/docs/server/server-runtime/guides) ·
-  [Shared](https://bedrock-core.drav.dev/docs/server/server-runtime/shared)
+  [Shared](https://bedrock-core.drav.dev/docs/server/server-runtime/shared) ·
+  [Events](https://bedrock-core.drav.dev/docs/server/server-runtime/events)
 - [UI integration](https://bedrock-core.drav.dev/docs/server/ui-integration) — what the runtime
   publishes and which UI package draws it
 

@@ -29,8 +29,9 @@ does: a shared mirror. Each is its own package; all of them ride
 | Concern | Package · surface | You own it | Lives in | Survives restart | Who writes |
 | --- | --- | --- | --- | --- | --- |
 | **Observable** | `@bedrock-core/observable` · `observable` | yes | memory | no | you |
-| **Shared** | `@bedrock-core/sync` · `core.shared` | your namespace | every realm's mirror | with `persisted()` | you; others on `open()` branches |
+| **Shared** | `@bedrock-core/sync` · `core.shared` | your namespace | every realm's mirror | no — map a document onto it | the owner, nobody else |
 | **DB** | `@bedrock-core/db` · `core.db` | yes | your dynamic properties | yes | you |
+| **Events** | `@bedrock-core/sync` · `core.events` | your namespace | nowhere — delivered and forgotten | no | the owner, nobody else |
 | **Query** | `@bedrock-core/query` · `core.query` | **a peer** | your cache | no | the owner, via `mutate` |
 
 Rule for surfaces: `core.X` needs the mesh; a plain import is pure.
@@ -40,7 +41,7 @@ Rule for surfaces: `core.X` needs the mesh; a plain import is pure.
 | Page | One line |
 | --- | --- |
 | [01-observable](./01-observable.md) | The reactive primitive: `observable` / `computed` / `batch`, synchronous scheduling, the `useObservable` hook, the `toNative` DDUI bridge |
-| [02-shared](./02-shared.md) | `core.state` renamed: a typed accessor tree per namespace, owner-only writes with `open()` branches, `persisted()`, what the framework announces here |
+| [02-shared](./02-shared.md) | The mirror, cut to one job: a flat record of keys, one observable each, owner-only writes, no persistence, what the framework announces here |
 | [03-db](./03-db.md) | Persisted documents: the capability-probing host resolver, document schema and migrations, block documents, validity, static `accept`/`require` checks |
 | [04-query](./04-query.md) | A peer's data as a cache with a lifecycle: typed keys, `core.query.*` client, `useQuery` / `useMutation`, invalidation through the mirror, optimistic `mutate` |
 | [05-config](./05-config.md) | Config re-based on db: schema migrations, what changes and what does not |
@@ -48,6 +49,7 @@ Rule for surfaces: `core.X` needs the mesh; a plain import is pure.
 | [07-trust-model](./07-trust-model.md) | What the framework can and cannot defend against, and what "security" means here |
 | [08-data-flow](./08-data-flow.md) | Every place a value can be seen and every edge it travels, across the four concerns |
 | [09-plan](./09-plan.md) | Phases, estimates, the spikes |
+| [10-events](./10-events.md) | A broadcast delivered and forgotten: declared payloads, owner-only emit, listeners that may attach before the owner exists |
 | [spikes/](./spikes/) | Findings pages — every measured number these pages rely on |
 
 ## Glossary

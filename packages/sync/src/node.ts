@@ -1,7 +1,7 @@
 /**
  * A SyncNode is one addon's handle to the cross-addon layer. It owns and wires together the
- * four subsystems — {@link Bus}, {@link Discovery}, {@link Rpc} and {@link State} — and
- * drives their shared lifecycle.
+ * five subsystems — {@link Bus}, {@link Discovery}, {@link Rpc}, {@link State} and
+ * {@link Events} — and drives their shared lifecycle.
  *
  * sync is the first layer on `@minecraft/server`: a node needs no engine, just an id. Several
  * nodes can live in one script realm (they talk over the real `system` script-event bus),
@@ -9,6 +9,7 @@
  */
 import { Bus } from './bus';
 import { Discovery } from './discovery';
+import { Events } from './events';
 import { Rpc } from './rpc';
 import { State } from './state';
 
@@ -46,6 +47,7 @@ export class SyncNode {
   readonly discovery: Discovery;
   readonly rpc: Rpc;
   readonly state: State;
+  readonly events: Events;
 
   constructor(options: SyncNodeOptions) {
     const owned = options.ownedNamespaces ?? [options.id];
@@ -59,6 +61,7 @@ export class SyncNode {
     });
     this.rpc = new Rpc(this.bus);
     this.state = new State(this.bus, options.id, { ownedNamespaces: owned, strictOwnership: options.strictOwnership });
+    this.events = new Events(this.bus, options.id);
   }
 
   /** Start every subsystem. Idempotent. Order matters — see inline notes. */
@@ -71,6 +74,7 @@ export class SyncNode {
     this.bus.start();
     // 2. Responders before announcers, so an incoming whois/state-req is already answerable.
     this.rpc.start();
+    this.events.start();
     this.discovery.start();
     // 3. State announces a sync request + broadcasts its owned snapshots.
     this.state.start();
@@ -83,6 +87,7 @@ export class SyncNode {
 
     this.state.stop();
     this.discovery.stop();
+    this.events.stop();
     this.rpc.stop();
     this.bus.stop();
   }
