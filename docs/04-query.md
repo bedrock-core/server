@@ -148,8 +148,7 @@ accident, so they stay different on purpose.
 - `RemoteConfigAccessor` / `TypedRemoteConfig` / `core.config.of(ns)` — kept one minor as a
   deprecated alias over `core.query.observe(peerConfig(ns).*)`.
 - The live-value-push proposal (`core:config.watch` / `core:config.changed`) — an owner that wants
-  peers told emits an event or mirrors a value, and a query subscribes to whichever it named. No
-  interest protocol.
+  peers told emits an event or mirrors a value, and a query subscribes to whichever it named.
 
 ## Measure
 

@@ -16,7 +16,6 @@ import { SyncNode } from '@bedrock-core/sync';
 import { addonNamespace, type AddonManifest, manifestToMeta, validateManifest } from './manifest';
 import { FeatureManager } from './features';
 import { Registry } from './registry';
-import { ScopedState } from './scoped-state';
 import { ConfigRegistry, type Config } from './config/config-registry';
 import type { ConfigDefinition } from './config/schema';
 import type { I18nBundle } from '@bedrock-core/i18n';
@@ -115,7 +114,6 @@ export class Runtime {
   private _registry: Registry | undefined;
   private _features: FeatureManager | undefined;
   private _manifest: AddonManifest | undefined;
-  private _state: ScopedState | undefined;
   private _shared: SharedRegistry | undefined;
   private _events: EventsRegistry | undefined;
   private _db: Db | undefined;
@@ -133,7 +131,7 @@ export class Runtime {
   /**
    * This addon's namespace: `creator_pack` (e.g. `bt_gc_economy`).
    *
-   * The one identifier it is known by — RPC targeting, state keys, dependency declarations,
+   * The one identifier it is known by — RPC targeting, mirror keys, dependency declarations,
    * and the namespace of any custom command or command enum it registers.
    */
   get id(): string {
@@ -213,14 +211,6 @@ export class Runtime {
     return this.require(this._db, 'db');
   }
 
-  /**
-   * @deprecated String-keyed access to this addon's namespace. Declare a `shared` shape in
-   * `register()` and use the typed tree; the raw mirror stays at `core.node.state`.
-   */
-  get state(): ScopedState {
-    return this.require(this._state, 'state');
-  }
-
   /** RPC messaging (passthrough to the underlying sync node). */
   get rpc(): Rpc {
     return this.requireNode().rpc;
@@ -252,7 +242,7 @@ export class Runtime {
 
     this._manifest = validated;
 
-    // One namespace for everything this addon owns — transport id, state, config, guides.
+    // One namespace for everything this addon owns — transport id, mirror, config, guides.
     const namespace = addonNamespace(validated);
 
     const node = new SyncNode({
@@ -277,7 +267,6 @@ export class Runtime {
     this._node = node;
     this._registry = registry;
     this._features = features;
-    this._state = new ScopedState(node.state, namespace);
     this._shared = shared;
     this._events = events;
     this._db = db;
@@ -334,7 +323,6 @@ export class Runtime {
     this._config = undefined;
     this._features = undefined;
     this._registry = undefined;
-    this._state = undefined;
     this._shared = undefined;
     this._events = undefined;
     this._db = undefined;

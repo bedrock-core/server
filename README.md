@@ -34,7 +34,7 @@ Register once, near the top of your script entry. `register()` is what brings th
 ```ts
 import { core } from '@bedrock-core/server';
 
-const { config } = core.register({
+const { config, shared } = core.register({
   manifest: {
     creator: 'ms',                  // creator id — [a-z0-9_]+
     pack: 'shop',                   // pack id    — [a-z0-9_]+ → namespace `ms_shop`
@@ -47,13 +47,14 @@ const { config } = core.register({
       taxRate: { type: 'number', default: 0.05, min: 0, max: 1, label: 'Tax Rate' },
     },
   },
+  shared: { open: false },          // what every other realm may read
 });
 
 config.server.taxRate.get();        // 0.05 — a dotted accessor tree mirroring the schema
 config.server.taxRate.subscribe((next, prev) => { /* … */ });
 
 core.registry.all();                // every bedrock-core addon present in the world
-core.state.set('open', true);       // replicated under `ms_shop`
+shared.open.set(true);              // every realm sees it this tick
 await core.rpc.request('os_economy', 'getBalance', { player: 'Steve' });
 ```
 
@@ -63,8 +64,10 @@ Full API — features, config scopes, translations, guides, host election — in
 ## 📦 Packages
 
 - **`@bedrock-core/server`** — the meta package: one install for the whole stack. Re-exports the runtime at the root and the transport at `/sync`.
-- **`@bedrock-core/server-runtime`** — the framework runtime: registration, the cross-addon registry, features, config and guides. Built on `sync`.
+- **`@bedrock-core/server-runtime`** — the framework runtime: registration, the cross-addon registry, features, config, shared state, events and guides. Built on `sync`.
 - **`@bedrock-core/sync`** — the low-level transport: message bus, discovery, RPC and replicated state over script events.
+- **`@bedrock-core/db`** — persisted documents on dynamic properties, keyed by target.
+- **`@bedrock-core/observable`** — the reactive primitive the accessors are built from.
 
 ## 🤝 Contributing
 

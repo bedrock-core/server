@@ -71,8 +71,8 @@ flowchart TB
 | an **observable** | observable | yes | no | no | yes, for what it holds |
 | the **config accessor tree** | db (config is a collection) | yes | via DPs | via query | yes |
 | a **db document** | db | yes | via DPs | via query | **yes** |
-| the **shared mirror**, own namespace | shared | yes | with `persist` | yes, locally | yes |
-| the **shared mirror**, a peer's namespace | shared | yes | no | — | **no** — a copy; writes dropped unless `open` |
+| the **shared mirror**, own namespace | shared | yes | no | yes, locally | yes |
+| the **shared mirror**, a peer's namespace | shared | yes | no | — | **no** — a copy; writes dropped |
 | a **query** | query | yes (cached) | no | — | **no** — a cache with a status |
 | **dynamic properties** | persistence | yes | **yes** | any pack that guesses the key | the bytes |
 | `core.node.state` | transport | yes | no | yes | raw mirror, framework keys included |
@@ -87,7 +87,8 @@ copy of a peer's *documents* other than a query cache.
 
 Config and db write through on change, 17 µs a write ([S2](./spikes/S2-dynamic-property-costs.md)).
 Which DP depends on the resolved host ([03-db](./03-db.md#where-a-document-can-live--capability-not-declaration)).
-`shared` keys marked `persist` take the world host.
+The mirror persists nothing: a shared value that must survive a restart is a db document the owner
+maps onto a key in one line.
 
 ### 2. Announcement → mirror (discovery, push)
 
@@ -96,10 +97,10 @@ Broadcast once; every realm mirrors; a UI builds a form for a peer with no round
 
 ### 3. Owner write → peer caches (invalidation or warm value)
 
-When a db document changes, db publishes under `core-db/<ns>/<collection>/<key>`: a version stamp
-by default, the derived value when the collection is `shared`. Every query for that key goes stale
-the same tick — or, warm, simply *has* the new value. This one edge replaces the interest
-protocol, the `project` bridge and polling.
+Nothing here is automatic: db is local, so a peer learns a value moved only because the owner said
+so. The owner mirrors the value on a `shared` key, or emits an event, or both. A query names
+whichever of the two it wants and goes stale on it the same tick — or, from a mirrored key, simply
+*has* the new value. That one declared edge is what replaces polling.
 
 ### 4. Peer → owner (RPC pull and mutate)
 

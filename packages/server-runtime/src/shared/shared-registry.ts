@@ -20,7 +20,6 @@
  * a peer's tree has no `set` at all. A peer that wants a change asks the owner over rpc.
  */
 import type { State, StateChange, Unsubscribe } from '@bedrock-core/sync';
-import { RESERVED_STATE_PREFIX } from '../scoped-state';
 import {
   isShape,
   materialize,
@@ -31,8 +30,15 @@ import {
   type SharedTree,
 } from './tree';
 
+/**
+ * Mirror keys under this prefix belong to the framework, not to the addon whose namespace they
+ * ride in: the config schema, the i18n bundle, the compiled guide, feature states and this very
+ * shape all replicate under one namespace, so an addon's own key may not collide with them.
+ */
+const RESERVED_KEY_PREFIX = 'core-';
+
 /** The mirror key the owner's key names are announced under. */
-export const SHARED_SHAPE_KEY = `${RESERVED_STATE_PREFIX}shared/shape`;
+export const SHARED_SHAPE_KEY = `${RESERVED_KEY_PREFIX}shared/shape`;
 
 export interface SharedRegistryOptions {
   state: State;
@@ -67,10 +73,8 @@ export class SharedRegistry {
     const keys = Object.keys(def);
 
     for (const key of keys) {
-      // Framework announcements — the config schema, guides, this very shape — ride the same
-      // mirror under `core-` keys, so an addon's own key may not start there.
-      if (key.startsWith(RESERVED_STATE_PREFIX)) {
-        throw new Error(`[shared] '${key}' is reserved: keys beginning '${RESERVED_STATE_PREFIX}' belong to the framework`);
+      if (key.startsWith(RESERVED_KEY_PREFIX)) {
+        throw new Error(`[shared] '${key}' is reserved: keys beginning '${RESERVED_KEY_PREFIX}' belong to the framework`);
       }
     }
 

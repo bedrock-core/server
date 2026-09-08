@@ -65,8 +65,6 @@ export type { RegisteredAddon, AddonListener, CollisionListener } from './regist
 export { FeatureManager } from './features';
 export type { FeatureSpec, FeatureConditionContext, TypedFeatureAccessor } from './features';
 
-export { ScopedState, RESERVED_STATE_PREFIX, isReservedStateKey } from './scoped-state';
-
 // What an addon needs to declare a collection on `core.db`; the package itself is the source for the rest.
 export {
   accepting,
