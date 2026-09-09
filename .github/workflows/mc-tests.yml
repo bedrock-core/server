@@ -2,9 +2,9 @@
 # Dedicated Server. Kept off every-push because it downloads a ~200 MB server and takes minutes;
 # opt in with the `run-mc-tests` label on a PR, or let it run on main.
 #
-# Three repos are checked out side by side, the same arrangement as the release rehearsal: this
-# repo's `portal:` resolutions need a sibling `ui`, and the addons' Regolith config runs the guides,
-# i18n and manifest filters from a sibling `regolith-filters`.
+# Four repos are checked out side by side, the same arrangement as the release rehearsal: this
+# repo's `portal:` resolutions need siblings `ui` and `bds-runner`, and the addons' Regolith config
+# runs the guides, i18n and manifest filters from a sibling `regolith-filters`.
 name: GameTests (BDS)
 
 on:
@@ -34,21 +34,27 @@ jobs:
         working-directory: server-public
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           path: server-public
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           repository: bedrock-core/ui
           path: ui
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           repository: bedrock-core/regolith-filters
           path: regolith-filters
 
-      - uses: actions/setup-node@v4
+      # The GameTest harness, resolved through `portal:../bds-runner`.
+      - uses: actions/checkout@v7
+        with:
+          repository: bedrock-core/bds-runner
+          path: bds-runner
+
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: yarn
@@ -68,12 +74,12 @@ jobs:
 
       - name: Read the pinned server version
         id: bds
-        run: echo "version=$(jq -r .version packages/bds-runner/bds-version.json)" >> "$GITHUB_OUTPUT"
+        run: echo "version=$(jq -r .version bds-runner.json)" >> "$GITHUB_OUTPUT"
 
-      # Keyed on the pinned version alone, not on a file hash: editing the note in bds-version.json
-      # must not invalidate a 200 MB download.
+      # Keyed on the resolved version alone, not on a file hash, so an unrelated edit to
+      # bds-runner.json cannot invalidate a 200 MB download.
       - name: Cache Bedrock Dedicated Server
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: server-public/.bds/cache
           key: bds-${{ runner.os }}-${{ steps.bds.outputs.version }}
@@ -92,7 +98,7 @@ jobs:
       # The server console is the only debugging surface for a CI failure, so keep it either way.
       - name: Upload server logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: bds-logs
           path: server-public/.bds/logs/**

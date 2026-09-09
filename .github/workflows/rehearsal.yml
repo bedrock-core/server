@@ -3,10 +3,9 @@
 # dependencies resolve. Never touches registry.npmjs.org (reads are proxied,
 # writes stay on localhost).
 #
-# The rehearsal script lives in the (public) ui repo and is run against both
-# checkouts side by side, because this repo's portal: resolutions require a
-# sibling ui checkout. Once the portals are dropped (post first release), this
-# can gain a pull_request trigger.
+# The rehearsal script lives in the ui repo and is run against the checkouts side
+# by side, because this repo's portal: resolutions require sibling `ui` and
+# `bds-runner` checkouts.
 name: Release rehearsal
 
 on:
@@ -30,6 +29,11 @@ jobs:
         with:
           repository: bedrock-core/ui
           path: ui
+
+      - uses: actions/checkout@v7
+        with:
+          repository: bedrock-core/bds-runner
+          path: bds-runner
 
       - uses: actions/setup-node@v7
         with:
