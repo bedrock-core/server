@@ -121,8 +121,8 @@ location again, and the world.
 
 ## Documentation
 
-Design notes, measurements and the collection API that sits on top live in the repository's
-`docs/` while this package is being built.
+- [db](https://bedrock-core.drav.dev/docs/db) — collections, schema, targets, the resolver
+- [`core.db`](https://bedrock-core.drav.dev/docs/server/api/db) — the runtime's instance, and how a document reaches a peer
 
 ## License
 

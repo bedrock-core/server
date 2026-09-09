@@ -31,6 +31,7 @@ import { compareVersions } from './version';
 /** Notified with the new host's namespace, and the previous one when there was one. */
 export type HostListener = (hostId: string, previousHostId: string | undefined) => void;
 
+/** Which realm does the work only one realm may do: a pure function of the registry. */
 export class HostElection {
   private readonly _registry: Registry;
   private readonly _selfId: string;

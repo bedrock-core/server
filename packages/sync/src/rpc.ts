@@ -50,8 +50,10 @@ function isResponseData(value: unknown): value is ResponseData {
 /** Handles an inbound request. `from` is the requester's addon id. */
 export type RequestHandler = (params: unknown, from: string) => unknown | Promise<unknown>;
 
+/** What one `request()` takes beside the target, method and params. */
 export interface RequestOptions { timeoutTicks?: number }
 
+/** What `new Rpc()` takes beside the bus. */
 export interface RpcOptions { defaultTimeoutTicks?: number }
 
 /** A Proxy-backed client whose methods dispatch to `rpc.request(targetId, methodName, params)`. */
@@ -68,6 +70,7 @@ export type RPCHandlerMap<T> = {
     : never;
 };
 
+/** Request and reply over the bus, with a timeout on every request and typed clients and handler maps. */
 export class Rpc {
   private readonly _bus: Bus;
   private readonly _defaultTimeoutTicks: number;

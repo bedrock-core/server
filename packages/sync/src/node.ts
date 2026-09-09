@@ -13,6 +13,7 @@ import { Events } from './events';
 import { Rpc } from './rpc';
 import { State } from './state';
 
+/** What `new SyncNode()` and `createSync()` take. */
 export interface SyncNodeOptions {
 
   /** Unique addon id; also the default namespace this node owns. Used as the envelope src. */
@@ -40,6 +41,7 @@ export interface SyncNodeOptions {
   instanceId?: string;
 }
 
+/** One addon's handle to the transport: the bus, discovery, rpc, state and events, with one lifecycle. */
 export class SyncNode {
   private _started = false;
   readonly id: string;

@@ -1,10 +1,10 @@
 /**
  * S6 — what a shared delta costs on the bus.
  *
- * Three numbers gate work elsewhere: whether db collections can carry a `shared` cap
- * ([03-db](../../../../../../docs/03-db.md)), and whether a query's warm read from the mirror is
- * worth claiming ([04-query](../../../../../../docs/04-query.md)). Both hinge on whether a peer's
- * copy of a realistic value arrives soon enough to read, and on what the owner pays to publish it.
+ * Two things hinge on the numbers: whether a value belongs on a `shared` key at all, and whether a
+ * query's warm read from the mirror ([04-query](../../../../../../docs/04-query.md)) is worth
+ * claiming. Both come down to whether a peer's copy of a realistic value arrives soon enough to
+ * read, and to what the owner pays to publish it.
  *
  * Peers are separate `State` instances over their own `Bus`, all inside this script realm. They
  * talk through the engine's real `scriptEvent` transport, so serialization, the per-tick send

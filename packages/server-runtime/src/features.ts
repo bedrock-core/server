@@ -34,6 +34,7 @@ function isFeatureFlags(value: unknown): value is FeatureFlags {
   return isRecord(value) && Object.values(value).every(flag => typeof flag === 'boolean');
 }
 
+/** What a condition is evaluated against. */
 export interface FeatureConditionContext {
   registry: Registry;
   state: State;
@@ -41,6 +42,7 @@ export interface FeatureConditionContext {
   feature(addonId: string, featureId: string): boolean;
 }
 
+/** One feature: when it is on, and what to do at each flip. */
 export interface FeatureSpec {
 
   /**
@@ -53,6 +55,7 @@ export interface FeatureSpec {
   onDisable(): void;
 }
 
+/** A typed reader over one addon's flags. */
 export interface TypedFeatureAccessor<T extends string> { isEnabled(id: T): boolean }
 
 interface FeatureState {
@@ -60,6 +63,7 @@ interface FeatureState {
   enabled: boolean;
 }
 
+/** Features that switch themselves on and off with a condition, announcing their flags. */
 export class FeatureManager {
   /** Every addon's flags, this one's included. */
   readonly flags: Announcement<FeatureFlags>;

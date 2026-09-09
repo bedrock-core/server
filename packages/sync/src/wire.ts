@@ -1,13 +1,7 @@
 /**
  * The wire layer: what one script-event message actually contains.
  *
- * An {@link Envelope} used to be nested inside a {@link Frame}'s `p` field even when it fitted in a
- * single message, which meant JSON-escaping the whole thing to sit inside a JSON string — every
- * quote paid for a backslash, and a one-piece message still carried a header describing a split
- * that never happened. Most bus traffic is one-piece (heartbeats, state deltas, RPC calls), so that
- * was the common case paying for the rare one.
- *
- * A message now opens with a tag character saying which of three shapes follows:
+ * A message opens with a tag character saying which of three shapes follows:
  *
  * ```text
  * 0{"v":2,"src":"shop",…}          one envelope, verbatim — nothing is nested, nothing is escaped

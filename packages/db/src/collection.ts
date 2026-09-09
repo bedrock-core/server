@@ -36,6 +36,7 @@ import { directHost, prefixed, type Capabilities, type DirectDp, type DpHost } f
 import { createIndexSet, type IndexSet } from './indexed';
 import { createResolver, type Accepted, type Classifier, type Resolution, type Resolver, type TargetKind } from './resolve';
 
+/** What `db.collection()` takes beside the name. */
 export interface CollectionOptions<T extends object, Target, R extends Requirements> {
   /** The document type, with its version, defaults and migrations: `schema<Elevator>({ version: 2 })`. */
   schema: Schema<T>;
@@ -51,6 +52,7 @@ export interface CollectionOptions<T extends object, Target, R extends Requireme
   coalesce?: boolean;
 }
 
+/** One target's document: an observable over its bytes, with a validity gate. */
 export interface Document<T extends object> {
   /** Whether the target can be reached and the collection accepts it right now. */
   readonly available: boolean;
@@ -85,10 +87,12 @@ export interface IndexedDocument<T extends object> extends Document<T> {
   readonly identity: string;
 }
 
+/** What `where()` answers: whether the collection would store on a target, and with which capabilities. */
 export type Where
   = | { ok: true; kind: TargetKind; caps: Capabilities }
     | { ok: false; kind: TargetKind; reason: string };
 
+/** Typed documents keyed by target, on the host the resolver finds for each. */
 export interface Collection<T extends object, Target> {
   readonly name: string;
   for(target: Target): Document<T>;
@@ -133,6 +137,7 @@ function isValid(target: unknown): boolean {
   return typeof valid === 'function' ? Boolean(valid.call(target)) : valid !== false;
 }
 
+/** The default locator: trusts a handle while it is valid, and cannot find a target by identity. */
 export const structuralLocator: Locator = {
   bind: (target): (() => unknown) => (): unknown => (isValid(target) ? target : undefined),
   fromIdentity: (): undefined => undefined,
@@ -166,6 +171,7 @@ export interface Lifecycle {
   attach(hooks: { loaded(target: unknown): void; leaving(target: unknown): void }): void;
 }
 
+/** What `createDb()` takes. */
 export interface DbOptions {
   /** The world: proxied documents and the indexes live on it. */
   world: DirectDp;
@@ -180,6 +186,7 @@ export interface DbOptions {
   log?: (message: string) => void;
 }
 
+/** A set of collections over one namespace, sharing a resolver and the world. */
 export interface Db {
   /**
    * A collection of documents. The document type rides the schema, the target type rides the
@@ -822,6 +829,7 @@ class CollectionImpl<T extends object> implements Collection<T, unknown> {
 
 // ─── The db ────────────────────────────────────────────────────────────────────
 
+/** A db over any world with the six-method ABI; `@bedrock-core/db/minecraft` wires the engine's. */
 export function createDb(options: DbOptions): Db {
   const { world, namespace } = options;
   const resolver = createResolver({ world, namespace, classify: options.classify });

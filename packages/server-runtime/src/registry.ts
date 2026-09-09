@@ -33,9 +33,13 @@ import { RUNTIME_VERSION } from './runtime-version';
  */
 export type RegisteredAddon = AddonManifest & { id: string; self: boolean; runtimeVersion: string };
 
+/** Told an addon that registered or unregistered. */
 export type AddonListener = (addon: RegisteredAddon) => void;
+
+/** Told two live addons claim the same namespace. */
 export type CollisionListener = (info: CollisionInfo) => void;
 
+/** Every bedrock-core addon in the world, from discovery: presence, dependencies, collisions. */
 export class Registry {
   private readonly _discovery: Discovery;
   private readonly _self: RegisteredAddon;

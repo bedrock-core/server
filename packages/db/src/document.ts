@@ -21,8 +21,10 @@ import type { DpHost } from './host';
 import type { DeepPartial } from './merge';
 
 /** One migration step: the document as the previous version wrote it, to the next shape. */
+/** One migration step: the stored document as the previous version wrote it, to the next shape. */
 export type MigrateStep = (doc: Record<string, unknown>) => Record<string, unknown>;
 
+/** What `schema()` takes: the version, the defaults, the steps between versions, and a normalizer. */
 export interface DocumentSchema<T extends object> {
   /** The version documents are written at. `1` when omitted; documents at that version never migrate. */
   version?: number;
@@ -56,6 +58,7 @@ export function schema<T extends object>(definition: DocumentSchema<T> = {}): Sc
   return definition;
 }
 
+/** What a document store takes beside the host. */
 export interface DocumentStoreOptions<T extends object> extends Pick<DocumentSchema<T>, 'version' | 'migrate'> {
   /** For the error and log lines. */
   collection: string;
@@ -308,6 +311,7 @@ class DocumentStoreImpl<T extends object> implements DocumentStore<T> {
   }
 }
 
+/** One collection's documents on one host: the envelope, migration, chunking and quarantine. */
 export function createDocumentStore<T extends object>(host: DpHost, options: DocumentStoreOptions<T>): DocumentStore<T> {
   return new DocumentStoreImpl(host, options);
 }

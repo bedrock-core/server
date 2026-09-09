@@ -30,11 +30,13 @@ import { type Envelope, decodeEnvelope, encodeEnvelope } from './envelope';
 import { OutboundQueue } from './queue';
 import { decodeWire, encodeLegacy, tagChunk } from './wire';
 
+/** What every `on*` / `subscribe` returns: call it to stop listening. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type Unsubscribe = (...args: any[]) => void;
 
 const EVICT_INTERVAL_TICKS = 20;
 
+/** Handed every envelope of the type it was registered for. */
 export type EnvelopeHandler = (envelope: Envelope) => void;
 
 /** What a peer negotiated to, as pushed in by discovery. */
@@ -43,6 +45,7 @@ interface PeerProtocol {
   caps: readonly string[];
 }
 
+/** What `send()` takes beside the type and the data. */
 export interface SendOptions {
 
   /** Target addon id; omit to broadcast. */
@@ -61,6 +64,7 @@ export interface SendOptions {
   protocol?: number;
 }
 
+/** What `new Bus()` takes beside the ids. */
 export interface BusOptions {
   maxMessage?: number;
 
@@ -68,6 +72,7 @@ export interface BusOptions {
   instanceId?: string;
 }
 
+/** The transport: envelopes in and out over one script-event channel, framed, packed and rate-limited. */
 export class Bus {
   private readonly _selfId: string;
   private readonly _instanceId: string;

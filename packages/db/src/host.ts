@@ -28,8 +28,10 @@ export interface ComponentDp {
   totalByteCount(): number;
 }
 
+/** How a host reaches its bytes: the six-method ABI, a block entity's component, or a world property by identity. */
 export type HostAbi = 'direct' | 'component' | 'proxied';
 
+/** What a host can do, and what a collection may `require` of it. */
 export interface Capabilities {
   /** The bytes live on the target and die with it. `false` means a world property keyed by identity. */
   readonly own: boolean;
@@ -43,6 +45,7 @@ export interface Capabilities {
   readonly batch: boolean;
 }
 
+/** Where one target's documents live: an adapter over the ABI with its capabilities. */
 export interface DpHost {
   readonly abi: HostAbi;
   readonly caps: Capabilities;

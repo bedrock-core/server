@@ -21,6 +21,7 @@ export type AccessTarget
     | { entity: string }
     | { block: string };
 
+/** What a request does to its target. */
 export type Operation = 'read' | 'write';
 
 /**

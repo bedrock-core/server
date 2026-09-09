@@ -111,6 +111,7 @@ export type Registered<I extends ConfigDefinition | undefined, S extends SharedD
     & (S extends SharedDef ? { shared: SharedTree<S> } : unknown)
     & (E extends EventsDef ? { events: EventsTree<E> } : unknown);
 
+/** An addon's handle to the framework; `core` is the one a pack uses. */
 export class Runtime {
   private _node: SyncNode | undefined;
   private _registry: Registry | undefined;

@@ -17,6 +17,7 @@
  */
 import { RUNTIME_VERSION } from './runtime-version';
 
+/** Who an addon is: identity, display labels, version and dependencies. */
 export interface AddonManifest {
 
   /** Creator/vendor id, lowercase alphanumeric + underscores (e.g. `bt` for Bedrock Tweaks). */

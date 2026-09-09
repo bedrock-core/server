@@ -25,12 +25,14 @@ interface EventData {
   p?: unknown;
 }
 
+/** Handed the payload and the namespace that announced it. */
 export type EventHandler = (payload: unknown, from: string) => void;
 
 function isEventData(value: unknown): value is EventData {
   return typeof value === 'object' && value !== null && typeof (value as { n?: unknown }).n === 'string';
 }
 
+/** A happening: `emit` broadcasts one message, `on` listens for one sender's name, nothing is kept. */
 export class Events {
   private readonly _bus: Bus;
   private readonly _selfId: string;

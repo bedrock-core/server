@@ -40,14 +40,17 @@ export interface GuideManifest {
   pages: unknown;
 }
 
+/** The envelope check `core.guides` reads through. */
 export function isGuideReference(value: unknown): value is GuideReference {
   return isRecord(value) && typeof value['ns'] === 'string' && 'pages' in value;
 }
 
+/** The envelope check `core.guides.manifest` reads through. */
 export function isGuideManifest(value: unknown): value is GuideManifest {
   return isRecord(value) && 'tree' in value && 'pages' in value;
 }
 
+/** Each addon's guide reference, announced, with the manifest beside it. */
 export class GuidesRegistry extends Announcement<GuideReference> {
   /** The whole compiled manifest, for an addon that presents from one rather than a reference. */
   readonly manifest: Announcement<GuideManifest>;

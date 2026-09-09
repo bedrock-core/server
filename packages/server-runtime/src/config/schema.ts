@@ -15,6 +15,7 @@ export type ConfigScopeName = 'server' | 'dimension' | 'player';
 
 // ─── Entry definitions ─────────────────────────────────────────────────────────
 
+/** A boolean setting. */
 export type BooleanEntry = {
   type: 'boolean';
   default: boolean;
@@ -22,6 +23,7 @@ export type BooleanEntry = {
   description?: string;
 };
 
+/** A number setting, clamped to `min`..`max`. */
 export type NumberEntry = {
   type: 'number';
   default: number;
@@ -32,6 +34,7 @@ export type NumberEntry = {
   description?: string;
 };
 
+/** A string setting, cut at `maxLength` when set. */
 export type StringEntry = {
   type: 'string';
   default: string;
@@ -40,6 +43,7 @@ export type StringEntry = {
   description?: string;
 };
 
+/** One of `options`. */
 export type EnumEntry<O extends readonly string[] = readonly string[]> = {
   type: 'enum';
   default: O[number];
@@ -48,6 +52,7 @@ export type EnumEntry<O extends readonly string[] = readonly string[]> = {
   description?: string;
 };
 
+/** An ordered list of strings, open-ended or drawn from `options`. */
 export type ListEntry = {
   type: 'list';
   itemType: 'string' | 'enum';
@@ -74,10 +79,12 @@ export type MultiselectEntry = {
   description?: string;
 };
 
+/** Any setting. */
 export type ConfigEntry = BooleanEntry | NumberEntry | StringEntry | EnumEntry | ListEntry | MultiselectEntry;
 
 // ─── Schema node types ─────────────────────────────────────────────────────────
 
+/** A setting or a group of them. */
 export type SchemaNode = ConfigEntry | SchemaGroup;
 
 /**
@@ -93,12 +100,19 @@ export type GroupMeta = {
   $description?: string;
 };
 
+/** Settings and groups under one key, with optional `$label` / `$description` beside them. */
 export type SchemaGroup = GroupMeta & { [key: string]: SchemaNode | string | undefined };
 
+/** The `server` scope's settings. */
 export type ServerScopeSchema = { [key: string]: SchemaNode };
+
+/** The `dimension` scope's settings, one document per dimension. */
 export type DimensionScopeSchema = { [key: string]: SchemaNode };
+
+/** The `player` scope's settings, one document per player. */
 export type PlayerScopeSchema = { [key: string]: SchemaNode };
 
+/** What `register({ config })` and `core.config.define()` take: up to three scopes, a version and its steps. */
 export interface ConfigDefinition {
   server?: ServerScopeSchema;
   dimension?: DimensionScopeSchema;
@@ -154,6 +168,7 @@ export type { DeepPartial } from '@bedrock-core/db';
 
 // ─── Serialized form (broadcast) ──────────────────────────────────────────────
 
+/** One setting as it is announced: the entry with its default resolved to a value. */
 export type SerializedEntry
   = | { type: 'boolean'; default: boolean; label: string; description?: string }
     | { type: 'number'; default: number; min: number; max: number; step?: number; label: string; description?: string }
@@ -162,6 +177,7 @@ export type SerializedEntry
     | { type: 'list'; itemType: 'string' | 'enum'; options?: readonly string[]; maxItems?: number; default: readonly string[]; label: string; description?: string }
     | { type: 'multiselect'; options: readonly string[]; default: readonly string[]; label: string; description?: string };
 
+/** Every setting of a scope, keyed by dot-path, as announced. */
 export type FlatSchema = Record<string, SerializedEntry>;
 
 /** One group's display strings as they travel, keyed by the group's dot-path. */
@@ -227,6 +243,7 @@ export function validateConfigSchema(scope: string, schema: SchemaGroup, prefix 
 /** The group display keys, and the sigil test that keeps them out of the child namespace. */
 const GROUP_META_KEYS = new Set<string>(['$label', '$description']);
 
+/** Whether a schema key is a group's display string rather than a child. */
 export function isGroupMetaKey(key: string): boolean {
   return key.startsWith('$');
 }
@@ -263,6 +280,7 @@ export function childNode(group: SchemaGroup, key: string): SchemaNode | undefin
   return typeof node === 'object' && node !== null ? node : undefined;
 }
 
+/** Every setting of a group, keyed by dot-path, in the announced form. */
 export function flattenSchema(schema: SchemaGroup, prefix = ''): FlatSchema {
   const result: FlatSchema = {};
 
@@ -311,6 +329,7 @@ export function flattenGroups(schema: SchemaGroup, prefix = ''): FlatGroups {
   return result;
 }
 
+/** Whether a schema node is a setting rather than a group. */
 export function isEntry(node: unknown): node is ConfigEntry {
   if (typeof node !== 'object' || node === null) { return false; }
 

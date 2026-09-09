@@ -5,6 +5,7 @@
  */
 import { PROTOCOL_MAX, PROTOCOL_MIN } from './constants';
 
+/** One message between nodes: who sent it, what it is, and its data. */
 export interface Envelope<T = unknown> {
 
   /**

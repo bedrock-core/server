@@ -316,6 +316,7 @@ export interface ConfigAccessOptions {
   actorId?: string;
 }
 
+/** This addon's config — schema, scopes, methods — and a view of every other addon's. */
 export class ConfigRegistry {
   /**
    * Every addon's schema, flat and scope-prefixed, announced under `core-config/schema` one tick

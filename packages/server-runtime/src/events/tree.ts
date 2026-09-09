@@ -33,6 +33,7 @@ export function event<T = void>(): EventMarker<T> {
 /** A declaration: names to markers. */
 export type EventsDef = Readonly<Record<string, EventMarker<unknown>>>;
 
+/** The payload type an `event<T>()` marker carries. */
 export type PayloadOf<M> = M extends EventMarker<infer T> ? T : never;
 
 /** The listener an event takes: its payload, and the namespace that announced it. */
@@ -50,7 +51,10 @@ export interface PeerEvent<T> {
   subscribe(listener: EventListener<T>): Unsubscribe;
 }
 
+/** The owner's tree: one node per declared event, each with `emit` and `subscribe`. */
 export type EventsTree<Def extends EventsDef> = { readonly [K in keyof Def]: OwnEvent<PayloadOf<Def[K]>> };
+
+/** A peer's tree: the same nodes, `subscribe` alone. */
 export type PeerEventsTree<Def extends EventsDef> = { readonly [K in keyof Def]: PeerEvent<PayloadOf<Def[K]>> };
 
 // ─── Materialization ───────────────────────────────────────────────────────────

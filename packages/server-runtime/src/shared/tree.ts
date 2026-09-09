@@ -47,6 +47,7 @@ export type PeerSharedTree<Def extends SharedDef> = { readonly [K in keyof Def]:
 /** What the owner announces: its key names. Values travel as themselves, never here. */
 export type Shape = readonly string[];
 
+/** The guard an announced shape is read through. */
 export function isShape(value: unknown): value is Shape {
   return Array.isArray(value) && value.every(key => typeof key === 'string');
 }

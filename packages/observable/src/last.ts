@@ -26,11 +26,17 @@ export interface Signal<E, O = never> {
   unsubscribe?(callback: (event: E) => void): void;
 }
 
+/** What `last()` returns: the most recent payload, `undefined` before the first, and a way to stop. */
 export interface Last<E> extends ReadonlyObservable<E | undefined> {
   /** Stop following the signal. The last value stays readable. */
   dispose(): void;
 }
 
+/**
+ * An event as a value: the most recent payload of `signal`, `undefined` before the first. Eager —
+ * the subscription is taken now — and released with `dispose()`. `options.on` is handed to
+ * `subscribe` as its second argument, for a signal that filters.
+ */
 export function last<E, O = never>(signal: Signal<E, O>, options?: ObservableOptions<E | undefined> & { on?: O }): Last<E> {
   const inner = new ObservableImpl<E | undefined>(undefined, options);
 

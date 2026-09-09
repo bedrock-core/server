@@ -1,9 +1,9 @@
 /**
  * `computed` and `effect` — the two things built on an observable's subscription.
  *
- * Dependencies are listed, never tracked: a `Proxy` trap on every property read of every tick is
- * the cost the config accessor tree already refused to pay, and the same reasoning holds here.
- * Inside a batch either one runs once at flush however many dependencies changed.
+ * Dependencies are listed, never tracked: there is no `Proxy` trap on property reads, so a read
+ * costs nothing on a tick. Inside a batch either one runs once at flush however many dependencies
+ * changed.
  */
 import { coalesced } from './batch';
 import {
@@ -14,6 +14,7 @@ import {
   type Unsubscribe,
 } from './observable';
 
+/** What `computed()` returns: a read-only value that can stop following its dependencies. */
 export interface Computed<T> extends ReadonlyObservable<T> {
   /** Stop following the dependencies. The last value stays readable. */
   dispose(): void;

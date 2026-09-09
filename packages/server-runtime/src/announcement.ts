@@ -22,6 +22,7 @@ export const RESERVED_PREFIX = 'core-';
 /** Told which namespace's announcement changed; read it back with `of(namespace)`. */
 export type AnnouncementListener = (namespace: string) => void;
 
+/** One owner-written value under a `core-` key: provide it, read any namespace's, hear it change. */
 export class Announcement<T> {
   /** The mirror key, `core-<name>`, the same in every namespace. */
   readonly key: StateKey<T>;

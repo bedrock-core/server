@@ -25,6 +25,7 @@ export function isBatching(): boolean {
   return depth > 0 || flushing;
 }
 
+/** Queue a task to run at the end of the current batch. */
 export function enqueue(task: Flushable): void {
   pending.add(task);
 }

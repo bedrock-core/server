@@ -8,8 +8,13 @@
  */
 import { enqueue, isBatching, type Flushable } from './batch';
 
+/** What `subscribe` returns: call it to stop listening. */
 export type Unsubscribe = () => void;
+
+/** Told the new value and the one before it. */
 export type Listener<T> = (next: T, prev: T) => void;
+
+/** Whether two values count as the same, so a `set` to an equal value notifies nobody. */
 export type Equals<T> = (a: T, b: T) => boolean;
 
 /** What anything exposing a value it owns hands out: readable, watchable, not writable. */
@@ -18,11 +23,13 @@ export interface ReadonlyObservable<T> {
   subscribe(listener: Listener<T>): Unsubscribe;
 }
 
+/** A value with the three verbs: read it, replace it, watch it. */
 export interface Observable<T> extends ReadonlyObservable<T> {
   /** Replace the value. An updater receives the current value. Notifies unless `equals` says nothing changed. */
   set(next: T | ((prev: T) => T)): void;
 }
 
+/** What `observable()` and the derived forms take beside the value. */
 export interface ObservableOptions<T> {
   /** Defaults to `Object.is`. */
   equals?: Equals<T>;
@@ -30,6 +37,7 @@ export interface ObservableOptions<T> {
   label?: string;
 }
 
+/** The one log line a throwing listener produces, naming the observable when it has a label. */
 export function reportListenerError(label: string | undefined, error: unknown): void {
   console.error(`[observable]${label ? ` ${label}:` : ''} listener threw`, error);
 }
@@ -42,6 +50,10 @@ function isUpdater<T>(next: T | ((prev: T) => T)): next is (prev: T) => T {
   return typeof next === 'function';
 }
 
+/**
+ * The observable behind `observable()`, `computed()` and `last()`: synchronous delivery, `equals`
+ * gating, listener isolation, and deferral inside a batch.
+ */
 export class ObservableImpl<T> implements Observable<T>, Flushable {
   private readonly _equals: Equals<T>;
   private readonly _label: string | undefined;
@@ -126,6 +138,7 @@ export class ObservableImpl<T> implements Observable<T>, Flushable {
   }
 }
 
+/** A value with `get`, `set` and `subscribe`, delivering synchronously to isolated listeners. */
 export function observable<T>(initial: T, options?: ObservableOptions<T>): Observable<T> {
   return new ObservableImpl(initial, options);
 }

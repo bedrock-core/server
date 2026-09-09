@@ -24,6 +24,7 @@ export interface Frame {
   p: string;
 }
 
+/** One frame as it travels: the JSON of the frame object. */
 export function encodeFrame(frame: Frame): string {
   return JSON.stringify(frame);
 }
@@ -46,6 +47,7 @@ function isFrame(value: unknown): value is Frame {
   );
 }
 
+/** A frame back from the wire, or `undefined` when the text is not one. */
 export function decodeFrame(json: string): Frame | undefined {
   let parsed: unknown;
 

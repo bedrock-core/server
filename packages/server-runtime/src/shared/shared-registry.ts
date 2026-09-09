@@ -31,11 +31,13 @@ import {
   type SharedTree,
 } from './tree';
 
+/** What `new SharedRegistry()` takes. */
 export interface SharedRegistryOptions {
   state: State;
   namespace: string;
 }
 
+/** This addon's shared keys as a typed tree, and any other addon's as a read-only one. */
 export class SharedRegistry {
   /** The key names each owner announces, under `core-shared/shape`; what a peer's tree is built from. */
   readonly shape: Announcement<Shape>;

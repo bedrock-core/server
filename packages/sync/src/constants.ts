@@ -37,6 +37,7 @@ export const Cap = {
   Batch: 'batch',
 } as const;
 
+/** A capability a node can advertise. */
 export type Cap = typeof Cap[keyof typeof Cap];
 
 /** Everything this build can read. Broadcast in every announce. */
@@ -44,7 +45,7 @@ export const SELF_CAPS: readonly Cap[] = [Cap.Batch];
 
 /**
  * Leading character of a script-event message, saying which shape follows. See `wire.ts` for what
- * each one carries and why a one-piece message no longer travels inside a frame.
+ * each one carries; a one-piece message travels verbatim.
  *
  * The tag is frozen: a shape added later takes a new character, and a reader that does not know a
  * character drops that one message rather than the peer that sent it. Protocol 1 predates the tag
@@ -62,6 +63,7 @@ export const WireTag = {
   Batch: '2',
 } as const;
 
+/** The leading character of a message. */
 export type WireTag = typeof WireTag[keyof typeof WireTag];
 
 /** The single script-event namespace all bedrock-core traffic flows through. */
@@ -121,4 +123,5 @@ export const MessageType = {
   Event: 'event',
 } as const;
 
+/** What an envelope carries, by name. */
 export type MessageType = typeof MessageType[keyof typeof MessageType];

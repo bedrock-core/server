@@ -4,7 +4,7 @@
 
 > **For framework and library developers.**
 > If you are building a Bedrock addon, you do not need this package directly — use
-> [`@bedrock-core/server-runtime`](https://bedrock-core.drav.dev/docs/server/server-runtime)
+> [`@bedrock-core/server-runtime`](https://bedrock-core.drav.dev/docs/server/api/runtime)
 > instead. The runtime creates and manages the one sync node for you, and raw transport access is
 > available as `core.node` whenever you want it.
 
@@ -70,12 +70,13 @@ get an RPC reply on the tick you sent it.
 
 ## Documentation
 
-- [sync](https://bedrock-core.drav.dev/docs/server/sync) — when to use it directly, `SyncNodeOptions`,
+- [sync](https://bedrock-core.drav.dev/docs/sync) — when to use it directly, `SyncNodeOptions`,
   the `SyncNode` surface
-- [Discovery](https://bedrock-core.drav.dev/docs/server/sync/discovery) ·
-  [RPC](https://bedrock-core.drav.dev/docs/server/sync/rpc) ·
-  [State](https://bedrock-core.drav.dev/docs/server/sync/state)
-- [Protocol](https://bedrock-core.drav.dev/docs/server/sync/protocol) — the envelope, framing and
+- [Discovery](https://bedrock-core.drav.dev/docs/sync/discovery) ·
+  [RPC](https://bedrock-core.drav.dev/docs/sync/rpc) ·
+  [State](https://bedrock-core.drav.dev/docs/sync/state) ·
+  [Events](https://bedrock-core.drav.dev/docs/sync/events)
+- [Protocol](https://bedrock-core.drav.dev/docs/sync/protocol) — the envelope, framing and
   wire behavior
 
 sync is tested **in-game with GameTests**: several nodes in one realm share the real `system` bus,

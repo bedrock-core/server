@@ -30,6 +30,7 @@ interface Pending {
   text: string;
 }
 
+/** What `new OutboundQueue()` takes. */
 export interface OutboundQueueOptions {
   channel: string;
   maxFlushPerTick?: number;
@@ -39,6 +40,7 @@ export interface OutboundQueueOptions {
   maxMessage?: number;
 }
 
+/** Buffers outbound messages and drains a bounded number per tick, packing small ones together. */
 export class OutboundQueue {
   private readonly _channel: string;
   private readonly _maxFlushPerTick: number;

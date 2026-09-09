@@ -67,6 +67,7 @@ export function entityTypes(...ids: string[]): Acceptor<Entity> {
   return acceptor(['entity'], listed(ids));
 }
 
+/** Players only. */
 export function players(): Acceptor<Player> {
   return acceptor(['entity'], typeId => typeId === 'minecraft:player');
 }
@@ -76,6 +77,7 @@ export function slots(...itemIds: string[]): Acceptor<ContainerSlot> {
   return acceptor(['slot'], listed(itemIds));
 }
 
+/** The world. */
 export function worldTarget(): Acceptor<World> {
   return acceptor(['world'], any);
 }

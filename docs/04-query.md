@@ -78,7 +78,7 @@ interface Mutation<T> extends ReadonlyObservable<MutationState> {
 // hooks: onMutate(patch) → context, onError(reason, context), onSettled(result | undefined)
 ```
 
-`observe(key)` returns an **observable** ([01-observable](./01-observable.md)), so `computed([q])`
+`observe(key)` returns an **observable** (`@bedrock-core/observable`), so `computed([q])`
 and `useObservable(q)` work unchanged, and an observable-driven host binds to it like anything else.
 
 ## The hooks
@@ -103,7 +103,7 @@ Options, per key or per namespace via `core.query.defaults(ns, options)`:
 | Trigger | Fires when |
 | --- | --- |
 | stale on observe/read | `staleTime` elapsed since last success — stale-while-revalidate, `data` stays available |
-| **owner invalidation** | the owner writes; db publishes a version stamp (or the warm value) under `core-db/<ns>/<collection>/<key>` on the shared mirror ([02-shared](./02-shared.md)); every cache for that key goes stale the same tick |
+| **owner invalidation** | the owner mirrors the value on a `shared` key or emits an event; a query names whichever it wants and every cache for that key goes stale the same tick — or, from a mirrored key, simply has the new value |
 | peer joins | registry `onRegister(ns)` — everything cached for `ns` goes stale |
 | peer leaves | registry `onUnregister(ns)` — `status` becomes `unavailable`, `data` kept |
 | after `mutate` | the reply *is* the new value (config RPC already answers read-after-write); no extra fetch |
@@ -152,6 +152,6 @@ accident, so they stay different on purpose.
 
 ## Measure
 
-S6 ([02-shared](./02-shared.md#measure--s6)) sets what may be shared. Query itself adds one
+[S6](./spikes/S6-shared-bus-cost.md) sets what may be shared. Query itself adds one
 number: cache memory at `maxEntries` × a 1 KB document, to confirm the default is sane in a
 QuickJS realm.

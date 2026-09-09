@@ -22,6 +22,7 @@ import {
   type DpHost,
 } from './host';
 
+/** What a target is, as the classifier sees it. */
 export type TargetKind = 'world' | 'dimension' | 'entity' | 'block' | 'slot' | 'itemStack' | 'unknown';
 
 /**
@@ -32,6 +33,7 @@ export interface Classifier {
   kindOf(target: unknown): TargetKind;
 }
 
+/** A resolution that found a host: the target's kind, type, identity and where its bytes live. */
 export interface Accepted {
   readonly ok: true;
   readonly kind: TargetKind;
@@ -50,14 +52,17 @@ export interface Accepted {
   prefixFor(collection: string): string;
 }
 
+/** A resolution that found no host, with the reason. */
 export interface Refused {
   readonly ok: false;
   readonly kind: TargetKind;
   readonly reason: string;
 }
 
+/** What `resolve()` answers. */
 export type Resolution = Accepted | Refused;
 
+/** What `createResolver()` takes. */
 export interface ResolverOptions {
   /** The world, for proxied hosts. Anything with the six-method ABI. */
   world: DirectDp;
@@ -66,6 +71,7 @@ export interface ResolverOptions {
   classify?: Classifier;
 }
 
+/** Decides, per target, where a document can live, probing each type once. */
 export interface Resolver {
   resolve(target: unknown): Resolution;
   /** The cached decision for a type key, for tests and diagnostics. */
@@ -251,6 +257,7 @@ class AcceptedResolution implements Accepted {
   }
 }
 
+/** A resolver over any world with the six-method ABI and any classifier. */
 export function createResolver(options: ResolverOptions): Resolver {
   const classify = options.classify ?? structuralClassifier;
   const { namespace, world } = options;

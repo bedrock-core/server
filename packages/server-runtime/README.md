@@ -5,7 +5,7 @@
 The bedrock-core **server runtime** — the framework layer addons build on.
 
 Every behavior pack runs its scripts in its own isolated realm, so two addons in the same world
-normally cannot see each other at all. Where [`@bedrock-core/sync`](https://bedrock-core.drav.dev/docs/server/sync)
+normally cannot see each other at all. Where [`@bedrock-core/sync`](https://bedrock-core.drav.dev/docs/sync)
 is the low-level transport that breaks that isolation, the runtime is the thing you *register into*:
 an addon declares its identity and its data once, and that declaration flows into a **cross-addon
 registry** — a live directory of every bedrock-core addon present in the world.
@@ -30,9 +30,10 @@ build against has to match the one your pack's `manifest.json` declares.
   holds, driven by registry presence, replicated state, or another addon's published features
 - **Config** — declare a schema once and get typed accessor trees over three scopes (`server`,
   `dimension`, `player`), each a db document with a form on top, readable and writable cross-addon
-  over db's RPC with player-level authorization
-- **Translations and guides** — publish your i18n bundle and compiled guide manifest, and resolve
-  any peer's strings server-side for text measurement
+  over nine rpc methods with player-level authorization
+- **Translations, guides and pages** — announce your i18n bundle, guide reference and list page,
+  and resolve any peer's strings server-side for text measurement; every such feed is an
+  `Announcement` with `provide` / `own` / `of` / `namespaces` / `subscribe`
 - **Host election** — `core.host` picks the realm running the newest runtime, with no negotiation
   messages, so exactly one realm serves shared UI for the whole world
 - **Messaging and the shared mirror** — `core.rpc`, and a `shared` shape declared in `register()` that every realm mirrors as a typed tree (`core.shared.of()` for a peer's), with the
@@ -44,12 +45,12 @@ build against has to match the one your pack's `manifest.json` declares.
 
 ```ts
 import { authorize, core, event, players, schema } from '@bedrock-core/server-runtime';
+import { guideReference } from '@bedrock-core/guides';
 import bundle from '@bedrock-core/generated/i18n';
-import guides from '@bedrock-core/generated/guides';
 
 // register() declares everything and brings the addon online. It returns the typed accessors of
-// what was declared, one key each: `config` and `shared`.
-const { config, shared } = core.register({
+// what was declared, one key each: `config`, `shared` and `events`.
+const { config, shared, events } = core.register({
   manifest: {
     creator: 'drav0011',          // creator/vendor id — [a-z0-9_]+
     pack: 'economy',              // abbreviated pack id — together: namespace `drav0011_economy`
@@ -58,7 +59,7 @@ const { config, shared } = core.register({
     dependencies: ['os_shop'],    // namespaces you need — soft, logs, never blocks
   },
   translations: bundle,           // optional — the i18n filter's bundle
-  guide: guides,                  // optional — the guides filter's manifest
+  guideReference: guideReference('drav0011_economy'),   // optional — the compiled guide's index
   config: {                       // optional — config schema
     server: { taxRate: { type: 'number', default: 0.05, min: 0, max: 1, label: 'Tax Rate' } },
   },
@@ -109,19 +110,22 @@ core.rpc.request('os_shop', 'openShop', { playerId }).catch(console.warn);
 
 ## Documentation
 
-- [server-runtime](https://bedrock-core.drav.dev/docs/server/server-runtime) — the `core`
-  singleton, `register()`, every manifest field, and running several runtimes in one realm
-- [Registry](https://bedrock-core.drav.dev/docs/server/server-runtime/registry) ·
-  [Features](https://bedrock-core.drav.dev/docs/server/server-runtime/features) ·
-  [Host election](https://bedrock-core.drav.dev/docs/server/server-runtime/host)
-- [Config](https://bedrock-core.drav.dev/docs/server/server-runtime/config) — schemas, the three
-  scopes, cross-addon access, authorization
-- [Translations](https://bedrock-core.drav.dev/docs/server/server-runtime/translations) ·
-  [Guides](https://bedrock-core.drav.dev/docs/server/server-runtime/guides) ·
-  [Shared](https://bedrock-core.drav.dev/docs/server/server-runtime/shared) ·
-  [Events](https://bedrock-core.drav.dev/docs/server/server-runtime/events)
-- [UI integration](https://bedrock-core.drav.dev/docs/server/ui-integration) — what the runtime
-  publishes and which UI package draws it
+- [`core`](https://bedrock-core.drav.dev/docs/server/api/runtime) — the singleton, `register()`,
+  every manifest field, and running several runtimes in one realm
+- [`core.registry`](https://bedrock-core.drav.dev/docs/server/api/registry) ·
+  [`core.features`](https://bedrock-core.drav.dev/docs/server/api/features) ·
+  [`core.host`](https://bedrock-core.drav.dev/docs/server/api/host)
+- [`core.shared`](https://bedrock-core.drav.dev/docs/server/api/shared) ·
+  [`core.events`](https://bedrock-core.drav.dev/docs/server/api/events) ·
+  [`core.db`](https://bedrock-core.drav.dev/docs/server/api/db) ·
+  [`core.config`](https://bedrock-core.drav.dev/docs/server/api/config)
+- [`core.translations`](https://bedrock-core.drav.dev/docs/server/api/translations) ·
+  [`core.guides`](https://bedrock-core.drav.dev/docs/server/api/guides) ·
+  [`core.pages`](https://bedrock-core.drav.dev/docs/server/api/pages) ·
+  [`authorize`](https://bedrock-core.drav.dev/docs/server/api/authorize)
+- [Sharing data between addons](https://bedrock-core.drav.dev/docs/server/guides/channels) ·
+  [Trust model](https://bedrock-core.drav.dev/docs/server/guides/trust-model) ·
+  [UI integration](https://bedrock-core.drav.dev/docs/server/guides/ui-integration)
 
 `packages/test-addon` and `packages/test-addon-2` in this repository are two real addons wired to
 each other, with GameTests covering discovery, RPC, the shared mirror, collisions and features.

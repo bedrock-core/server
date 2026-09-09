@@ -97,6 +97,7 @@ interface AnnounceData {
   caps?: readonly string[];
 }
 
+/** What `new Discovery()` takes beside the bus and the id. */
 export interface DiscoveryOptions {
   version?: string;
   schemaVersion?: number;
@@ -107,10 +108,16 @@ export interface DiscoveryOptions {
   peerTtlTicks?: number;
 }
 
+/** Told a peer that came up or went down. */
 export type PeerListener = (peer: PeerInfo) => void;
+
+/** Told two live nodes claim the same id. */
 export type CollisionListener = (info: CollisionInfo) => void;
+
+/** Told a peer whose protocol range does not overlap this build's. */
 export type IncompatibleListener = (peer: IncompatiblePeer) => void;
 
+/** Who is in the world: announces, `whois`, TTL eviction, collisions and protocol negotiation. */
 export class Discovery {
   private readonly _bus: Bus;
   private readonly _self: AnnounceData;

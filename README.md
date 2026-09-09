@@ -63,8 +63,8 @@ thing itself: `@bedrock-core/server/sync` for the transport, `/db` for the rest 
 surface, and `/observable` for `computed` / `effect` / `last` and the `toNative` bridge to a
 data-driven form.
 
-Full API — features, config scopes, translations, guides, host election — in the
-[`@bedrock-core/server-runtime` README](./packages/server-runtime/README.md).
+Full API — registry, features, shared, events, db, config, translations, guides, host election —
+on the [docs site](https://bedrock-core.drav.dev/docs/server).
 
 ## 📦 Packages
 

@@ -1,7 +1,7 @@
 /**
  * Replicated key/value state — the shared channel.
  *
- * Model (chosen with the user): **shared-mutable runtime.** Any node may read or write any
+ * Model: **shared-mutable runtime.** Any node may read or write any
  * `namespace:key`. Writes broadcast a `state-delta` and every node applies it to its
  * in-memory mirror, so reads are always local — no round-trip. Conflicts resolve
  * last-write-wins on a Lamport-style logical clock, tie-broken by the writer's id, so all
@@ -89,6 +89,7 @@ function isSnapshotData(value: unknown): value is SnapshotData {
   return typeof ns === 'string' && Array.isArray(entries);
 }
 
+/** One change to the mirror, as listeners see it. */
 export interface StateChange {
   ns: string;
   key: string;
@@ -98,8 +99,10 @@ export interface StateChange {
   deleted: boolean;
 }
 
+/** Told every change to the mirror, local or from the wire. */
 export type StateChangeListener = (change: StateChange) => void;
 
+/** What `new State()` takes beside the bus and the id. */
 export interface StateOptions {
 
   /** Namespaces this node is authoritative for (answers snapshot requests for them). */
@@ -112,6 +115,7 @@ export interface StateOptions {
   strictOwnership?: boolean;
 }
 
+/** The replicated key/value mirror: local reads, broadcast deltas, owner-only apply, snapshots for late joiners. */
 export class State {
   private readonly _bus: Bus;
   private readonly _selfId: string;

@@ -18,6 +18,7 @@ import type { DpHost } from './host';
 
 const SEPARATOR = '\n';
 
+/** The identities a collection knows of, kept in chunked properties on one host. */
 export interface IndexSet {
   /** Loads the chunks on first use. */
   has(entry: string): boolean;
@@ -29,6 +30,7 @@ export interface IndexSet {
   flush(): void;
 }
 
+/** What `createIndexSet()` takes beside the host. */
 export interface IndexSetOptions {
   /** Characters per chunk. The host's budget when omitted. */
   budget?: number;
@@ -36,6 +38,7 @@ export interface IndexSetOptions {
   schedule?: (flush: () => void) => void;
 }
 
+/** An index set over a host, loaded on first use. */
 export function createIndexSet(host: DpHost, options: IndexSetOptions = {}): IndexSet {
   const budget = options.budget ?? host.caps.budget;
   let chunks: string[][] | undefined;

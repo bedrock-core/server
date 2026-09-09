@@ -29,6 +29,7 @@ import { isUsable } from './handle';
 /** Locale `forPlayer` falls back to when no candidate locale is published. */
 const DEFAULT_LOCALE = 'en_US';
 
+/** Each addon's i18n bundle, announced, with resolvers over all of them. */
 export class TranslationsRegistry extends Announcement<I18nBundle> {
   /** Caches over announced bundles, cleared whenever any addon re-publishes. */
   private readonly _verbs = new Map<string, I18n<unknown> | undefined>();

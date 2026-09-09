@@ -77,7 +77,7 @@ Also `around(ctx, mc, next)` (call `next()` for the rest of the chain, or not) a
 **Every handler runs synchronously in the target's realm.** `ctx.args` are the live objects the
 target was called with; `mc` is the `@minecraft/server` namespace the target passes in, so
 `world` / `system` are available without an async import. The patcher's own state is reachable
-through `ctx.shared.get(ns, key)` — the shared mirror every realm holds ([02-shared](./02-shared.md)) — and that is the
+through `ctx.shared.get(ns, key)` — the shared mirror every realm holds — and that is the
 patcher's way to hand its config or flags to its patches (publish what a patch needs via
 `core.shared`; config *values* are not mirrored and are not visible here).
 
@@ -99,9 +99,9 @@ allowed identifiers are the parameters, JS globals (`Math`, `JSON`, `Object`, �
 ## Failure isolation — and the one thing it cannot catch
 
 Each handler runs inside a `try`. A throw is caught, counted, logged with the patcher's namespace
-and the point, and after N consecutive failures the patch is disabled with a diagnostic
-([04-trust-model](./07-trust-model.md#2-robustness-against-a-buggy-pack--the-real-threat)). The
-target keeps running unpatched.
+and the point, and after N consecutive failures the patch is disabled with a diagnostic — the
+robustness rule of the [trust model](https://bedrock-core.drav.dev/docs/server/guides/trust-model).
+The target keeps running unpatched.
 
 **An infinite loop is not a throw.** A handler that never returns trips the script watchdog, and
 the watchdog terminates the *target's* realm — the patcher's bug takes down the addon it patched.

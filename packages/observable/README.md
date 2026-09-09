@@ -72,6 +72,10 @@ lifetime: yours is the source of truth, the native writes back only when `client
 `dispose()` releases both directions. Scalars only — `number`, `string`, `boolean`; derive one with
 `computed` from anything larger.
 
+## Documentation
+
+- [observable](https://bedrock-core.drav.dev/docs/observable) — `observable`, `computed`, `effect`, `batch`, `last`, `toNative`
+
 ## License
 
 MIT

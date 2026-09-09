@@ -19,6 +19,11 @@ import type { ReadonlyObservable } from './observable';
 export { bindNative } from './native';
 export type { NativeBinding, NativeObservable, NativeScalar, ToNativeOptions } from './native';
 
+/**
+ * Mint the engine's observable for a scalar and keep it in step with `source` for the form's
+ * lifetime: ours is the source of truth, the native writes back only when `clientWritable`, and
+ * `dispose()` releases both directions.
+ */
 export function toNative(source: ReadonlyObservable<number>, options?: ToNativeOptions): NativeBinding<ObservableNumber>;
 export function toNative(source: ReadonlyObservable<string>, options?: ToNativeOptions): NativeBinding<ObservableString>;
 export function toNative(source: ReadonlyObservable<boolean>, options?: ToNativeOptions): NativeBinding<ObservableBoolean>;

@@ -22,11 +22,13 @@ export interface NativeObservable<T> {
   unsubscribe(callback: (value: T) => void): boolean;
 }
 
+/** How a native observable is bound to one of ours. */
 export interface ToNativeOptions {
   /** Let the player's control write the value back. Off, the native is a one-way view. */
   clientWritable?: boolean;
 }
 
+/** What `toNative()` returns: the native to hand to a form control, and the release. */
 export interface NativeBinding<N> {
   native: N;
   /** Release both directions. Call it when the form closes. */

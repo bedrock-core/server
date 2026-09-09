@@ -20,11 +20,13 @@ import {
   type PeerEventsTree,
 } from './tree';
 
+/** What `new EventsRegistry()` takes. */
 export interface EventsRegistryOptions {
   events: Events;
   namespace: string;
 }
 
+/** This addon's events as a typed tree, and any other addon's as one that only listens. */
 export class EventsRegistry {
   private readonly _events: Events;
   private readonly _namespace: string;

@@ -10,6 +10,7 @@ import { Block, ContainerSlot, Dimension, Entity, ItemStack, World, system, worl
 import { createDb, parseBlockIdentity, type Db, type Lifecycle, type Locator } from './collection';
 import { createResolver, structuralClassifier, type Classifier, type Resolver, type TargetKind } from './resolve';
 
+/** The engine's classifier: a target's kind by `instanceof`. */
 export const engineClassifier: Classifier = {
   kindOf(target: unknown): TargetKind {
     if (target instanceof World) {
@@ -40,6 +41,7 @@ export const engineClassifier: Classifier = {
   },
 };
 
+/** The engine's locator: an entity by id, a block by dimension and location, the world as itself. */
 export const engineLocator: Locator = {
   bind(target: unknown): () => unknown {
     if (target instanceof Entity) {
@@ -102,6 +104,7 @@ export const engineLocator: Locator = {
   },
 };
 
+/** A resolver over the engine's world. */
 export function createEngineResolver(namespace: string): Resolver {
   return createResolver({ world, namespace, classify: engineClassifier });
 }
@@ -131,6 +134,7 @@ export const engineLifecycle: Lifecycle = {
   },
 };
 
+/** A db over the engine's world, with its classifier, locator and lifecycle hooks; what `core.db` is. */
 export function createEngineDb(namespace: string, log?: (message: string) => void): Db {
   return createDb({ world, namespace, classify: engineClassifier, locate: engineLocator, lifecycle: engineLifecycle, log });
 }
