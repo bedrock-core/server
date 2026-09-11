@@ -3,7 +3,7 @@
  *
  * An addon registers itself once — that's it. {@link Runtime.register} validates the manifest
  * and immediately brings the addon online (no separate `start()`). Everything the addon
- * *declares* rides in that one call: identity, plus the optional `translations`, `guide`,
+ * *declares* rides in that one call: identity, plus the optional `translations`, `screens`,
  * `config` and `shared` fields (see {@link RegisterOptions}). The runtime wraps a single sync
  * `SyncNode` and exposes the cross-addon {@link Registry}, the {@link FeatureManager}, the
  * shared mirror and messaging passthroughs.
@@ -20,10 +20,9 @@ import { ConfigRegistry, type Config } from './config/config-registry';
 import type { ConfigDefinition } from './config/schema';
 import type { I18nBundle } from '@bedrock-core/i18n';
 import { TranslationsRegistry } from './translations';
-import { GuidesRegistry } from './guides';
-import type { GuideManifest, GuideReference } from './guides';
 import { Announcement } from './announcement';
 import { type AddonPageReference, isAddonPageReference } from './pages';
+import { ScreensRegistry, type AddonScreens } from './screens';
 import { HostElection } from './host';
 import type { Rpc } from '@bedrock-core/sync';
 import { createEngineDb } from '@bedrock-core/db/minecraft';
@@ -39,8 +38,8 @@ import type { EventsDef, EventsTree } from './events/tree';
  * optional field is sugar for the corresponding post-register call and behaves identically:
  *
  * - `translations` → `core.translations.provide()`
- * - `guideReference` → `core.guides.provide()`, `guide` → `core.guides.manifest.provide()`
  * - `page` → `core.pages.provide()`
+ * - `screens` → `core.screens.provide()`
  * - `config` → `core.config.define()` (its typed accessors become `register()`'s return value)
  * - `shared` → `core.shared.define()` (its typed tree is `register()`'s `shared`)
  * - `events` → `core.events.define()` (its typed tree is `register()`'s `events`)
@@ -65,17 +64,6 @@ export interface RegisterOptions<
    */
   translations?: I18nBundle;
 
-  /** This addon's compiled guide manifest (`@bedrock-core/generated/guides`), published for the elected host to render. */
-  guide?: GuideManifest;
-
-  /**
-   * This addon's guide as a reference (`guideReference(ns)` from `@bedrock-core/guides`),
-   * published for the elected host to present with native forms — every client already
-   * holds the compiled screens in the pack. Beside `guide` while hosts that only render
-   * manifests are around; instead of it once they are not.
-   */
-  guideReference?: GuideReference;
-
   /**
    * This addon's page in the shared addon list as a reference
    * (`addonPageReference(Page)` from `@bedrock-core/config/compiled`): per
@@ -84,6 +72,15 @@ export interface RegisterOptions<
    * holds; the elected host draws it into its list from this alone.
    */
   page?: AddonPageReference;
+
+  /**
+   * This addon's compiled screens as references (`uiReference()` from
+   * `@bedrock-core/generated/ui`): per screen the compiled title, the value
+   * each entry carries and where each press leads. Published so that
+   * `navigate('<addon>:<screen>')` resolves in a realm running none of this
+   * addon's script — the layouts are in the pack every client already holds.
+   */
+  screens?: AddonScreens;
 
   /** This addon's config schema. When given, `register()` returns the typed scope accessors. */
   config?: I;
@@ -122,8 +119,8 @@ export class Runtime {
   private _db: Db | undefined;
   private _config: ConfigRegistry | undefined;
   private _translations: TranslationsRegistry | undefined;
-  private _guides: GuidesRegistry | undefined;
   private _pages: Announcement<AddonPageReference> | undefined;
+  private _screens: ScreensRegistry | undefined;
   private _host: HostElection | undefined;
 
   /** Whether the addon has been registered (and is therefore live). */
@@ -176,9 +173,9 @@ export class Runtime {
     return this.require(this._pages, 'pages');
   }
 
-  /** Cross-addon guides — publish via `register({ guideReference })` (or `core.guides.provide()` to replace at runtime), `core.guides.of()` for the host's reads. */
-  get guides(): GuidesRegistry {
-    return this.require(this._guides, 'guides');
+  /** Cross-addon screens — publish via `register({ screens })`, `core.screens.find(key)` to resolve one key from whichever addon owns it. */
+  get screens(): ScreensRegistry {
+    return this.require(this._screens, 'screens');
   }
 
   /** Host election — `core.host.isHost` tells you whether this realm should do the work only one realm may do (e.g. render the shared UI). */
@@ -229,7 +226,7 @@ export class Runtime {
    * or a second registration. No separate start step is needed.
    *
    * Beyond identity, the options bag carries everything the addon declares up front:
-   * `translations`, `guide`, `config` and `shared` (see {@link RegisterOptions}). The result holds
+   * `translations`, `screens`, `config` and `shared` (see {@link RegisterOptions}). The result holds
    * the typed accessors of what was declared, each under its own key: `config` — the same value
    * `core.config.define()` would return — and `shared`.
    */
@@ -261,8 +258,8 @@ export class Runtime {
     const db = createEngineDb(namespace, message => console.warn(message));
     const config = new ConfigRegistry(node, namespace, db);
     const translations = new TranslationsRegistry(node.state, namespace);
-    const guides = new GuidesRegistry(node.state, namespace);
     const pages = new Announcement<AddonPageReference>(node.state, namespace, 'addon/page', isAddonPageReference);
+    const screens = new ScreensRegistry(node.state, namespace);
     const host = new HostElection(registry, namespace);
     const shared = new SharedRegistry({ state: node.state, namespace });
     const events = new EventsRegistry({ events: node.events, namespace });
@@ -275,8 +272,8 @@ export class Runtime {
     this._db = db;
     this._config = config;
     this._translations = translations;
-    this._guides = guides;
     this._pages = pages;
+    this._screens = screens;
     this._host = host;
 
     node.start();
@@ -287,11 +284,9 @@ export class Runtime {
 
     if (options.translations) { translations.provide(options.translations); }
 
-    if (options.guide) { guides.manifest.provide(options.guide); }
-
-    if (options.guideReference) { guides.provide(options.guideReference); }
-
     if (options.page) { pages.provide(options.page); }
+
+    if (options.screens) { screens.provide(options.screens); }
 
     const configTree = options.config ? config.define(options.config) : undefined;
     const sharedTree = options.shared ? shared.define(options.shared) : undefined;
@@ -318,7 +313,7 @@ export class Runtime {
     this._node?.stop();
     this._host = undefined;
     this._pages = undefined;
-    this._guides = undefined;
+    this._screens = undefined;
     this._translations = undefined;
     this._config = undefined;
     this._features = undefined;

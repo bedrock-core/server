@@ -47,7 +47,7 @@
 		"@bedrock-core/observable": "workspace:^"
 	},
 	"devDependencies": {
-		"@minecraft/server": "2.8.0",
+		"@minecraft/server": "2.9.0",
 		"@stylistic/eslint-plugin": "^5.10.0",
 		"eslint": "^10.5.0",
 		"typescript": "^6.0.3",
@@ -55,6 +55,6 @@
 		"vitest": "^4.1.10"
 	},
 	"peerDependencies": {
-		"@minecraft/server": ">=2.8.0"
+		"@minecraft/server": ">=2.9.0"
 	}
 }

@@ -93,7 +93,7 @@
 		"@bedrock-core/sync": "workspace:*"
 	},
 	"peerDependencies": {
-		"@minecraft/server": ">=2.8.0",
+		"@minecraft/server": ">=2.9.0",
 		"@minecraft/server-ui": ">=2.1.0"
 	},
 	"peerDependenciesMeta": {
@@ -107,7 +107,7 @@
 		"@changesets/cli": "^2.31.0",
 		"@eslint/js": "^10.0.1",
 		"@eslint/json": "^2.0.0",
-		"@minecraft/server": "2.8.0",
+		"@minecraft/server": "2.9.0",
 		"@minecraft/server-ui": "2.1.0",
 		"@stylistic/eslint-plugin": "^5.10.0",
 		"@types/node": "^26.0.1",

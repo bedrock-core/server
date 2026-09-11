@@ -100,7 +100,7 @@ export { type EngineHandle, isUsable } from './handle';
 export type { TranslationsRegistry } from './translations';
 export type { I18nBundle, TranslationResolver } from '@bedrock-core/i18n';
 
-export type { GuidesRegistry, GuideManifest, GuideReference } from './guides';
+export type { AddonScreens, ScreensRegistry } from './screens';
 export type { AddonPageReference } from './pages';
 
 export type { ConfigRegistry, Config, ConfigAccessOptions, LocalConfigScopes, RemoteConfigAccessor, TypedRemoteConfig } from './config/config-registry';

@@ -71,14 +71,14 @@ __metadata:
   resolution: "@bedrock-core/db@workspace:packages/db"
   dependencies:
     "@bedrock-core/observable": "workspace:^"
-    "@minecraft/server": "npm:2.8.0"
+    "@minecraft/server": "npm:2.9.0"
     "@stylistic/eslint-plugin": "npm:^5.10.0"
     eslint: "npm:^10.5.0"
     typescript: "npm:^6.0.3"
     typescript-eslint: "npm:^8.62.0"
     vitest: "npm:^4.1.10"
   peerDependencies:
-    "@minecraft/server": ">=2.8.0"
+    "@minecraft/server": ">=2.9.0"
   languageName: unknown
   linkType: soft
 
@@ -86,7 +86,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@bedrock-core/i18n@portal:../ui/packages/i18n::locator=%40bedrock-core%2Fserver%40workspace%3A."
   peerDependencies:
-    "@minecraft/server": ">=2.8.0"
+    "@minecraft/server": ">=2.9.0"
   languageName: node
   linkType: soft
 
@@ -115,13 +115,13 @@ __metadata:
     "@bedrock-core/db": "workspace:^"
     "@bedrock-core/i18n": "npm:^0.1.0"
     "@bedrock-core/sync": "workspace:^"
-    "@minecraft/server": "npm:2.8.0"
+    "@minecraft/server": "npm:2.9.0"
     "@stylistic/eslint-plugin": "npm:^5.10.0"
     eslint: "npm:^10.5.0"
     typescript: "npm:^6.0.3"
     typescript-eslint: "npm:^8.62.0"
   peerDependencies:
-    "@minecraft/server": ">=2.8.0"
+    "@minecraft/server": ">=2.9.0"
   languageName: unknown
   linkType: soft
 
@@ -158,7 +158,7 @@ __metadata:
     "@changesets/cli": "npm:^2.31.0"
     "@eslint/js": "npm:^10.0.1"
     "@eslint/json": "npm:^2.0.0"
-    "@minecraft/server": "npm:2.8.0"
+    "@minecraft/server": "npm:2.9.0"
     "@minecraft/server-ui": "npm:2.1.0"
     "@stylistic/eslint-plugin": "npm:^5.10.0"
     "@types/node": "npm:^26.0.1"
@@ -172,7 +172,7 @@ __metadata:
     typescript-eslint: "npm:^8.62.0"
     vitest: "npm:^4.1.10"
   peerDependencies:
-    "@minecraft/server": ">=2.8.0"
+    "@minecraft/server": ">=2.9.0"
     "@minecraft/server-ui": ">=2.1.0"
   peerDependenciesMeta:
     "@minecraft/server-ui":
@@ -184,14 +184,14 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@bedrock-core/sync@workspace:packages/sync"
   dependencies:
-    "@minecraft/server": "npm:2.8.0"
+    "@minecraft/server": "npm:2.9.0"
     "@stylistic/eslint-plugin": "npm:^5.10.0"
     eslint: "npm:^10.5.0"
     typescript: "npm:^6.0.3"
     typescript-eslint: "npm:^8.62.0"
     vitest: "npm:^4.1.10"
   peerDependencies:
-    "@minecraft/server": ">=2.8.0"
+    "@minecraft/server": ">=2.9.0"
   languageName: unknown
   linkType: soft
 
@@ -746,16 +746,6 @@ __metadata:
     "@minecraft/common": ^1.0.0
     "@minecraft/server": ^2.0.0
   checksum: 10c0/b32fd20d0d384b227d6168860d43b0094069c5503a9982061cb324e85f8be432f2efb6daec9556c5c4a399f203a9c0fbea6d16d2d375249fdda0b676cffe1aa3
-  languageName: node
-  linkType: hard
-
-"@minecraft/server@npm:2.8.0":
-  version: 2.8.0
-  resolution: "@minecraft/server@npm:2.8.0"
-  peerDependencies:
-    "@minecraft/common": ^1.2.0
-    "@minecraft/vanilla-data": ">=1.20.70"
-  checksum: 10c0/bb4f8a8a90b52831786f51ce320bbf2a8494f7d71d4d6329c22c9710a10a36ed7096acd4f1ff9d2c9971d95c391b8ba36ef674bda47629f9c671c9134994786d
   languageName: node
   linkType: hard
 

@@ -1,8 +1,8 @@
 /**
  * An announcement: one small, owner-written value under a framework key on the mirror.
  *
- * Every cross-addon feed the runtime has — the config schema, the i18n bundle, a guide
- * reference, the page reference, the feature flags, the shared shape — is the same three moves:
+ * Every cross-addon feed the runtime has — the config schema, the i18n bundle, the screen
+ * references, the page reference, the feature flags, the shared shape — is the same three moves:
  * the owner publishes a value under a `core-` key in its own namespace, every realm reads it
  * from its local mirror, and a listener hears when any namespace's value changes. This class is
  * those three moves once, typed by the value and guarded on read, so a peer publishing something

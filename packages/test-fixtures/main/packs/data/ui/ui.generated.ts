@@ -5,5 +5,5 @@
 // arrangement the i18n and guides bundles use.
 //
 // Importing it is what turns compiled screens on, and what makes
-// `guideReference()` find the guide's screens to publish.
+// `uiReference()` find the compiled screens to publish.
 export {};

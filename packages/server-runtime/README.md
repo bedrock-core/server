@@ -45,7 +45,7 @@ build against has to match the one your pack's `manifest.json` declares.
 
 ```ts
 import { authorize, core, event, players, schema } from '@bedrock-core/server-runtime';
-import { guideReference } from '@bedrock-core/guides';
+import { uiReference } from '@bedrock-core/generated/ui';
 import bundle from '@bedrock-core/generated/i18n';
 
 // register() declares everything and brings the addon online. It returns the typed accessors of
@@ -59,7 +59,7 @@ const { config, shared, events } = core.register({
     dependencies: ['os_shop'],    // namespaces you need — soft, logs, never blocks
   },
   translations: bundle,           // optional — the i18n filter's bundle
-  guideReference: guideReference('drav0011_economy'),   // optional — the compiled guide's index
+  screens: uiReference(),                              // optional — this addon's compiled screens
   config: {                       // optional — config schema
     server: { taxRate: { type: 'number', default: 0.05, min: 0, max: 1, label: 'Tax Rate' } },
   },
