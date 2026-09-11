@@ -53,8 +53,7 @@
 		"packages/observable",
 		"packages/sync",
 		"packages/server-runtime",
-		"packages/test-addon",
-		"packages/test-addon-2"
+		"packages/test-fixtures"
 	],
 	"resolutions": {
 		"@bedrock-core/ui": "portal:../ui",
@@ -77,14 +76,15 @@
 		"lint": "eslint .",
 		"test": "yarn workspaces foreach -ptA run test",
 		"bench": "yarn workspace @bedrock-core/sync run bench",
-		"test:mc": "yarn workspaces foreach -A --jobs=1 run build:test && bc-bds run --packs packages/test-addon/build/test --packs packages/test-addon-2/build/test --tag core --expect-registered 10",
-		"test:mc:bench": "yarn workspaces foreach -A --jobs=1 run build:test && bc-bds run --packs packages/test-addon/build/test --packs packages/test-addon-2/build/test --tag bench --expect-registered 9 --idle 120 && node scripts/bench-report.mjs",
+		"test:mc": "yarn workspaces foreach -A --jobs=1 run build:test && bc-bds run --packs packages/test-fixtures/main/build/test --packs packages/test-fixtures/peer/build/test --tag core --expect-registered 10",
+		"test:mc:bench": "yarn workspaces foreach -A --jobs=1 run build:test && bc-bds run --packs packages/test-fixtures/main/build/test --packs packages/test-fixtures/peer/build/test --tag bench --expect-registered 9 --idle 120 && node scripts/bench-report.mjs",
 		"bench:report": "node scripts/bench-report.mjs",
 		"bds:fetch": "bc-bds fetch",
 		"bds:where": "bc-bds where",
 		"changeset": "changeset",
 		"version-packages": "changeset version && node scripts/sync-meta-version.mjs && node scripts/sync-runtime-version.mjs",
-		"release": "yarn lint:libs && yarn build:libs && node scripts/publish-tarballs.mjs && node scripts/publish-tarballs.mjs --only @bedrock-core/server && changeset tag && node scripts/tag-meta.mjs"
+		"release": "yarn lint:libs && yarn build:libs && node scripts/publish-tarballs.mjs && node scripts/publish-tarballs.mjs --only @bedrock-core/server && changeset tag && node scripts/tag-meta.mjs",
+		"clean": "node scripts/clean.mjs"
 	},
 	"dependencies": {
 		"@bedrock-core/db": "workspace:*",

@@ -1,0 +1,62 @@
+{
+	"format_version": 2,
+	"header": {
+		"name": "Bedrock Core fixture",
+		"description": "GameTest fixture for the Bedrock Core server runtime",
+		"uuid": "bf9fb8cc-414b-4b92-aae6-9365d1916edb",
+		"pack_scope": "world",
+		"version": [
+			1,
+			0,
+			0
+		],
+		"min_engine_version": [
+			1,
+			26,
+			50
+		]
+	},
+	"modules": [
+		{
+			"type": "data",
+			"uuid": "3a23e007-6b0d-4bd3-b76c-f53a74092ba6",
+			"version": [
+				1,
+				0,
+				0
+			]
+		},
+		{
+			"type": "script",
+			"language": "javascript",
+			"uuid": "70ce27d2-f39d-4c02-8bf0-b3529002f32b",
+			"entry": "scripts/main.js",
+			"version": [
+				1,
+				0,
+				0
+			]
+		}
+	],
+	"dependencies": [
+		{
+			"uuid": "c8ab693a-6740-4f01-a832-c340370c088b",
+			"version": [
+				1,
+				0,
+				0
+			]
+		},
+		{
+			"module_name": "@minecraft/server",
+			"version": "2.9.0"
+		},
+		{
+			"module_name": "@minecraft/server-ui",
+			"version": "2.1.0"
+		}
+	],
+	"metadata": {
+		"product_type": "addon"
+	}
+}

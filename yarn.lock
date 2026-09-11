@@ -66,20 +66,6 @@ __metadata:
   languageName: node
   linkType: soft
 
-"@bedrock-core/config@portal:../ui/packages/config::locator=%40bedrock-core%2Fserver%40workspace%3A.":
-  version: 0.0.0-use.local
-  resolution: "@bedrock-core/config@portal:../ui/packages/config::locator=%40bedrock-core%2Fserver%40workspace%3A."
-  peerDependencies:
-    "@bedrock-core/guides": "*"
-    "@bedrock-core/i18n": "*"
-    "@bedrock-core/navigation": "*"
-    "@bedrock-core/ore-styled": "*"
-    "@bedrock-core/server-runtime": "*"
-    "@bedrock-core/ui-runtime": "*"
-    "@minecraft/server": "*"
-  languageName: node
-  linkType: soft
-
 "@bedrock-core/db@workspace:*, @bedrock-core/db@workspace:^, @bedrock-core/db@workspace:packages/db":
   version: 0.0.0-use.local
   resolution: "@bedrock-core/db@workspace:packages/db"
@@ -96,35 +82,11 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@bedrock-core/flexbox@portal:../ui/packages/flexbox::locator=%40bedrock-core%2Fserver%40workspace%3A.":
-  version: 0.0.0-use.local
-  resolution: "@bedrock-core/flexbox@portal:../ui/packages/flexbox::locator=%40bedrock-core%2Fserver%40workspace%3A."
-  languageName: node
-  linkType: soft
-
-"@bedrock-core/guides@portal:../ui/packages/guides::locator=%40bedrock-core%2Fserver%40workspace%3A.":
-  version: 0.0.0-use.local
-  resolution: "@bedrock-core/guides@portal:../ui/packages/guides::locator=%40bedrock-core%2Fserver%40workspace%3A."
-  peerDependencies:
-    "@bedrock-core/navigation": "*"
-    "@bedrock-core/ore-styled": "*"
-    "@bedrock-core/ui-runtime": "*"
-  languageName: node
-  linkType: soft
-
 "@bedrock-core/i18n@portal:../ui/packages/i18n::locator=%40bedrock-core%2Fserver%40workspace%3A.":
   version: 0.0.0-use.local
   resolution: "@bedrock-core/i18n@portal:../ui/packages/i18n::locator=%40bedrock-core%2Fserver%40workspace%3A."
   peerDependencies:
     "@minecraft/server": ">=2.8.0"
-  languageName: node
-  linkType: soft
-
-"@bedrock-core/navigation@portal:../ui/packages/navigation::locator=%40bedrock-core%2Fserver%40workspace%3A.":
-  version: 0.0.0-use.local
-  resolution: "@bedrock-core/navigation@portal:../ui/packages/navigation::locator=%40bedrock-core%2Fserver%40workspace%3A."
-  peerDependencies:
-    "@bedrock-core/ui-runtime": "*"
   languageName: node
   linkType: soft
 
@@ -146,16 +108,6 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@bedrock-core/ore-styled@portal:../ui/packages/ore-styled::locator=%40bedrock-core%2Fserver%40workspace%3A.":
-  version: 0.0.0-use.local
-  resolution: "@bedrock-core/ore-styled@portal:../ui/packages/ore-styled::locator=%40bedrock-core%2Fserver%40workspace%3A."
-  dependencies:
-    "@bedrock-core/i18n": "workspace:*"
-  peerDependencies:
-    "@bedrock-core/ui-runtime": "*"
-  languageName: node
-  linkType: soft
-
 "@bedrock-core/server-runtime@workspace:*, @bedrock-core/server-runtime@workspace:^, @bedrock-core/server-runtime@workspace:packages/server-runtime":
   version: 0.0.0-use.local
   resolution: "@bedrock-core/server-runtime@workspace:packages/server-runtime"
@@ -173,20 +125,16 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@bedrock-core/server-test-addon-2@workspace:packages/test-addon-2":
+"@bedrock-core/server-test-fixtures@workspace:packages/test-fixtures":
   version: 0.0.0-use.local
-  resolution: "@bedrock-core/server-test-addon-2@workspace:packages/test-addon-2"
+  resolution: "@bedrock-core/server-test-fixtures@workspace:packages/test-fixtures"
   dependencies:
-    "@bedrock-core/config": "npm:*"
-    "@bedrock-core/i18n": "npm:*"
-    "@bedrock-core/ore-styled": "npm:*"
     "@bedrock-core/server-runtime": "workspace:^"
     "@bedrock-core/sync": "workspace:^"
-    "@bedrock-core/ui": "npm:^0.9.1"
-    "@bedrock-core/ui-compile": "npm:*"
     "@eslint/js": "npm:^10.0.1"
     "@eslint/json": "npm:^2.0.0"
-    "@minecraft/server": "npm:2.8.0"
+    "@minecraft/server": "npm:2.9.0"
+    "@minecraft/server-gametest": "npm:1.0.0-beta.1.26.50-preview.25"
     "@minecraft/server-ui": "npm:2.1.0"
     "@stylistic/eslint-plugin": "npm:^5.10.0"
     eslint: "npm:^10.5.0"
@@ -194,34 +142,6 @@ __metadata:
     globals: "npm:^17.7.0"
     typescript: "npm:^6.0.3"
     typescript-eslint: "npm:^8.62.0"
-  languageName: unknown
-  linkType: soft
-
-"@bedrock-core/server-test-addon@workspace:packages/test-addon":
-  version: 0.0.0-use.local
-  resolution: "@bedrock-core/server-test-addon@workspace:packages/test-addon"
-  dependencies:
-    "@bedrock-core/config": "npm:*"
-    "@bedrock-core/i18n": "npm:*"
-    "@bedrock-core/server-runtime": "workspace:^"
-    "@bedrock-core/sync": "workspace:^"
-    "@bedrock-core/ui": "npm:^0.9.1"
-    "@eslint/js": "npm:^10.0.1"
-    "@eslint/json": "npm:^2.0.0"
-    "@minecraft/common": "npm:1.3.0"
-    "@minecraft/math": "npm:2.4.0"
-    "@minecraft/server": "npm:2.8.0"
-    "@minecraft/server-gametest": "npm:1.0.0-beta.1.26.43-stable"
-    "@minecraft/server-ui": "npm:2.1.0"
-    "@minecraft/vanilla-data": "npm:1.26.31"
-    "@stylistic/eslint-plugin": "npm:^5.10.0"
-    "@types/uuid": "npm:^11.0.0"
-    eslint: "npm:^10.5.0"
-    eslint-plugin-minecraft-linting: "npm:^2.0.12"
-    globals: "npm:^17.7.0"
-    typescript: "npm:^6.0.3"
-    typescript-eslint: "npm:^8.62.0"
-    uuid: "npm:^14.0.1"
   languageName: unknown
   linkType: soft
 
@@ -273,43 +193,6 @@ __metadata:
   peerDependencies:
     "@minecraft/server": ">=2.8.0"
   languageName: unknown
-  linkType: soft
-
-"@bedrock-core/ui-compile@portal:../ui/packages/ui-compile::locator=%40bedrock-core%2Fserver%40workspace%3A.":
-  version: 0.0.0-use.local
-  resolution: "@bedrock-core/ui-compile@portal:../ui/packages/ui-compile::locator=%40bedrock-core%2Fserver%40workspace%3A."
-  dependencies:
-    "@bedrock-core/ui-runtime": "workspace:*"
-  languageName: node
-  linkType: soft
-
-"@bedrock-core/ui-runtime@portal:../ui/packages/ui-runtime::locator=%40bedrock-core%2Fserver%40workspace%3A.":
-  version: 0.0.0-use.local
-  resolution: "@bedrock-core/ui-runtime@portal:../ui/packages/ui-runtime::locator=%40bedrock-core%2Fserver%40workspace%3A."
-  dependencies:
-    "@bedrock-core/flexbox": "workspace:*"
-    "@bedrock-core/i18n": "workspace:*"
-  peerDependencies:
-    "@minecraft/server": "*"
-    "@minecraft/server-ui": "*"
-  languageName: node
-  linkType: soft
-
-"@bedrock-core/ui@portal:../ui::locator=%40bedrock-core%2Fserver%40workspace%3A.":
-  version: 0.0.0-use.local
-  resolution: "@bedrock-core/ui@portal:../ui::locator=%40bedrock-core%2Fserver%40workspace%3A."
-  dependencies:
-    "@bedrock-core/config": "workspace:*"
-    "@bedrock-core/flexbox": "workspace:*"
-    "@bedrock-core/guides": "workspace:*"
-    "@bedrock-core/i18n": "workspace:*"
-    "@bedrock-core/navigation": "workspace:*"
-    "@bedrock-core/ore-styled": "workspace:*"
-    "@bedrock-core/ui-runtime": "workspace:*"
-  peerDependencies:
-    "@minecraft/server": "*"
-    "@minecraft/server-ui": "*"
-  languageName: node
   linkType: soft
 
 "@changesets/apply-release-plan@npm:^7.1.1":
@@ -846,29 +729,13 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@minecraft/common@npm:1.3.0":
-  version: 1.3.0
-  resolution: "@minecraft/common@npm:1.3.0"
-  checksum: 10c0/6f335029426b6bab2b0c22562863c6a0681d855767ffa8d8e3f0e579ce940505ad2175bd4c96bb5c35b90344ee758757d1d7807908623b6fe00f5f73ea596911
-  languageName: node
-  linkType: hard
-
-"@minecraft/math@npm:2.4.0":
-  version: 2.4.0
-  resolution: "@minecraft/math@npm:2.4.0"
-  peerDependencies:
-    "@minecraft/server": ^1.15.0 || ^2.0.0
-  checksum: 10c0/b38640384285cef98d7757b1e2587e729dd2dd00cdd25716b0e594f12598d7dfca35ec9c0fc02631f246967d5276e0a8b2a312cc890a42fefa56c4e8429d87e8
-  languageName: node
-  linkType: hard
-
-"@minecraft/server-gametest@npm:1.0.0-beta.1.26.43-stable":
-  version: 1.0.0-beta.1.26.43-stable
-  resolution: "@minecraft/server-gametest@npm:1.0.0-beta.1.26.43-stable"
+"@minecraft/server-gametest@npm:1.0.0-beta.1.26.50-preview.25":
+  version: 1.0.0-beta.1.26.50-preview.25
+  resolution: "@minecraft/server-gametest@npm:1.0.0-beta.1.26.50-preview.25"
   peerDependencies:
     "@minecraft/common": ^1.0.0
-    "@minecraft/server": ^1.17.0 || ^2.0.0 || ^2.10.0-beta.1.26.43-stable
-  checksum: 10c0/7c0d7e77d696f71cf27a87ca067f75b2357b1968139cc9bfa2f84c72c2ce5e8e395fdb3701e4ed6289834b4c002b123f04767f2ea522ca66e45a589b02959ca5
+    "@minecraft/server": ^1.17.0 || ^2.0.0 || ^2.11.0-beta.1.26.50-preview.25
+  checksum: 10c0/3286667ec2e8a5558d3b6123f78f63682f676b49b7040671e45999a6b7a9b701fc7d8de60bfb31a54899a232b15d5cc4a2540257f2e266048d9f55aabae17944
   languageName: node
   linkType: hard
 
@@ -892,10 +759,13 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@minecraft/vanilla-data@npm:1.26.31":
-  version: 1.26.31
-  resolution: "@minecraft/vanilla-data@npm:1.26.31"
-  checksum: 10c0/af2ea3b7035836ee5f08b8ed2abd921ee5164f519d1afaecb7a9131b637aec5316310921756b7a54a7e4579b96f123edbc7e9ff54a6f497be52fa53198884128
+"@minecraft/server@npm:2.9.0":
+  version: 2.9.0
+  resolution: "@minecraft/server@npm:2.9.0"
+  peerDependencies:
+    "@minecraft/common": ^1.2.0
+    "@minecraft/vanilla-data": ">=1.20.70"
+  checksum: 10c0/0a88cd6ad7c5f8a626c3e386a485bd4aab57984dca7f3e35544885f9be25bda94f953efec9fb799a08190920e1676629509934e7ab275add9946c9f4331b8562
   languageName: node
   linkType: hard
 
@@ -1119,15 +989,6 @@ __metadata:
   dependencies:
     undici-types: "npm:~8.3.0"
   checksum: 10c0/31d204333c70124da6bcac7d1f27d8980149fe3f95a8419bfcd19c3e5823705c0e370d71ac34399352e1263b2d5fc41c87af964ec81e5a05a32224d65d8d224e
-  languageName: node
-  linkType: hard
-
-"@types/uuid@npm:^11.0.0":
-  version: 11.0.0
-  resolution: "@types/uuid@npm:11.0.0"
-  dependencies:
-    uuid: "npm:*"
-  checksum: 10c0/6ebf1448d8fdc78d348a8a84389b74083f2f58bed75a5a6cf3be8419d33dcf757735c8b2de746b066ff8ef07f4384d02549774dc84195ffa46b24745471e9d8e
   languageName: node
   linkType: hard
 
@@ -3710,15 +3571,6 @@ __metadata:
   dependencies:
     punycode: "npm:^2.1.0"
   checksum: 10c0/4ef57b45aa820d7ac6496e9208559986c665e49447cb072744c13b66925a362d96dd5a46c4530a6b8e203e5db5fe849369444440cb22ecfc26c679359e5dfa3c
-  languageName: node
-  linkType: hard
-
-"uuid@npm:*, uuid@npm:^14.0.1":
-  version: 14.0.1
-  resolution: "uuid@npm:14.0.1"
-  bin:
-    uuid: dist-node/bin/uuid
-  checksum: 10c0/2d961289097cb68c37d93d1da0b5c3aafc1eb9948a455cca8d0ae53a099b2fe583b8933254a84097f700e6bac2e23033364904df0467c22551d5d9611febcaf6
   languageName: node
   linkType: hard
 

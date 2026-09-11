@@ -3,7 +3,7 @@
 This folder is managed by [Changesets](https://github.com/changesets/changesets).
 It tracks pending version bumps + changelog entries for the publishable packages
 (`@bedrock-core/server`, `@bedrock-core/server-runtime`, `@bedrock-core/sync`).
-The monorepo root and the reference addons (`packages/test-addon*`) are `private`
+The monorepo root and the GameTest fixtures (`packages/test-fixture*`) are `private`
 and are ignored automatically.
 
 ## Authoring a changeset

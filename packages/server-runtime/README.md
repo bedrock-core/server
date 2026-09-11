@@ -127,8 +127,9 @@ core.rpc.request('os_shop', 'openShop', { playerId }).catch(console.warn);
   [Trust model](https://bedrock-core.drav.dev/docs/server/guides/trust-model) ·
   [UI integration](https://bedrock-core.drav.dev/docs/server/guides/ui-integration)
 
-`packages/test-addon` and `packages/test-addon-2` in this repository are two real addons wired to
-each other, with GameTests covering discovery, RPC, the shared mirror, collisions and features.
+`packages/test-fixture` in this repository carries GameTests covering discovery, RPC, the shared
+mirror, collisions and features, and `packages/test-fixture-peer` is a second pack so cross-pack
+discovery is covered too. The Economy and Shop example addons live in the `examples` repository.
 
 ## License
 

@@ -1,0 +1,98 @@
+{
+	"$schema": "https://raw.githubusercontent.com/Bedrock-OSS/regolith-schemas/main/config/v1.4.json",
+	"author": "DrAv0011",
+	"description": "GameTest fixture for the Bedrock Core server runtime",
+	"name": "core-server-fixture",
+	"packs": {
+		"behaviorPack": "./packs/BP",
+		"resourcePack": "./packs/RP"
+	},
+	"regolith": {
+		"dataPath": "./packs/data",
+		"filterDefinitions": {
+			"core": {
+				"runWith": "nodejs",
+				"script": "../../../../regolith-filters/core/main.ts"
+			}
+		},
+		"formatVersion": "1.4.0",
+		"profiles": {
+			"default": {
+				"export": {
+					"build": "standard",
+					"readOnly": false,
+					"target": "development"
+				},
+				"filters": [
+					{
+						"filter": "core",
+						"settings": {
+							"shared": {
+								"namespace": "core_fixture"
+							},
+							"guides": false,
+							"ui-compile": false,
+							"bundler": {
+								"debug": true
+							}
+						}
+					}
+				]
+			},
+			"test": {
+				"export": {
+					"build": "standard",
+					"readOnly": false,
+					"target": "development"
+				},
+				"filters": [
+					{
+						"filter": "core",
+						"settings": {
+							"shared": {
+								"namespace": "core_fixture"
+							},
+							"guides": false,
+							"ui-compile": false,
+							"bundler": {
+								"debug": true,
+								"tsConfigPath": "tsconfig.test.json"
+							},
+							"manifest": {
+								"manifestPath": "BP/manifest.test.json"
+							}
+						}
+					}
+				]
+			},
+			"build-test": {
+				"export": {
+					"build": "standard",
+					"bpPath": "./build/test/BP",
+					"readOnly": false,
+					"rpPath": "./build/test/RP",
+					"target": "exact"
+				},
+				"filters": [
+					{
+						"filter": "core",
+						"settings": {
+							"shared": {
+								"namespace": "core_fixture"
+							},
+							"guides": false,
+							"ui-compile": false,
+							"bundler": {
+								"debug": true,
+								"tsConfigPath": "tsconfig.test.json"
+							},
+							"manifest": {
+								"manifestPath": "BP/manifest.test.json"
+							}
+						}
+					}
+				]
+			}
+		}
+	}
+}

@@ -80,8 +80,8 @@ get an RPC reply on the tick you sent it.
   wire behavior
 
 sync is tested **in-game with GameTests**: several nodes in one realm share the real `system` bus,
-so a test can assert discovery, RPC and state convergence for real. See `packages/test-addon` and
-`packages/test-addon-2` in this repository.
+so a test can assert discovery, RPC and state convergence for real. See `packages/test-fixture` in
+this repository.
 
 ## License
 

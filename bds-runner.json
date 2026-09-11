@@ -1,7 +1,7 @@
 {
 	"$schema": "./.bds/schema/bds-runner.json",
-	"version": "1.26.43.1",
-	"channel": "stable",
+	"version": "1.26.50.25",
+	"channel": "preview",
 	"properties": {
 		"view-distance": 6
 	}
