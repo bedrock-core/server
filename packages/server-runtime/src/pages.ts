@@ -4,7 +4,11 @@
  * The page is a compiled screen baked into the addon's own pack, drawn into the host's list by
  * every client that holds the pack. What the host needs to draw it is small — per reserved
  * entry, the value it is shown with and where a press leads — and that is what an addon
- * announces under `core-addon/page`:
+ * announces under `core-addon/page`.
+ *
+ * The page follows from the manifest, so an addon's build compiles one and `ui()` announces it;
+ * declaring is all it takes. An addon that wants a page of its own writes the screen and names
+ * it here instead, and the build generates none:
  *
  * ```ts
  * import { addonPageReference } from '@bedrock-core/config/compiled';

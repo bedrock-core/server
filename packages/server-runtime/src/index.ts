@@ -137,3 +137,10 @@ export type {
   DeepPartial,
   ConfigScopeName,
 } from './config/schema';
+/**
+ * Flattening a declared schema, which an addon's BUILD needs: a config screen
+ * shaped for one section is generated from the definition the addon wrote, and
+ * these are what turn that definition into the paths the screens are keyed by.
+ * The runtime reaches the same shape through the announced schema instead.
+ */
+export { flattenGroups, flattenSchema } from './config/schema';
