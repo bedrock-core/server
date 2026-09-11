@@ -56,15 +56,16 @@
 		"packages/test-fixtures"
 	],
 	"resolutions": {
-		"@bedrock-core/ui": "portal:../ui",
-		"@bedrock-core/ui-runtime": "portal:../ui/packages/ui-runtime",
-		"@bedrock-core/ui-compile": "portal:../ui/packages/ui-compile",
+		"@bedrock-core/config": "portal:../ui/packages/config",
 		"@bedrock-core/flexbox": "portal:../ui/packages/flexbox",
+		"@bedrock-core/guides": "portal:../ui/packages/guides",
+		"@bedrock-core/i18n": "portal:../ui/packages/i18n",
 		"@bedrock-core/navigation": "portal:../ui/packages/navigation",
 		"@bedrock-core/ore-styled": "portal:../ui/packages/ore-styled",
-		"@bedrock-core/guides": "portal:../ui/packages/guides",
-		"@bedrock-core/config": "portal:../ui/packages/config",
-		"@bedrock-core/i18n": "portal:../ui/packages/i18n"
+		"@bedrock-core/ui": "portal:../ui",
+		"@bedrock-core/ui-compile": "portal:../ui/packages/ui-compile",
+		"@bedrock-core/ui-runtime": "portal:../ui/packages/ui-runtime",
+		"@minecraft/vanilla-data": "1.26.44"
 	},
 	"scripts": {
 		"regolith-install": "yarn workspaces foreach -i -A --topological --jobs=1 run regolith-install",
@@ -109,6 +110,7 @@
 		"@eslint/json": "^2.0.0",
 		"@minecraft/server": "2.9.0",
 		"@minecraft/server-ui": "2.1.0",
+		"@minecraft/vanilla-data": "1.26.44",
 		"@stylistic/eslint-plugin": "^5.10.0",
 		"@types/node": "^26.0.1",
 		"@vitest/coverage-v8": "^4.1.10",
