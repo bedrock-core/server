@@ -31,12 +31,12 @@ jobs:
 
     defaults:
       run:
-        working-directory: server-public
+        working-directory: server
 
     steps:
       - uses: actions/checkout@v7
         with:
-          path: server-public
+          path: server
 
       - uses: actions/checkout@v7
         with:
@@ -58,7 +58,7 @@ jobs:
         with:
           node-version: 22
           cache: yarn
-          cache-dependency-path: server-public/yarn.lock
+          cache-dependency-path: server/yarn.lock
 
       - run: corepack enable
 
@@ -81,7 +81,7 @@ jobs:
       - name: Cache Bedrock Dedicated Server
         uses: actions/cache@v6
         with:
-          path: server-public/.bds/cache
+          path: server/.bds/cache
           key: bds-${{ runner.os }}-${{ steps.bds.outputs.version }}
 
       - run: yarn bds:fetch
@@ -101,6 +101,6 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: bds-logs
-          path: server-public/.bds/logs/**
+          path: server/.bds/logs/**
           if-no-files-found: warn
           retention-days: 14

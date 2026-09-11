@@ -23,7 +23,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          path: server-public
+          path: server
 
       - uses: actions/checkout@v7
         with:
@@ -45,5 +45,5 @@ jobs:
         run: >
           node ui/scripts/release-rehearsal.mjs
           --ui-root "$GITHUB_WORKSPACE/ui"
-          --server-root "$GITHUB_WORKSPACE/server-public"
+          --server-root "$GITHUB_WORKSPACE/server"
           --publisher "${{ inputs.publisher }}"
