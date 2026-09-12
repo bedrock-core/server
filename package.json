@@ -63,7 +63,7 @@
 		"@bedrock-core/navigation": "portal:../ui/packages/navigation",
 		"@bedrock-core/ore-styled": "portal:../ui/packages/ore-styled",
 		"@bedrock-core/ui": "portal:../ui",
-		"@bedrock-core/ui-compile": "portal:../ui/packages/ui-compile",
+		"@bedrock-core/ui-compiler": "portal:../ui/packages/ui-compiler",
 		"@bedrock-core/ui-runtime": "portal:../ui/packages/ui-runtime",
 		"@minecraft/vanilla-data": "1.26.44"
 	},
