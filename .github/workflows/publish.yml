@@ -11,10 +11,9 @@ name: Release
 #     then executes the `publish` command, pushing each changed package to npm,
 #     tagging it and cutting a GitHub release.
 #
-# Only the publishable workspaces are installed, with `yarn workspaces focus`. Two
-# sibling checkouts are still needed for that install to resolve: `ui`, because the
-# root's `portal:../ui/packages/i18n` resolution reaches server-runtime, and
-# `bds-runner`, a `portal:` devDependency of the root. Both are public.
+# Only the publishable workspaces are installed, with `yarn workspaces focus`. One
+# sibling checkout is needed for that install to resolve: `bds-runner`, a `portal:`
+# devDependency of the root. It is public.
 #
 # NOTE: opening the Version PR needs "Allow GitHub Actions to create and approve
 # pull requests" enabled under Settings → Actions → General. If that is off,
@@ -45,11 +44,6 @@ jobs:
         with:
           path: server
           fetch-depth: 0
-
-      - uses: actions/checkout@v7
-        with:
-          repository: bedrock-core/ui
-          path: ui
 
       - uses: actions/checkout@v7
         with:

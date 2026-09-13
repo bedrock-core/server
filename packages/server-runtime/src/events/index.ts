@@ -1,4 +1,5 @@
 export { EventsRegistry } from './events-registry';
+export { events } from './declaration';
 export type { EventsRegistryOptions } from './events-registry';
 
 export { event, materialize, materializePeer } from './tree';

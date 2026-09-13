@@ -19,7 +19,7 @@
 			"url": "https://drav.dev"
 		}
 	],
-	"repository": "github:bedrock-core/ui",
+	"repository": "github:bedrock-core/server",
 	"type": "module",
 	"main": "src/index.ts",
 	"types": "src/index.ts",
@@ -44,7 +44,10 @@
 	},
 	"devDependencies": {
 		"@minecraft/server": "2.9.0",
+		"@stylistic/eslint-plugin": "^5.10.0",
+		"eslint": "^10.5.0",
 		"typescript": "^6.0.3",
+		"typescript-eslint": "^8.62.0",
 		"vitest": "^4.1.5"
 	},
 	"peerDependencies": {

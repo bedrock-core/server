@@ -2,13 +2,15 @@
  * `@bedrock-core/server-runtime` — the bedrock-core server runtime.
  *
  * An addon registers its identity and everything it declares in one call, and is online. What it
- * declared comes back typed; what other addons declared is reachable through `core.*`:
+ * declared comes back typed; what other addons declared is reachable through `core.*`.
+ *
+ * Every field beside `manifest` is a declaration — it installs itself and hands back its accessor,
+ * so the runtime carries the addon's types through without knowing what they are:
  *
  * ```ts
- * import { core, event } from '@bedrock-core/server-runtime';
- * import bundle from '@bedrock-core/generated/i18n';
+ * import { config, core, event, events, shared } from '@bedrock-core/server-runtime';
  *
- * const { config, shared, events } = core.register({
+ * const declared = core.register({
  *   manifest: {
  *     creator: 'bt',               // creator id, lowercase a-z0-9_
  *     pack: 'gc_shop',             // pack id — together: namespace `bt_gc_shop`
@@ -16,15 +18,14 @@
  *     version: '1.2.0',
  *     dependencies: ['os_economy'],
  *   },
- *   translations: bundle,          // the i18n filter's bundle, resolvable by other addons' UIs
- *   config: { server: { taxRate: { type: 'number', default: 0.05, min: 0, max: 1, label: 'Tax Rate' } } },
- *   shared: { price: 10, sale: { active: false } },
- *   events: { restocked: event<{ item: string }>() },
+ *   config: config({ server: { taxRate: { type: 'number', default: 0.05, min: 0, max: 1, label: 'Tax Rate' } } }),
+ *   shared: shared({ price: 10, sale: { active: false } }),
+ *   events: events({ restocked: event<{ item: string }>() }),
  * });
  *
- * config.server.taxRate.get();     // an observable per node, local and synchronous
- * shared.price.set(12);            // every realm reads it this tick
- * events.restocked.emit({ item: 'diamond' });
+ * declared.config.server.taxRate.get();     // an observable per node, local and synchronous
+ * declared.shared.price.set(12);            // every realm reads it this tick
+ * declared.events.restocked.emit({ item: 'diamond' });
  *
  * core.shared.of<typeof otherShared>('os_shop')?.stock.subscribe(n => hud.set(n));
  * core.events.of<typeof otherEvents>('os_shop').sale.subscribe(({ item }) => hud.flash(item));
@@ -37,11 +38,14 @@
  * ```
  */
 export { Runtime, core } from './runtime';
-export type { RegisterOptions, Registered } from './runtime';
+export type { Declared, RegisterOptions, RuntimeSlots } from './runtime';
+
+export type { Declaration } from './declaration';
 
 export { RUNTIME_VERSION } from './runtime-version';
 
-export type { Announcement, AnnouncementListener } from './announcement';
+export { Announcement, isRecord } from './announcement';
+export type { AnnouncementListener } from './announcement';
 
 export type { HostElection, HostListener } from './host';
 
@@ -68,7 +72,7 @@ export {
 } from '@bedrock-core/db';
 export type { Collection, Db, Document, IndexedDocument, Schema } from '@bedrock-core/db';
 
-export { event } from './events';
+export { event, events } from './events';
 export type {
   EventsRegistry,
   EventListener,
@@ -81,6 +85,7 @@ export type {
   PeerEventsTree,
 } from './events';
 
+export { shared } from './shared';
 export type {
   SharedRegistry,
   PeerSharedTree,
@@ -100,9 +105,8 @@ export { type EngineHandle, isUsable } from './handle';
 export type { TranslationsRegistry } from './translations';
 export type { I18nBundle, TranslationResolver } from '@bedrock-core/i18n';
 
-export type { AddonScreens, ScreensRegistry } from './screens';
-export type { AddonPageReference } from './pages';
-
+export { config } from './config/declaration';
+export type { ConfigDeclaration } from './config/declaration';
 export type { ConfigRegistry, Config, ConfigAccessOptions, LocalConfigScopes, RemoteConfigAccessor, TypedRemoteConfig } from './config/config-registry';
 export { authorize, denyReason, isOperator } from './authorization';
 export type { AccessTarget, Operation } from './authorization';

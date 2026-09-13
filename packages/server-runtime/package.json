@@ -42,7 +42,7 @@
 	},
 	"dependencies": {
 		"@bedrock-core/db": "workspace:^",
-		"@bedrock-core/i18n": "^0.1.0",
+		"@bedrock-core/i18n": "workspace:^",
 		"@bedrock-core/sync": "workspace:^"
 	},
 	"devDependencies": {

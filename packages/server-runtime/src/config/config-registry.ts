@@ -1,7 +1,7 @@
 /**
  * ConfigRegistry — the config subsystem of the bedrock-core Runtime.
  *
- * Accessible as `core.config` after `core.register()`.
+ * Accessible as `core.config` once an addon declared `config: config(definition)` in `register()`.
  *
  * Config is three db collections with a form on top: `config-server` holds the world's document,
  * `config-dimension` one per dimension, `config-player` one per player. Each document is nested
@@ -16,17 +16,19 @@
  * deep-merges the provided keys; `set` replaces the whole scope — any schema key missing from the
  * payload reverts to its schema default.
  *
- * Addon defining config (usually via the `config` field of `core.register()`, which delegates
- * here and returns the same typed accessors):
+ * An addon declares its config in `register()`, and the `config(definition)` declaration delegates
+ * here; the accessors it returns are these:
  * ```ts
- * const { config } = core.register({
+ * const declared = core.register({
  *   manifest,
- *   config: {
+ *   config: config({
  *     server:    { pricing: { taxRate: { type: 'number', default: 0.05, min: 0, max: 1, label: 'Tax Rate' } } },
  *     dimension: { miningBonus: { type: 'number', default: 1.0, min: 0, max: 5, label: 'Mining Bonus' } },
  *     player:    { allowGifts: { type: 'boolean', default: true, label: 'Allow Gifts' } },
- *   },
+ *   }),
  * });
+ *
+ * const config = declared.config;
  *
  * // Every scope is a dotted accessor tree mirroring the schema — every node, group or leaf, is an
  * // observable with get / set / subscribe (groups also patch). Entity scopes pick the entity with for().
@@ -104,7 +106,7 @@ type SafePlayer<I extends ConfigDefinition>
   = NonNullable<I['player']> extends PlayerScopeSchema ? NonNullable<I['player']> : Record<never, never>;
 
 /**
- * This addon's own scopes, as returned by `register({ config })` / `define()`.
+ * This addon's own scopes, as returned by the `config(definition)` declaration.
  *
  * `server` is the scope *and* its accessor tree — `config.server.get()` alongside
  * `config.server.pricing.taxRate.get()`. The entity scopes select an entity first
@@ -351,9 +353,8 @@ export class ConfigRegistry {
   }
 
   /**
-   * Define this addon's config. Call once — usually implicitly, via the `config` field of
-   * `core.register()`; call directly only to define late. Returns typed scope accessors
-   * (`config.server`, `config.dimension`, `config.player`).
+   * Define this addon's config, once. Called by the `config(definition)` declaration as it installs.
+   * Returns the typed scope accessors (`config.server`, `config.dimension`, `config.player`).
    */
   define<I extends ConfigDefinition>(input: I): Config<I> {
     if (this._defined) { throw new Error('core.config.define() called more than once'); }

@@ -10,7 +10,7 @@ import './bench';
 import './bench-shared';
 import { world } from '@minecraft/server';
 import { type Test, register } from '@minecraft/server-gametest';
-import { Runtime, authorize, core, event, schema } from '@bedrock-core/server-runtime';
+import { Runtime, authorize, config, core, event, events, schema, shared } from '@bedrock-core/server-runtime';
 
 const STRUCTURE = 'core:empty';
 
@@ -72,9 +72,9 @@ gametest('rpc_to_self', (test) => {
 // the change, and nothing a peer writes into the owner's namespace is applied anywhere.
 gametest('shared_replication', (test) => {
   const a = new Runtime();
-  const { shared } = a.register({
+  const { shared: own } = a.register({
     manifest: { creator: 'test', pack: 'shared_a', packName: 'A', version: '1.0.0' },
-    shared: { volume: 5, event: { name: 'none', active: false } },
+    shared: shared({ volume: 5, event: { name: 'none', active: false } }),
   });
   const b = new Runtime();
 
@@ -82,7 +82,7 @@ gametest('shared_replication', (test) => {
 
   const seen: number[] = [];
 
-  shared.volume.set(7);
+  own.volume.set(7);
   test.startSequence()
     .thenIdle(20)
     .thenExecute(() => {
@@ -103,12 +103,12 @@ gametest('shared_replication', (test) => {
 
       // A peer reaching past its read-only tree to the mirror itself changes nothing.
       b.node.state.set(a.namespace, 'volume', 1);
-      shared.event.set({ name: 'race', active: true });
-      shared.volume.set(9);
+      own.event.set({ name: 'race', active: true });
+      own.volume.set(9);
     })
     .thenIdle(20)
     .thenExecute(() => {
-      if (shared.volume.get() !== 9) { test.fail(`a peer write reached the owner: ${String(shared.volume.get())}`); }
+      if (own.volume.get() !== 9) { test.fail(`a peer write reached the owner: ${String(own.volume.get())}`); }
 
       const mirror = b.shared.of<{ volume: number; event: { name: string; active: boolean } }>(a.namespace);
 
@@ -289,16 +289,16 @@ gametest('events_broadcast', (test) => {
   b.events.of<{ purchase: ReturnType<typeof event<{ item: string }>> }>('test_events_a')
     .purchase.subscribe(({ item }, from) => { heard.push(`${from}:${item}`); });
 
-  const { events } = a.register({
+  const { events: own } = a.register({
     manifest: { creator: 'test', pack: 'events_a', packName: 'A', version: '1.0.0' },
-    events: { purchase: event<{ item: string }>() },
+    events: events({ purchase: event<{ item: string }>() }),
   });
 
-  events.purchase.subscribe(({ item }) => { heard.push(`self:${item}`); });
+  own.purchase.subscribe(({ item }) => { heard.push(`self:${item}`); });
 
   test.startSequence()
     .thenIdle(20)
-    .thenExecute(() => { events.purchase.emit({ item: 'sword' }); })
+    .thenExecute(() => { own.purchase.emit({ item: 'sword' }); })
     .thenIdle(10)
     .thenExecute(() => {
       // A listener attached now has missed the one already announced.
@@ -313,7 +313,7 @@ gametest('events_broadcast', (test) => {
 
       if (late.length !== 0) { test.fail('an event was replayed to a late listener'); }
 
-      events.purchase.emit({ item: 'shield' });
+      own.purchase.emit({ item: 'shield' });
     })
     .thenIdle(10)
     .thenExecute(() => {
@@ -330,9 +330,9 @@ gametest('events_broadcast', (test) => {
 gametest('config_stores_through_db', (test) => {
   const addon = new Runtime();
 
-  const { config } = addon.register({
+  const { config: cfg } = addon.register({
     manifest: { creator: 'test', pack: 'cfg_db', packName: 'Cfg', version: '1.0.0' },
-    config: {
+    config: config({
       server: {
         economy: {
           taxRate: { type: 'number', default: 0.05, min: 0, max: 1, label: 'Tax' },
@@ -340,20 +340,20 @@ gametest('config_stores_through_db', (test) => {
         },
         tags: { type: 'list', itemType: 'string', default: [], label: 'Tags' },
       },
-    },
+    }),
   });
 
   test.startSequence()
     .thenIdle(20)
     .thenExecute(() => {
-      config.server.economy.taxRate.set(0.2);
-      config.server.tags.set(['a', 'b']);
+      cfg.server.economy.taxRate.set(0.2);
+      cfg.server.tags.set(['a', 'b']);
       // Out of range: coerced to the entry's bounds on the way in.
-      config.server.patch({ economy: { taxRate: 7 } });
+      cfg.server.patch({ economy: { taxRate: 7 } });
     })
     .thenIdle(10)
     .thenExecute(() => {
-      if (config.server.economy.taxRate.get() !== 1) { test.fail(`the write was not coerced: ${String(config.server.economy.taxRate.get())}`); }
+      if (cfg.server.economy.taxRate.get() !== 1) { test.fail(`the write was not coerced: ${String(cfg.server.economy.taxRate.get())}`); }
 
       const collection = addon.db.find('config-server');
 
@@ -379,10 +379,10 @@ gametest('config_stores_through_db', (test) => {
       }
 
       // Setting a group replaces it: the omitted key is back at its default, and gone from the bytes.
-      config.server.economy.set({ taxRate: 0.05, currency: 'gold' });
+      cfg.server.economy.set({ taxRate: 0.05, currency: 'gold' });
 
-      if (config.server.economy.taxRate.get() !== 0.05 || config.server.economy.currency.get() !== 'gold') {
-        test.fail(`set on a group did not replace it: ${JSON.stringify(config.server.economy.get())}`);
+      if (cfg.server.economy.taxRate.get() !== 0.05 || cfg.server.economy.currency.get() !== 'gold') {
+        test.fail(`set on a group did not replace it: ${JSON.stringify(cfg.server.economy.get())}`);
       }
 
       if (world.getDynamicProperty(key) !== '{"v":1,"d":{"economy":{"currency":"gold"},"tags":["a","b"]}}') {
@@ -399,37 +399,37 @@ gametest('config_stores_through_db', (test) => {
 gametest('config_subscribe_is_observable', (test) => {
   const addon = new Runtime();
 
-  const { config } = addon.register({
+  const { config: cfg } = addon.register({
     manifest: { creator: 'test', pack: 'cfg_obs', packName: 'Obs', version: '1.0.0' },
-    config: {
+    config: config({
       server: {
         economy: {
           taxRate: { type: 'number', default: 0.05, min: 0, max: 1, label: 'Tax' },
         },
         label: { type: 'string', default: 'Shop', label: 'Label' },
       },
-    },
+    }),
   });
 
   const leaf: [number, number][] = [];
   const group: unknown[] = [];
   let afterRelease = 0;
 
-  const release = config.server.economy.taxRate.subscribe((next, prev) => { leaf.push([next, prev]); });
+  const release = cfg.server.economy.taxRate.subscribe((next, prev) => { leaf.push([next, prev]); });
 
-  config.server.economy.subscribe((next) => { group.push(next); });
+  cfg.server.economy.subscribe((next) => { group.push(next); });
   // A sibling's listener hears nothing of the economy writes below.
-  config.server.label.subscribe(() => { test.fail('a sibling group fired for an unrelated write'); });
+  cfg.server.label.subscribe(() => { test.fail('a sibling group fired for an unrelated write'); });
 
   test.startSequence()
     .thenIdle(20)
-    .thenExecute(() => { config.server.economy.taxRate.set(0.2); })
+    .thenExecute(() => { cfg.server.economy.taxRate.set(0.2); })
     .thenIdle(5)
-    .thenExecute(() => { config.server.economy.taxRate.set(0.3); })
+    .thenExecute(() => { cfg.server.economy.taxRate.set(0.3); })
     .thenIdle(5)
     .thenExecute(() => {
       release();
-      config.server.economy.taxRate.set(0.4);
+      cfg.server.economy.taxRate.set(0.4);
     })
     .thenIdle(5)
     .thenExecute(() => {
@@ -452,7 +452,7 @@ gametest('config_subscribe_is_observable', (test) => {
       // The released leaf listener heard nothing after unsubscribing, though the value did change.
       if (afterRelease !== 2) { test.fail('a released listener still fired'); }
 
-      if (config.server.economy.taxRate.get() !== 0.4) { test.fail('the third write did not apply'); }
+      if (cfg.server.economy.taxRate.get() !== 0.4) { test.fail('the third write did not apply'); }
 
       addon.stop();
     })

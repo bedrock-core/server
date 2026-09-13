@@ -3,7 +3,7 @@
  *
  * Each addon announces its {@link I18nBundle} — the module the i18n Regolith filter generates,
  * or `createResourceBundle`'s runtime equivalent — under `core-i18n/bundle` via
- * `core.register({ translations: bundle })`. The bundle itself travels: templates stay in
+ * `core.translations.provide(bundle)`. The bundle itself travels: templates stay in
  * `{{var}}` form with their recorded argument order. Peers get two views, both lazy over the
  * announced bundles:
  *

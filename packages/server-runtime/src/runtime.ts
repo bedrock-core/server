@@ -3,10 +3,10 @@
  *
  * An addon registers itself once — that's it. {@link Runtime.register} validates the manifest
  * and immediately brings the addon online (no separate `start()`). Everything the addon
- * *declares* rides in that one call: identity, plus the optional `translations`, `screens`,
- * `config` and `shared` fields (see {@link RegisterOptions}). The runtime wraps a single sync
- * `SyncNode` and exposes the cross-addon {@link Registry}, the {@link FeatureManager}, the
- * shared mirror and messaging passthroughs.
+ * *declares* rides in that one call: identity in `manifest`, and beside it any number of
+ * {@link Declaration} fields, each installing a subsystem and handing back its typed accessor
+ * (see {@link RegisterOptions}). The runtime wraps a single sync `SyncNode` and exposes the
+ * cross-addon {@link Registry}, the {@link FeatureManager} and the messaging passthroughs.
  *
  * The default export is the `core` singleton — `import { core } from '@bedrock-core/server-runtime'`.
  * The `Runtime` class stands alone, so tests (and GameTests) can create several runtimes in one
@@ -16,97 +16,54 @@ import { SyncNode } from '@bedrock-core/sync';
 import { addonNamespace, type AddonManifest, manifestToMeta, validateManifest } from './manifest';
 import { FeatureManager } from './features';
 import { Registry } from './registry';
-import { ConfigRegistry, type Config } from './config/config-registry';
-import type { ConfigDefinition } from './config/schema';
-import type { I18nBundle } from '@bedrock-core/i18n';
+import { type Declaration, isDeclaration } from './declaration';
+import { ConfigRegistry } from './config/config-registry';
 import { TranslationsRegistry } from './translations';
-import { Announcement } from './announcement';
-import { type AddonPageReference, isAddonPageReference } from './pages';
-import { ScreensRegistry, type AddonScreens } from './screens';
 import { HostElection } from './host';
 import type { Rpc } from '@bedrock-core/sync';
 import { createEngineDb } from '@bedrock-core/db/minecraft';
 import type { Db } from '@bedrock-core/db';
 import { SharedRegistry } from './shared/shared-registry';
-import type { SharedDef, SharedTree } from './shared/tree';
 import { EventsRegistry } from './events/events-registry';
-import type { EventsDef, EventsTree } from './events/tree';
 
 /**
- * Everything an addon declares when it registers: the identity `manifest` plus the optional
- * cross-addon data beside it. One bag — "tell core what you are" — then run your own code. Each
- * optional field is sugar for the corresponding post-register call and behaves identically:
+ * Everything an addon declares when it registers: the identity `manifest`, plus one field per
+ * declaration — `config: config(definition)`, `shared: shared(keys)`, `events: events(tree)`.
+ * One bag — "tell core what you are" — then run your own code.
  *
- * - `translations` → `core.translations.provide()`
- * - `page` → `core.pages.provide()`
- * - `screens` → `core.screens.provide()`
- * - `config` → `core.config.define()` (its typed accessors become `register()`'s return value)
- * - `shared` → `core.shared.define()` (its typed tree is `register()`'s `shared`)
- * - `events` → `core.events.define()` (its typed tree is `register()`'s `events`)
- *
- * The standalone calls remain available for addons that need to publish late or replace data
- * at runtime.
+ * A field holding a {@link Declaration} is installed and its accessor comes back under that same
+ * key; anything else in the bag is ignored. Declarations install in the order their keys were
+ * written, onto an already-live runtime.
  */
-export interface RegisterOptions<
-  I extends ConfigDefinition | undefined = ConfigDefinition | undefined,
-  S extends SharedDef | undefined = SharedDef | undefined,
-  E extends EventsDef | undefined = EventsDef | undefined,
-> {
+export interface RegisterOptions {
 
   /** Who this addon is: creator, pack, display names, version, dependencies. */
   manifest: AddonManifest;
-
-  /**
-   * This addon's i18n bundle (`@bedrock-core/generated/i18n`, or a
-   * `createResourceBundle` result), published to replicated state so other
-   * addons' UIs can resolve and measure its strings — and get verbs over them
-   * via `core.translations.i18n()`.
-   */
-  translations?: I18nBundle;
-
-  /**
-   * This addon's page in the shared addon list as a reference
-   * (`addonPageReference(Page)` from `@bedrock-core/config/compiled`): per
-   * reserved entry the value it is shown with and where a press leads. The
-   * page itself is a compiled screen in this addon's pack, which every client
-   * holds; the elected host draws it into its list from this alone.
-   */
-  page?: AddonPageReference;
-
-  /**
-   * This addon's compiled screens as references (`uiReference()` from
-   * `@bedrock-core/generated/ui`): per screen the compiled title, the value
-   * each entry carries and where each press leads. Published so that
-   * `navigate('<addon>:<screen>')` resolves in a realm running none of this
-   * addon's script — the layouts are in the pack every client already holds.
-   */
-  screens?: AddonScreens;
-
-  /** This addon's config schema. When given, `register()` returns the typed scope accessors. */
-  config?: I;
-
-  /**
-   * This addon's shared keys: a flat record whose values every realm mirrors and only this addon
-   * writes. When given, `register()`'s result carries the typed tree as `shared`.
-   */
-  shared?: S;
-
-  /**
-   * What this addon announces to every realm: `{ purchase: event<{ playerId: string }>() }`.
-   * Delivered once and kept by nobody. When given, `register()`'s result carries the typed tree
-   * as `events`.
-   */
-  events?: E;
 }
 
 /**
- * What `register()` hands back: one entry per declaration that has accessors, each under the key
- * it was declared as — `config` for the scope accessors, `shared` for the shared tree.
+ * What `register()` hands back: one entry per declaration in the options bag, under the key it was
+ * declared as, typed by what that declaration's `install` returns.
  */
-export type Registered<I extends ConfigDefinition | undefined, S extends SharedDef | undefined, E extends EventsDef | undefined = undefined>
-  = (I extends ConfigDefinition ? { config: Config<I> } : unknown)
-    & (S extends SharedDef ? { shared: SharedTree<S> } : unknown)
-    & (E extends EventsDef ? { events: EventsTree<E> } : unknown);
+export type Declared<O> = {
+  [K in Exclude<keyof O, 'manifest'> as O[K] extends Declaration<unknown> ? K : never]:
+  O[K] extends Declaration<infer T> ? T : never
+};
+
+/**
+ * The subsystems behind the `core.*` getter named by each key.
+ *
+ * A declaration fills its slot from `install`, through {@link Runtime.provide}, and the getter hands
+ * back what it parked. A slot no declaration filled is materialized on first read instead: each of
+ * these is also how an addon reaches what OTHER addons declared — `core.config.of(ns)`,
+ * `core.shared.of(ns)`, `core.events.of(ns)` — which an addon that declares nothing of its own may
+ * do, and none of them carries anything of this addon's until its declaration defines it.
+ */
+export interface RuntimeSlots {
+  config: ConfigRegistry;
+  shared: SharedRegistry;
+  events: EventsRegistry;
+}
 
 /** An addon's handle to the framework; `core` is the one a pack uses. */
 export class Runtime {
@@ -114,14 +71,11 @@ export class Runtime {
   private _registry: Registry | undefined;
   private _features: FeatureManager | undefined;
   private _manifest: AddonManifest | undefined;
-  private _shared: SharedRegistry | undefined;
-  private _events: EventsRegistry | undefined;
   private _db: Db | undefined;
-  private _config: ConfigRegistry | undefined;
   private _translations: TranslationsRegistry | undefined;
-  private _pages: Announcement<AddonPageReference> | undefined;
-  private _screens: ScreensRegistry | undefined;
   private _host: HostElection | undefined;
+  private _slots: Partial<RuntimeSlots> = {};
+  private readonly _declarations: Declaration<unknown>[] = [];
 
   /** Whether the addon has been registered (and is therefore live). */
   get registered(): boolean {
@@ -158,24 +112,16 @@ export class Runtime {
     return this.require(this._features, 'features');
   }
 
-  /** The config registry — declare this addon's config via `register({ config })` (or `core.config.define()` for late definition). */
+  /** The config registry: this addon's own scopes come from its `config: config(definition)` declaration, every other addon's from `core.config.of(ns)`. */
   get config(): ConfigRegistry {
-    return this.require(this._config, 'config');
+    this._slots.config ??= new ConfigRegistry(this.requireNode(), this.namespace, this.db);
+
+    return this._slots.config;
   }
 
-  /** Cross-addon i18n bundles — publish via `register({ translations })` (or `core.translations.provide()`); `forPlayer(player)` for the chained resolver, `of(addonId)` for a peer's verbs. */
+  /** Cross-addon i18n bundles — publish via `core.translations.provide()`; `forPlayer(player)` for the chained resolver, `of(addonId)` for a peer's verbs. */
   get translations(): TranslationsRegistry {
     return this.require(this._translations, 'translations');
-  }
-
-  /** Cross-addon list pages — publish via `register({ page })` (or `core.pages.provide()` to replace at runtime), `core.pages.of()` for the host's reads. */
-  get pages(): Announcement<AddonPageReference> {
-    return this.require(this._pages, 'pages');
-  }
-
-  /** Cross-addon screens — publish via `register({ screens })`, `core.screens.find(key)` to resolve one key from whichever addon owns it. */
-  get screens(): ScreensRegistry {
-    return this.require(this._screens, 'screens');
   }
 
   /** Host election — `core.host.isHost` tells you whether this realm should do the work only one realm may do (e.g. render the shared UI). */
@@ -184,21 +130,27 @@ export class Runtime {
   }
 
   /**
-   * The shared mirror as typed trees: this addon's own from `register({ shared })`, a peer's via
-   * `core.shared.of<Def>(ns)`. Every node has `get` / `subscribe`; own nodes and opened peer
-   * leaves also `set`.
+   * The shared mirror as typed trees: this addon's own comes back from its `shared: shared(keys)`
+   * declaration, a peer's from `core.shared.of<Def>(ns)` — which an addon that declares nothing of
+   * its own may read too. Every node has `get` / `subscribe`; own nodes and opened peer leaves also
+   * `set`.
    */
   get shared(): SharedRegistry {
-    return this.require(this._shared, 'shared');
+    this._slots.shared ??= new SharedRegistry({ state: this.requireNode().state, namespace: this.namespace });
+
+    return this._slots.shared;
   }
 
   /**
-   * Events as typed trees: this addon's own from `register({ events })`, another addon's via
-   * `core.events.of<Def>(ns)`. An owner's node has `emit` and `subscribe`, a peer's `subscribe`
-   * alone, and a listener may be attached before the announcing addon exists.
+   * Events as typed trees: this addon's own comes back from its `events: events(tree)` declaration,
+   * another addon's from `core.events.of<Def>(ns)` — open to an addon that announces nothing itself.
+   * An owner's node has `emit` and `subscribe`, a peer's `subscribe` alone, and a listener may be
+   * attached before the announcing addon exists.
    */
   get events(): EventsRegistry {
-    return this.require(this._events, 'events');
+    this._slots.events ??= new EventsRegistry({ events: this.requireNode().events, namespace: this.namespace });
+
+    return this._slots.events;
   }
 
   /**
@@ -225,17 +177,12 @@ export class Runtime {
    * Declare this addon and bring it online. Call exactly once. Throws on an invalid manifest
    * or a second registration. No separate start step is needed.
    *
-   * Beyond identity, the options bag carries everything the addon declares up front:
-   * `translations`, `screens`, `config` and `shared` (see {@link RegisterOptions}). The result holds
-   * the typed accessors of what was declared, each under its own key: `config` — the same value
-   * `core.config.define()` would return — and `shared`.
+   * Beyond identity, the options bag carries every {@link Declaration} the addon makes. Each
+   * installs onto the live runtime in the order its key was written, and the result holds that
+   * declaration's accessor under the same key.
    */
-  register<
-    I extends ConfigDefinition | undefined = undefined,
-    S extends SharedDef | undefined = undefined,
-    E extends EventsDef | undefined = undefined,
-  >(options: RegisterOptions<I, S, E>): Registered<I, S, E>;
-  register(options: RegisterOptions): unknown {
+  register<O extends RegisterOptions>(options: O): Declared<O>;
+  register(options: RegisterOptions): Record<string, unknown> {
     if (this._manifest) { throw new Error('runtime is already registered'); }
 
     const validated = validateManifest(options.manifest);
@@ -254,26 +201,16 @@ export class Runtime {
     });
     const registry = new Registry(node.discovery, validated);
     const features = new FeatureManager(registry, node.state, namespace);
-    // Local persistence. Before the config registry, which stores its scopes as collections on it.
+    // Local persistence, live before any declaration: a declaration stores through it.
     const db = createEngineDb(namespace, message => console.warn(message));
-    const config = new ConfigRegistry(node, namespace, db);
     const translations = new TranslationsRegistry(node.state, namespace);
-    const pages = new Announcement<AddonPageReference>(node.state, namespace, 'addon/page', isAddonPageReference);
-    const screens = new ScreensRegistry(node.state, namespace);
     const host = new HostElection(registry, namespace);
-    const shared = new SharedRegistry({ state: node.state, namespace });
-    const events = new EventsRegistry({ events: node.events, namespace });
 
     this._node = node;
     this._registry = registry;
     this._features = features;
-    this._shared = shared;
-    this._events = events;
     this._db = db;
-    this._config = config;
     this._translations = translations;
-    this._pages = pages;
-    this._screens = screens;
     this._host = host;
 
     node.start();
@@ -282,44 +219,45 @@ export class Runtime {
     translations.start();
     host.start();
 
-    if (options.translations) { translations.provide(options.translations); }
+    const declared: Record<string, unknown> = {};
 
-    if (options.page) { pages.provide(options.page); }
+    for (const [key, value] of Object.entries(options)) {
+      if (key === 'manifest' || !isDeclaration(value)) { continue; }
 
-    if (options.screens) { screens.provide(options.screens); }
-
-    const configTree = options.config ? config.define(options.config) : undefined;
-    const sharedTree = options.shared ? shared.define(options.shared) : undefined;
-    const eventsTree = options.events ? events.define(options.events) : undefined;
-
-    if (configTree === undefined && sharedTree === undefined && eventsTree === undefined) {
-      return undefined;
+      this._declarations.push(value);
+      declared[key] = value.install(this);
     }
 
-    return {
-      ...(configTree === undefined ? {} : { config: configTree }),
-      ...(sharedTree === undefined ? {} : { shared: sharedTree }),
-      ...(eventsTree === undefined ? {} : { events: eventsTree }),
-    };
+    return declared;
+  }
+
+  /**
+   * Park a subsystem where its `core.*` getter finds it. Called by a declaration's `install`, which
+   * owns building the thing; the runtime only hands it out again.
+   */
+  provide<K extends keyof RuntimeSlots>(slot: K, value: RuntimeSlots[K]): void {
+    if (this._slots[slot] !== undefined) { throw new Error(`runtime.${slot} is already provided`); }
+
+    this._slots[slot] = value;
   }
 
   /** Take the addon offline. Safe to call before registering (no-op). */
   stop(): void {
+    // Reverse install order: a declaration comes down before what it was built on.
+    for (const declaration of this._declarations.splice(0).reverse()) {
+      declaration.stop?.();
+    }
+
     this._host?.stop();
     this._translations?.stop();
-    this._config?.stop();
     this._features?.stop();
     this._registry?.stop();
     this._node?.stop();
+    this._slots = {};
     this._host = undefined;
-    this._pages = undefined;
-    this._screens = undefined;
     this._translations = undefined;
-    this._config = undefined;
     this._features = undefined;
     this._registry = undefined;
-    this._shared = undefined;
-    this._events = undefined;
     this._db = undefined;
     this._node = undefined;
     this._manifest = undefined;

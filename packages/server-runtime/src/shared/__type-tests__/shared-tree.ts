@@ -4,7 +4,10 @@
  * possibly-undefined and cannot write any of them; and `register()` hands back what was declared.
  */
 import type { PeerSharedTree, SharedTree } from '../tree';
-import type { Registered } from '../../runtime';
+import type { AddonManifest } from '../../manifest';
+import type { Runtime } from '../../runtime';
+import { config } from '../../config/declaration';
+import { shared } from '../declaration';
 
 export const SHARED = {
   spawnRate: 5,
@@ -45,15 +48,24 @@ peer.spawnRate.subscribe((next: number | undefined) => next);
 // @ts-expect-error a peer's tree never writes: it asks the owner over rpc instead
 peer.spawnRate.set(1);
 
-// register() returns the declared trees.
-declare const both: Registered<{ server: { taxRate: { type: 'number'; default: 0; min: 0; max: 1; label: 'Tax' } } }, typeof SHARED>;
-declare const onlyShared: Registered<undefined, typeof SHARED>;
+// register() returns the declared trees, each under the key it was declared as. Never called: the
+// body is the test.
+declare const MANIFEST: AddonManifest;
 
-both.shared.spawnRate.set(1);
-both.config.server.taxRate.get();
-onlyShared.shared.event.get();
-// @ts-expect-error no config was declared
-void onlyShared.config;
+export function declaresTrees(core: Runtime): void {
+  const both = core.register({
+    manifest: MANIFEST,
+    config: config({ server: { taxRate: { type: 'number', default: 0, min: 0, max: 1, label: 'Tax' } } }),
+    shared: shared(SHARED),
+  });
+  const onlyShared = core.register({ manifest: MANIFEST, shared: shared(SHARED) });
+
+  both.shared.spawnRate.set(1);
+  both.config.server.taxRate.get();
+  onlyShared.shared.event.get();
+  // @ts-expect-error no config was declared
+  void onlyShared.config;
+}
 
 void rate;
 void label;

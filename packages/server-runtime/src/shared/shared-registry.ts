@@ -1,9 +1,10 @@
 /**
  * `core.shared` — the replicated mirror every realm holds, as typed trees.
  *
- * The owner declares a flat record in `register({ shared })` and gets its tree back; the registry
- * writes the initial values and announces the key names under `core-shared/shape`. A peer's tree,
- * `core.shared.of<Def>(ns)`, is materialized from that announcement and reads the same mirror.
+ * The owner declares a flat record as `shared: shared(keys)` in `register()` and gets its tree back;
+ * the registry writes the initial values and announces the key names under `core-shared/shape`. A
+ * peer's tree, `core.shared.of<Def>(ns)`, is materialized from that announcement and reads the same
+ * mirror.
  *
  * The mirror does exactly one job: the owner sets a value, every realm can read it now, and is
  * told when it changes. It is not storage — nothing here touches the world. A value that must

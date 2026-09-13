@@ -1,4 +1,5 @@
 export { SharedRegistry } from './shared-registry';
+export { shared } from './declaration';
 export type { SharedRegistryOptions } from './shared-registry';
 
 export { isShape, materialize } from './tree';

@@ -50,16 +50,16 @@
 	"packageManager": "yarn@4.9.3",
 	"workspaces": [
 		"packages/db",
+		"packages/i18n",
 		"packages/observable",
 		"packages/sync",
 		"packages/server-runtime",
 		"packages/test-fixtures"
 	],
 	"resolutions": {
-		"@bedrock-core/config": "portal:../ui/packages/config",
+		"@bedrock-core/config": "portal:../apps/packages/config",
 		"@bedrock-core/flexbox": "portal:../ui/packages/flexbox",
-		"@bedrock-core/guides": "portal:../ui/packages/guides",
-		"@bedrock-core/i18n": "portal:../ui/packages/i18n",
+		"@bedrock-core/guides": "portal:../apps/packages/guides",
 		"@bedrock-core/navigation": "portal:../ui/packages/navigation",
 		"@bedrock-core/ore-styled": "portal:../ui/packages/ore-styled",
 		"@bedrock-core/ui": "portal:../ui",

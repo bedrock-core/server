@@ -9,6 +9,12 @@ const __dirname = dirname(__filename);
 export default defineConfig([
 	...baseConfig,
 	{
+		// Test bodies reach past the public API — casts onto the package's internal
+		// shapes to assert on them — which the type-aware rules, no-unsafe-type-assertion
+		// above all, read as errors.
+		ignores: ['**/__tests__/**'],
+	},
+	{
 		files: ['**/*.ts', '**/*.tsx'],
 		languageOptions: {
 			parserOptions: {

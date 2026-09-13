@@ -39,7 +39,7 @@ regolith install github.com/bedrock-core/regolith-filters/i18n
   language → the addon's default → anything published
 - **`DisplayText` everywhere** — components take a literal, a key or a `RawMessage`
   interchangeably; `display()` collapses any of them to a string when you need one
-- **Cross-addon bundles** — publish yours through `core.register({ translations: bundle })` and any
+- **Cross-addon bundles** — publish yours through `core.translations.provide(bundle)` and any
   peer can resolve and measure your strings
 - **No runtime dependencies** — a few KB, i18next's conventions, none of i18next
 

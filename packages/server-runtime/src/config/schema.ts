@@ -112,7 +112,7 @@ export type DimensionScopeSchema = { [key: string]: SchemaNode };
 /** The `player` scope's settings, one document per player. */
 export type PlayerScopeSchema = { [key: string]: SchemaNode };
 
-/** What `register({ config })` and `core.config.define()` take: up to three scopes, a version and its steps. */
+/** What `config(definition)` takes: up to three scopes, a version and its steps. */
 export interface ConfigDefinition {
   server?: ServerScopeSchema;
   dimension?: DimensionScopeSchema;

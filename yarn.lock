@@ -82,12 +82,19 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@bedrock-core/i18n@portal:../ui/packages/i18n::locator=%40bedrock-core%2Fserver%40workspace%3A.":
+"@bedrock-core/i18n@workspace:^, @bedrock-core/i18n@workspace:packages/i18n":
   version: 0.0.0-use.local
-  resolution: "@bedrock-core/i18n@portal:../ui/packages/i18n::locator=%40bedrock-core%2Fserver%40workspace%3A."
+  resolution: "@bedrock-core/i18n@workspace:packages/i18n"
+  dependencies:
+    "@minecraft/server": "npm:2.9.0"
+    "@stylistic/eslint-plugin": "npm:^5.10.0"
+    eslint: "npm:^10.5.0"
+    typescript: "npm:^6.0.3"
+    typescript-eslint: "npm:^8.62.0"
+    vitest: "npm:^4.1.5"
   peerDependencies:
     "@minecraft/server": ">=2.9.0"
-  languageName: node
+  languageName: unknown
   linkType: soft
 
 "@bedrock-core/observable@workspace:*, @bedrock-core/observable@workspace:^, @bedrock-core/observable@workspace:packages/observable":
@@ -113,7 +120,7 @@ __metadata:
   resolution: "@bedrock-core/server-runtime@workspace:packages/server-runtime"
   dependencies:
     "@bedrock-core/db": "workspace:^"
-    "@bedrock-core/i18n": "npm:^0.1.0"
+    "@bedrock-core/i18n": "workspace:^"
     "@bedrock-core/sync": "workspace:^"
     "@minecraft/server": "npm:2.9.0"
     "@stylistic/eslint-plugin": "npm:^5.10.0"
@@ -3629,7 +3636,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"vitest@npm:^4.1.10":
+"vitest@npm:^4.1.10, vitest@npm:^4.1.5":
   version: 4.1.11
   resolution: "vitest@npm:4.1.11"
   dependencies:

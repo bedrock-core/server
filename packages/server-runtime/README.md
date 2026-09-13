@@ -45,8 +45,6 @@ build against has to match the one your pack's `manifest.json` declares.
 
 ```ts
 import { authorize, core, event, players, schema } from '@bedrock-core/server-runtime';
-import { uiReference } from '@bedrock-core/generated/ui';
-import bundle from '@bedrock-core/generated/i18n';
 
 // register() declares everything and brings the addon online. It returns the typed accessors of
 // what was declared, one key each: `config`, `shared` and `events`.
@@ -58,8 +56,6 @@ const { config, shared, events } = core.register({
     version: '1.0.0',
     dependencies: ['os_shop'],    // namespaces you need — soft, logs, never blocks
   },
-  translations: bundle,           // optional — the i18n filter's bundle
-  screens: uiReference(),                              // optional — this addon's compiled screens
   config: {                       // optional — config schema
     server: { taxRate: { type: 'number', default: 0.05, min: 0, max: 1, label: 'Tax Rate' } },
   },
@@ -120,8 +116,6 @@ core.rpc.request('os_shop', 'openShop', { playerId }).catch(console.warn);
   [`core.db`](https://bedrock-core.drav.dev/docs/server/api/db) ·
   [`core.config`](https://bedrock-core.drav.dev/docs/server/api/config)
 - [`core.translations`](https://bedrock-core.drav.dev/docs/server/api/translations) ·
-  [`core.guides`](https://bedrock-core.drav.dev/docs/server/api/guides) ·
-  [`core.pages`](https://bedrock-core.drav.dev/docs/server/api/pages) ·
   [`authorize`](https://bedrock-core.drav.dev/docs/server/api/authorize)
 - [Sharing data between addons](https://bedrock-core.drav.dev/docs/server/guides/channels) ·
   [Trust model](https://bedrock-core.drav.dev/docs/server/guides/trust-model) ·
