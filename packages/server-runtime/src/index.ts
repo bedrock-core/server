@@ -7,8 +7,12 @@
  * Every field beside `manifest` is a declaration — it installs itself and hands back its accessor,
  * so the runtime carries the addon's types through without knowing what they are:
  *
+ * A declaration may come from any package — `config(definition)` is `@bedrock-core/config/server`'s,
+ * and the runtime installs it without knowing what it builds.
+ *
  * ```ts
- * import { config, core, event, events, shared } from '@bedrock-core/server-runtime';
+ * import { core, event, events, shared } from '@bedrock-core/server-runtime';
+ * import { config } from '@bedrock-core/config/server';
  *
  * const declared = core.register({
  *   manifest: {
@@ -105,46 +109,5 @@ export { type EngineHandle, isUsable } from './handle';
 export type { TranslationsRegistry } from './translations';
 export type { I18nBundle, TranslationResolver } from '@bedrock-core/i18n';
 
-export { config } from './config/declaration';
-export type { ConfigDeclaration } from './config/declaration';
-export type { ConfigRegistry, Config, ConfigAccessOptions, LocalConfigScopes, RemoteConfigAccessor, TypedRemoteConfig } from './config/config-registry';
 export { authorize, denyReason, isOperator } from './authorization';
 export type { AccessTarget, Operation } from './authorization';
-export type {
-  EntityScope,
-  ChangeListener,
-  ScopeTree,
-  ConfigTree,
-  ConfigNode,
-  ConfigChildren,
-  ConfigGroupAccessor,
-  ConfigLeafAccessor,
-  NodeValue,
-} from './config/scopes';
-export type { ConfigDocument } from './config/document';
-export type {
-  ConfigDefinition,
-  ConfigEntry,
-  ConfigValue,
-  BooleanEntry,
-  NumberEntry,
-  StringEntry,
-  EnumEntry,
-  ListEntry,
-  MultiselectEntry,
-  FlatSchema,
-  FlatGroups,
-  GroupMeta,
-  SerializedEntry,
-  SerializedGroup,
-  SchemaToValue,
-  DeepPartial,
-  ConfigScopeName,
-} from './config/schema';
-/**
- * Flattening a declared schema, which an addon's BUILD needs: a config screen
- * shaped for one section is generated from the definition the addon wrote, and
- * these are what turn that definition into the paths the screens are keyed by.
- * The runtime reaches the same shape through the announced schema instead.
- */
-export { flattenGroups, flattenSchema } from './config/schema';

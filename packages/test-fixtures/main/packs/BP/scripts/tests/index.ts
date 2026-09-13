@@ -10,7 +10,8 @@ import './bench';
 import './bench-shared';
 import { world } from '@minecraft/server';
 import { type Test, register } from '@minecraft/server-gametest';
-import { Runtime, authorize, config, core, event, events, schema, shared } from '@bedrock-core/server-runtime';
+import { Runtime, authorize, core, event, events, schema, shared } from '@bedrock-core/server-runtime';
+import { config } from '@bedrock-core/config/server';
 
 const STRUCTURE = 'core:empty';
 

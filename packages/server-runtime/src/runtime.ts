@@ -17,7 +17,6 @@ import { addonNamespace, type AddonManifest, manifestToMeta, validateManifest } 
 import { FeatureManager } from './features';
 import { Registry } from './registry';
 import { type Declaration, isDeclaration } from './declaration';
-import { ConfigRegistry } from './config/config-registry';
 import { TranslationsRegistry } from './translations';
 import { HostElection } from './host';
 import type { Rpc } from '@bedrock-core/sync';
@@ -51,19 +50,24 @@ export type Declared<O> = {
 };
 
 /**
- * The subsystems behind the `core.*` getter named by each key.
+ * The subsystems a package outside this repository parks on the runtime, keyed by name.
  *
- * A declaration fills its slot from `install`, through {@link Runtime.provide}, and the getter hands
- * back what it parked. A slot no declaration filled is materialized on first read instead: each of
- * these is also how an addon reaches what OTHER addons declared — `core.config.of(ns)`,
- * `core.shared.of(ns)`, `core.events.of(ns)` — which an addon that declares nothing of its own may
- * do, and none of them carries anything of this addon's until its declaration defines it.
+ * Empty here, and filled in by module augmentation from the package that owns each subsystem — the
+ * floor never imports what it holds:
+ *
+ * ```ts
+ * declare module '@bedrock-core/server-runtime' {
+ *   interface RuntimeSlots { 'acme:widgets': WidgetRegistry }
+ * }
+ * ```
+ *
+ * A key is namespaced the way a feed or an rpc method is, so two packages that both augment this
+ * never collide. A declaration fills its slot from `install`, through
+ * {@link Runtime.fill}, and the owning package reads it back with {@link Runtime.slot} — deciding
+ * for itself what an unfilled slot means, since only it knows whether absence is an error or the
+ * ordinary state of an addon that declared nothing.
  */
-export interface RuntimeSlots {
-  config: ConfigRegistry;
-  shared: SharedRegistry;
-  events: EventsRegistry;
-}
+export interface RuntimeSlots {}
 
 /** An addon's handle to the framework; `core` is the one a pack uses. */
 export class Runtime {
@@ -74,7 +78,9 @@ export class Runtime {
   private _db: Db | undefined;
   private _translations: TranslationsRegistry | undefined;
   private _host: HostElection | undefined;
-  private _slots: Partial<RuntimeSlots> = {};
+  private _shared: SharedRegistry | undefined;
+  private _events: EventsRegistry | undefined;
+  private _slots = new Map<string, unknown>();
   private readonly _declarations: Declaration<unknown>[] = [];
 
   /** Whether the addon has been registered (and is therefore live). */
@@ -112,19 +118,12 @@ export class Runtime {
     return this.require(this._features, 'features');
   }
 
-  /** The config registry: this addon's own scopes come from its `config: config(definition)` declaration, every other addon's from `core.config.of(ns)`. */
-  get config(): ConfigRegistry {
-    this._slots.config ??= new ConfigRegistry(this.requireNode(), this.namespace, this.db);
-
-    return this._slots.config;
-  }
-
   /** Cross-addon i18n bundles — publish via `core.translations.provide()`; `forPlayer(player)` for the chained resolver, `of(addonId)` for a peer's verbs. */
   get translations(): TranslationsRegistry {
     return this.require(this._translations, 'translations');
   }
 
-  /** Host election — `core.host.isHost` tells you whether this realm should do the work only one realm may do (e.g. render the shared UI). */
+  /** Host election — `core.host.isHost` tells you whether this realm should do the work only one realm may do. Nothing in the stack elects anything today; see `host.ts`. */
   get host(): HostElection {
     return this.require(this._host, 'host');
   }
@@ -136,9 +135,9 @@ export class Runtime {
    * `set`.
    */
   get shared(): SharedRegistry {
-    this._slots.shared ??= new SharedRegistry({ state: this.requireNode().state, namespace: this.namespace });
+    this._shared ??= new SharedRegistry({ state: this.requireNode().state, namespace: this.namespace });
 
-    return this._slots.shared;
+    return this._shared;
   }
 
   /**
@@ -148,9 +147,9 @@ export class Runtime {
    * attached before the announcing addon exists.
    */
   get events(): EventsRegistry {
-    this._slots.events ??= new EventsRegistry({ events: this.requireNode().events, namespace: this.namespace });
+    this._events ??= new EventsRegistry({ events: this.requireNode().events, namespace: this.namespace });
 
-    return this._slots.events;
+    return this._events;
   }
 
   /**
@@ -232,13 +231,25 @@ export class Runtime {
   }
 
   /**
-   * Park a subsystem where its `core.*` getter finds it. Called by a declaration's `install`, which
-   * owns building the thing; the runtime only hands it out again.
+   * What is parked under `key`, or `undefined` when nothing filled that slot. The package that
+   * augmented {@link RuntimeSlots} with the key is the one that reads it, and the one that decides
+   * what absence means.
    */
-  provide<K extends keyof RuntimeSlots>(slot: K, value: RuntimeSlots[K]): void {
-    if (this._slots[slot] !== undefined) { throw new Error(`runtime.${slot} is already provided`); }
+  slot<K extends keyof RuntimeSlots>(key: K): RuntimeSlots[K] | undefined {
+    // Only `fill` writes the map, and it writes `RuntimeSlots[K]` under `K`.
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion
+    return this._slots.get(key) as RuntimeSlots[K] | undefined;
+  }
 
-    this._slots[slot] = value;
+  /**
+   * Park a subsystem under `key`. Called by a declaration's `install`, which owns building the
+   * thing; the runtime only hands it back. A slot is filled once — a second fill throws rather
+   * than leaving two owners of one key.
+   */
+  fill<K extends keyof RuntimeSlots>(key: K, value: RuntimeSlots[K]): void {
+    if (this._slots.has(key)) { throw new Error(`runtime slot '${String(key)}' is already filled`); }
+
+    this._slots.set(key, value);
   }
 
   /** Take the addon offline. Safe to call before registering (no-op). */
@@ -253,7 +264,9 @@ export class Runtime {
     this._features?.stop();
     this._registry?.stop();
     this._node?.stop();
-    this._slots = {};
+    this._slots.clear();
+    this._events = undefined;
+    this._shared = undefined;
     this._host = undefined;
     this._translations = undefined;
     this._features = undefined;

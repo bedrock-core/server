@@ -28,14 +28,15 @@ build against has to match the one your pack's `manifest.json` declares.
   namespace collisions, and tracks soft dependencies by namespace
 - **Features** — `core.features.add()` declares a capability that auto-enables when its condition
   holds, driven by registry presence, replicated state, or another addon's published features
-- **Config** — declare a schema once and get typed accessor trees over three scopes (`server`,
-  `dimension`, `player`), each a db document with a form on top, readable and writable cross-addon
-  over nine rpc methods with player-level authorization
+- **Declarations** — every field beside `manifest` in `register()` installs itself and hands back
+  its own typed accessor, so a package outside this one adds a subsystem to the call without the
+  runtime importing its types. `@bedrock-core/config/server`'s `config(definition)` is one
 - **Translations, guides and pages** — announce your i18n bundle, guide reference and list page,
   and resolve any peer's strings server-side for text measurement; every such feed is an
   `Announcement` with `provide` / `own` / `of` / `namespaces` / `subscribe`
 - **Host election** — `core.host` picks the realm running the newest runtime, with no negotiation
-  messages, so exactly one realm serves shared UI for the whole world
+  messages, for work that exactly one realm in a world may do. Nothing elects anything today: it
+  is the mechanism one owner per capability will need, and no capability declares one yet
 - **Messaging and the shared mirror** — `core.rpc`, and a `shared` shape declared in `register()` that every realm mirrors as a typed tree (`core.shared.of()` for a peer's), with the
   raw sync node available at `core.node`
 - **Events** — declare what this addon announces in `register({ events })`, `emit` it, and any realm listens with `core.events.of()`; delivered in the same tick and kept by nobody
@@ -47,17 +48,14 @@ build against has to match the one your pack's `manifest.json` declares.
 import { authorize, core, event, players, schema } from '@bedrock-core/server-runtime';
 
 // register() declares everything and brings the addon online. It returns the typed accessors of
-// what was declared, one key each: `config`, `shared` and `events`.
-const { config, shared, events } = core.register({
+// what was declared, one key each.
+const { shared, events } = core.register({
   manifest: {
     creator: 'drav0011',          // creator/vendor id — [a-z0-9_]+
     pack: 'economy',              // abbreviated pack id — together: namespace `drav0011_economy`
     packName: 'Economy',          // display label only, never part of identity
     version: '1.0.0',
     dependencies: ['os_shop'],    // namespaces you need — soft, logs, never blocks
-  },
-  config: {                       // optional — config schema
-    server: { taxRate: { type: 'number', default: 0.05, min: 0, max: 1, label: 'Tax Rate' } },
   },
   shared: {                       // optional — what every realm mirrors; only this one writes it
     currency: 'gold',
@@ -67,9 +65,6 @@ const { config, shared, events } = core.register({
     purchase: event<{ playerId: string; gold: number }>(),
   },
 });
-
-config.server.taxRate.get();          // 0.05 — typed all the way down
-config.server.taxRate.subscribe((next, prev) => console.warn('tax', prev, '→', next));
 
 // Persisted documents keyed by target, on the target's own dynamic properties. Local.
 const balances = core.db.collection('balances', { schema: schema<{ gold: number }>(), accept: players() });
@@ -113,8 +108,7 @@ core.rpc.request('os_shop', 'openShop', { playerId }).catch(console.warn);
   [`core.host`](https://bedrock-core.drav.dev/docs/server/api/host)
 - [`core.shared`](https://bedrock-core.drav.dev/docs/server/api/shared) ·
   [`core.events`](https://bedrock-core.drav.dev/docs/server/api/events) ·
-  [`core.db`](https://bedrock-core.drav.dev/docs/server/api/db) ·
-  [`core.config`](https://bedrock-core.drav.dev/docs/server/api/config)
+  [`core.db`](https://bedrock-core.drav.dev/docs/server/api/db)
 - [`core.translations`](https://bedrock-core.drav.dev/docs/server/api/translations) ·
   [`authorize`](https://bedrock-core.drav.dev/docs/server/api/authorize)
 - [Sharing data between addons](https://bedrock-core.drav.dev/docs/server/guides/channels) ·

@@ -6,7 +6,7 @@
 import type { PeerSharedTree, SharedTree } from '../tree';
 import type { AddonManifest } from '../../manifest';
 import type { Runtime } from '../../runtime';
-import { config } from '../../config/declaration';
+import { event as declaredEvent, events } from '../../events';
 import { shared } from '../declaration';
 
 export const SHARED = {
@@ -55,16 +55,16 @@ declare const MANIFEST: AddonManifest;
 export function declaresTrees(core: Runtime): void {
   const both = core.register({
     manifest: MANIFEST,
-    config: config({ server: { taxRate: { type: 'number', default: 0, min: 0, max: 1, label: 'Tax' } } }),
     shared: shared(SHARED),
+    events: events({ restocked: declaredEvent<{ item: string }>() }),
   });
   const onlyShared = core.register({ manifest: MANIFEST, shared: shared(SHARED) });
 
   both.shared.spawnRate.set(1);
-  both.config.server.taxRate.get();
+  both.events.restocked.emit({ item: 'diamond' });
   onlyShared.shared.event.get();
-  // @ts-expect-error no config was declared
-  void onlyShared.config;
+  // @ts-expect-error no events were declared
+  void onlyShared.events;
 }
 
 void rate;

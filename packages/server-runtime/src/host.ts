@@ -1,28 +1,27 @@
 /**
  * Host election — which realm should do the work that exactly one realm may do.
  *
- * Some jobs can't be done by every addon at once: rendering the shared config/guide UI is
- * the motivating one. Bedrock's custom-command registry is world-global and `registerCommand`
- * throws on a duplicate name, so whichever realm loads first *owns* `core:config` forever —
- * there is no unregister API and registration only happens during the startup event. That
- * ownership is immovable.
- *
- * What IS movable is who does the rendering. This election picks the realm running the
- * NEWEST `@bedrock-core/server-runtime` ({@link RUNTIME_VERSION}), so a world with an addon
- * built last year and one built today serves today's UI. The command owner becomes a router:
- * it forwards to {@link HostElection.hostId} rather than rendering locally.
+ * Some jobs cannot be done by every addon in a world at once. This election picks the realm
+ * running the NEWEST `@bedrock-core/server-runtime` ({@link RUNTIME_VERSION}), so a world with
+ * an addon built last year and one built today gets today's behaviour for whatever is elected.
  *
  * ```ts
- * if (core.host.isHost) { renderLocally(player); }
- * else { core.rpc.request(core.host.hostId, 'core:open-ui', { playerId: player.id }); }
+ * if (core.host.isHost) { doTheWork(player); }
+ * else { core.rpc.request(core.host.hostId, 'core:do-the-work', { playerId: player.id }); }
  *
- * core.host.subscribe(hostId => console.warn('UI host is now', hostId));
+ * core.host.subscribe(hostId => console.warn('the host is now', hostId));
  * ```
  *
  * The result is deterministic and needs no negotiation messages: every realm sees the same
  * registry and applies the same rule — highest runtime version, ties broken by the lowest
  * namespace — so they all independently agree on the same winner. Re-elected whenever a
  * peer appears or disappears.
+ *
+ * **Nothing uses it today.** The UI draws a screen in the realm whose pack holds it and asks
+ * that realm over RPC, which needs no single winner. It stays because one owner per job is what
+ * a capability needs — energy, fluids, physics: a single writer of a shared simulation — and
+ * that model is not measured yet. Read it as a mechanism waiting for its first caller, not as a
+ * description of how anything currently behaves.
  */
 import type { Unsubscribe } from '@bedrock-core/sync';
 import type { RegisteredAddon, Registry } from './registry';
