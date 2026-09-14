@@ -39,6 +39,18 @@
 					}
 				]
 			},
+			"build": {
+				"export": {
+					"build": "standard",
+					"readOnly": false,
+					"target": "local"
+				},
+				"filters": [
+					{
+						"profile": "default"
+					}
+				]
+			},
 			"build-test": {
 				"export": {
 					"build": "standard",
