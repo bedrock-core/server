@@ -81,8 +81,8 @@ export class FeatureManager {
 
   start(): void {
     this._disposers.push(
-      this._registry.onRegister(() => this.evaluateAll()),
-      this._registry.onUnregister(() => this.evaluateAll()),
+      // Who is present, as a value: one subscription covers an addon arriving and one leaving.
+      this._registry.addons.subscribe(() => this.evaluateAll()),
       // Every mirror change, since a condition may read any announced value. Announcing a flag
       // cannot loop: evaluate() returns before publishing when the result has not flipped.
       this._state.subscribe(() => this.evaluateAll()),

@@ -123,7 +123,7 @@ export class Runtime {
     return this.require(this._translations, 'translations');
   }
 
-  /** Host election — `core.host.isHost` tells you whether this realm should do the work only one realm may do. Nothing in the stack elects anything today; see `host.ts`. */
+  /** Host election — `core.host.isHost` tells you whether this realm should do the work only one realm may do, and `core.host.id` is that realm as an observable. Nothing in the stack elects anything today; see `host.ts`. */
   get host(): HostElection {
     return this.require(this._host, 'host');
   }
@@ -216,7 +216,6 @@ export class Runtime {
     registry.start();
     features.start();
     translations.start();
-    host.start();
 
     const declared: Record<string, unknown> = {};
 

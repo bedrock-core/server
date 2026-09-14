@@ -6,6 +6,11 @@
  * heartbeat, and a freshly started node broadcasts a `whois` that prompts existing peers to
  * announce straight back. A TTL sweep drops peers that go quiet.
  *
+ * Who is present is a value, not a stream: {@link Discovery.peers} is an observable list that can
+ * be read, watched, or `computed` over. It republishes only when the world actually changes —
+ * a heartbeat that says nothing new refreshes `lastSeen` in place and notifies nobody, which is
+ * what lets a listener sit on the list without waking every five seconds per peer.
+ *
  * Because the bus filters echoes by instance id (not src), an announce whose `src` equals our
  * own id but comes from a different instance reaches us — that's a namespace collision, which
  * we surface via {@link Discovery.onCollision} rather than storing as a peer.
@@ -25,6 +30,7 @@
 import { system } from '@minecraft/server';
 import { ANNOUNCE_INTERVAL_TICKS, MessageType, PEER_TTL_TICKS, PROTOCOL_MAX, PROTOCOL_MIN, SELF_CAPS } from './constants';
 import { capsFor, negotiateProtocol } from './negotiate';
+import { observable, type Observable, type ReadonlyObservable } from '@bedrock-core/observable';
 import type { Bus, Unsubscribe } from './bus';
 import type { Envelope } from './envelope';
 
@@ -47,9 +53,6 @@ export interface PeerInfo {
 
   /** Opaque metadata the peer attached to its announce (e.g. a higher-layer manifest). */
   meta?: Record<string, unknown>;
-
-  /** Tick this peer was last heard from. */
-  lastSeen: number;
 }
 
 /** A detected namespace collision: another instance is announcing our own id. */
@@ -69,9 +72,6 @@ export interface IncompatiblePeer {
   /** The range the peer advertised. */
   pmin: number;
   pmax: number;
-
-  /** Tick this node was last heard from. */
-  lastSeen: number;
 }
 
 /**
@@ -95,6 +95,30 @@ interface AnnounceData {
 
   /** Optional behaviours the sender can read. Absent on nodes that predate capabilities. */
   caps?: readonly string[];
+}
+
+function sameCaps(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((cap, i) => cap === b[i]);
+}
+
+function sameMeta(a: Record<string, unknown> | undefined, b: Record<string, unknown> | undefined): boolean {
+  if (a === b) { return true; }
+
+  if (a === undefined || b === undefined) { return false; }
+
+  // Meta arrives re-parsed from the wire on every announce, so there is no identity to compare and
+  // its shape is the sender's to choose. Serializing it is the only honest equality, and a manifest
+  // is small enough to pay for once per peer per heartbeat.
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+/** Whether two readings of the same peer say the same thing. */
+function sameAdvertisement(a: PeerInfo, b: PeerInfo): boolean {
+  return a.version === b.version
+    && a.schemaVersion === b.schemaVersion
+    && a.protocol === b.protocol
+    && sameCaps(a.caps, b.caps)
+    && sameMeta(a.meta, b.meta);
 }
 
 /** What `new Discovery()` takes beside the bus and the id. */
@@ -125,6 +149,15 @@ export class Discovery {
   private readonly _peerTtlTicks: number;
   private readonly _peers = new Map<string, PeerInfo>();
   private readonly _incompatible = new Map<string, IncompatiblePeer>();
+  // Liveness is kept beside the lists rather than inside them: it moves on every heartbeat, and a
+  // field that changes every five seconds per peer would make an observable list of peers useless.
+  private readonly _lastSeen = new Map<string, number>();
+  private readonly _peerList: Observable<readonly PeerInfo[]>
+    = observable<readonly PeerInfo[]>([], { label: 'discovery.peers' });
+
+  private readonly _incompatibleList: Observable<readonly IncompatiblePeer[]>
+    = observable<readonly IncompatiblePeer[]>([], { label: 'discovery.incompatiblePeers' });
+
   private readonly _onUp = new Set<PeerListener>();
   private readonly _onDown = new Set<PeerListener>();
   private readonly _onCollision = new Set<CollisionListener>();
@@ -146,14 +179,21 @@ export class Discovery {
     this._peerTtlTicks = options.peerTtlTicks ?? PEER_TTL_TICKS;
   }
 
-  /** Known live peers (excludes self). */
-  get peers(): PeerInfo[] {
-    return Array.from(this._peers.values());
+  /**
+   * Known live peers (excludes self), as an observable list. Read it with `.get()`, watch it with
+   * `.subscribe()`, derive from it with `computed()`. Each notification carries a fresh array;
+   * the `PeerInfo` objects inside it are never mutated.
+   */
+  get peers(): ReadonlyObservable<readonly PeerInfo[]> {
+    return this._peerList;
   }
 
-  /** Live nodes whose protocol range does not overlap this build's, so they cannot be talked to. */
-  get incompatiblePeers(): IncompatiblePeer[] {
-    return Array.from(this._incompatible.values());
+  /**
+   * Live nodes whose protocol range does not overlap this build's, so they cannot be talked to.
+   * An observable list on the same terms as {@link Discovery.peers}.
+   */
+  get incompatiblePeers(): ReadonlyObservable<readonly IncompatiblePeer[]> {
+    return this._incompatibleList;
   }
 
   /** Wire up handlers, announce + whois immediately, then start the heartbeat/sweep loops. */
@@ -197,6 +237,11 @@ export class Discovery {
 
   getPeer(id: string): PeerInfo | undefined {
     return this._peers.get(id);
+  }
+
+  /** The tick a node was last heard from, or `undefined` if it has never been heard. */
+  lastSeen(id: string): number | undefined {
+    return this._lastSeen.get(id);
   }
 
   /** Notified when a peer is first seen. Returns an unsubscribe function. */
@@ -267,16 +312,37 @@ export class Discovery {
       protocol,
       caps: capsFor(protocol, data.caps),
       meta: data.meta,
-      lastSeen: system.currentTick,
     };
 
-    this._incompatible.delete(envelope.src);
-    this._peers.set(envelope.src, peer);
+    this._lastSeen.set(envelope.src, system.currentTick);
+
+    if (this._incompatible.delete(envelope.src)) { this.publishIncompatible(); }
+
     this._bus.setPeerProtocol(peer.id, peer.protocol, peer.caps);
 
-    if (!existing) {
+    if (existing === undefined) {
+      this._peers.set(envelope.src, peer);
+      this.publishPeers();
+
       for (const listener of this._onUp) { listener(peer); }
+    } else if (!sameAdvertisement(existing, peer)) {
+      // The same node saying something new — a version bump, a re-announced manifest. The list
+      // changes; nobody came up.
+      this._peers.set(envelope.src, peer);
+      this.publishPeers();
     }
+
+    // A heartbeat that repeats what the peer already said stores nothing: the record already on
+    // hand says exactly this, and keeping it is what makes the map and the published list one set
+    // of objects rather than two equal ones.
+  }
+
+  private publishPeers(): void {
+    this._peerList.set(Array.from(this._peers.values()));
+  }
+
+  private publishIncompatible(): void {
+    this._incompatibleList.set(Array.from(this._incompatible.values()));
   }
 
   private recordIncompatible(id: string, data: AnnounceData): void {
@@ -284,14 +350,20 @@ export class Discovery {
       id,
       pmin: typeof data.pmin === 'number' ? data.pmin : PROTOCOL_MIN,
       pmax: typeof data.pmax === 'number' ? data.pmax : PROTOCOL_MIN,
-      lastSeen: system.currentTick,
     };
-    const first = !this._incompatible.has(id);
+
+    this._lastSeen.set(id, system.currentTick);
+
+    const existing = this._incompatible.get(id);
 
     this._incompatible.set(id, entry);
 
-    if (first) {
+    if (existing === undefined) {
+      this.publishIncompatible();
+
       for (const listener of this._onIncompatible) { listener(entry); }
+    } else if (existing.pmin !== entry.pmin || existing.pmax !== entry.pmax) {
+      this.publishIncompatible();
     }
   }
 
@@ -305,19 +377,38 @@ export class Discovery {
 
   private sweep(): void {
     const cutoff = system.currentTick - this._peerTtlTicks;
+    const dropped: PeerInfo[] = [];
 
     for (const [id, peer] of this._peers) {
-      if (peer.lastSeen < cutoff) {
+      if ((this._lastSeen.get(id) ?? 0) < cutoff) {
         this._peers.delete(id);
+        this._lastSeen.delete(id);
         this._bus.forgetPeer(id);
+        dropped.push(peer);
+      }
+    }
 
+    // The list is republished once, before any listener runs, so a handler reading `peers` during
+    // a multi-peer eviction never sees a half-swept world.
+    if (dropped.length > 0) {
+      this.publishPeers();
+
+      for (const peer of dropped) {
         for (const listener of this._onDown) { listener(peer); }
       }
     }
 
-    for (const [id, peer] of this._incompatible) {
-      if (peer.lastSeen < cutoff) { this._incompatible.delete(id); }
+    let evicted = false;
+
+    for (const id of this._incompatible.keys()) {
+      if ((this._lastSeen.get(id) ?? 0) < cutoff) {
+        this._incompatible.delete(id);
+        this._lastSeen.delete(id);
+        evicted = true;
+      }
     }
+
+    if (evicted) { this.publishIncompatible(); }
   }
 
   private parseAnnounce(data: unknown): AnnounceData | undefined {

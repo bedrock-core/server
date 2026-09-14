@@ -4,6 +4,11 @@
  * an {@link AddonManifest}; the registry merges the local addon (self) with all live peers,
  * keyed by the unique namespace (`creator_pack`, e.g. `bt_gc_economy`).
  *
+ * {@link Registry.addons} is the directory itself: an observable list derived from discovery, so
+ * it can be watched or `computed` over exactly like a config leaf or a shared value. The registry
+ * holds no directory state of its own — `all()`, `get()` and `has()` all read that one list — so
+ * there is never a cached answer to "who is here" that can disagree with the live one.
+ *
  * A collision (two addons with the same namespace) is surfaced via
  * {@link Registry.onNamespaceCollision} and logged. Dependencies are declared and matched
  * by namespace and are soft: a missing one warns but never blocks.
@@ -21,8 +26,10 @@ import {
   type IncompatibleListener,
   type IncompatiblePeer,
   type PeerInfo,
+  type ReadonlyObservable,
   type Unsubscribe,
 } from '@bedrock-core/sync';
+import { computed, type Computed } from '@bedrock-core/observable';
 import { addonNamespace, type AddonManifest, manifestFromPeer, runtimeVersionFromPeer } from './manifest';
 import { RUNTIME_VERSION } from './runtime-version';
 
@@ -39,36 +46,66 @@ export type AddonListener = (addon: RegisteredAddon) => void;
 /** Told two live addons claim the same namespace. */
 export type CollisionListener = (info: CollisionInfo) => void;
 
+function sameIds(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((id, i) => id === b[i]);
+}
+
 /** Every bedrock-core addon in the world, from discovery: presence, dependencies, collisions. */
 export class Registry {
+  /**
+   * Every registered addon — the local addon plus all live peers — as an observable list.
+   *
+   * Derived from `discovery.peers`, so it republishes exactly when the world changes and not on
+   * the heartbeats that say nothing new. The local addon is always first.
+   */
+  readonly addons: ReadonlyObservable<readonly RegisteredAddon[]>;
+
+  /**
+   * This addon's declared dependencies that are not currently present, as an observable list.
+   * Empty means satisfied.
+   */
+  readonly missing: ReadonlyObservable<readonly string[]>;
+
   private readonly _discovery: Discovery;
   private readonly _self: RegisteredAddon;
-  private readonly _onRegister = new Set<AddonListener>();
-  private readonly _onUnregister = new Set<AddonListener>();
+  private readonly _addons: Computed<readonly RegisteredAddon[]>;
+  private readonly _missing: Computed<readonly string[]>;
+  private readonly _satisfied: Computed<boolean>;
   private readonly _onCollision = new Set<CollisionListener>();
   private readonly _onIncompatible = new Set<IncompatibleListener>();
   private readonly _onDepsSatisfied = new Set<() => void>();
   private readonly _disposers: Unsubscribe[] = [];
-  private _depsSatisfied: boolean;
-  private _missingSinceLastCheck: string[];
 
   constructor(discovery: Discovery, self: AddonManifest) {
     this._discovery = discovery;
     this._self = { ...self, id: addonNamespace(self), self: true, runtimeVersion: RUNTIME_VERSION };
-    this._missingSinceLastCheck = this.missingDependencies();
-    this._depsSatisfied = this._missingSinceLastCheck.length === 0;
+
+    this._addons = computed(
+      () => [this._self, ...discovery.peers.get().map(peer => this.peerToAddon(peer))],
+      [discovery.peers],
+      { label: 'registry.addons' },
+    );
+    this._missing = computed(
+      () => (this._self.dependencies ?? []).filter(id => !this.has(id)),
+      [this._addons],
+      { equals: sameIds, label: 'registry.missing' },
+    );
+    this._satisfied = computed(() => this._missing.get().length === 0, [this._missing]);
+
+    this.addons = this._addons;
+    this.missing = this._missing;
   }
 
-  /** Bridge discovery events into registry events and do an initial dependency check. */
+  /** Bridge discovery's deltas into registry events and start reporting on dependencies. */
   start(): void {
     this._disposers.push(
-      this._discovery.onPeerUp(peer => this.handlePeerUp(peer)),
-      this._discovery.onPeerDown(peer => this.handlePeerDown(peer)),
       this._discovery.onCollision(info => this.handleCollision(info)),
       this._discovery.onIncompatible(peer => this.handleIncompatible(peer)),
+      this._satisfied.subscribe(satisfied => this.handleSatisfied(satisfied)),
+      this._missing.subscribe((next, previous) => this.reportDependencies(next, previous)),
     );
 
-    const missing = this.missingDependencies();
+    const missing = this._missing.get();
 
     if (missing.length > 0) {
       console.info(`[bedrock-core] '${this._self.id}' missing dependencies: ${missing.join(', ')}`);
@@ -77,20 +114,20 @@ export class Registry {
 
   stop(): void {
     for (const dispose of this._disposers.splice(0)) { dispose(); }
+
+    this._satisfied.dispose();
+    this._missing.dispose();
+    this._addons.dispose();
   }
 
-  /** Every registered addon: the local addon plus all live peers. */
-  all(): RegisteredAddon[] {
-    return [this._self, ...this._discovery.peers.map(peer => this.peerToAddon(peer))];
+  /** Every registered addon: the local addon plus all live peers. A snapshot of {@link Registry.addons}. */
+  all(): readonly RegisteredAddon[] {
+    return this._addons.get();
   }
 
   /** Look up an addon by its namespace (`creator_pack`, e.g. `bt_gc_economy`). */
   get(id: string): RegisteredAddon | undefined {
-    if (id === this._self.id) { return this._self; }
-
-    const peer = this._discovery.peers.find(p => p.id === id);
-
-    return peer ? this.peerToAddon(peer) : undefined;
+    return this._addons.get().find(addon => addon.id === id);
   }
 
   /** Whether an addon with the given namespace is present. */
@@ -98,30 +135,27 @@ export class Registry {
     return this.get(id) !== undefined;
   }
 
-  /** Notified when a peer addon registers (becomes visible). Returns an unsubscribe function. */
+  /**
+   * Notified when a peer addon registers (becomes visible). Returns an unsubscribe function.
+   *
+   * A delta, not a value: to react to who is present rather than to each arrival, subscribe to
+   * {@link Registry.addons}.
+   */
   onRegister(listener: AddonListener): Unsubscribe {
-    this._onRegister.add(listener);
-
-    return (): void => {
-      this._onRegister.delete(listener);
-    };
+    return this._discovery.onPeerUp(peer => listener(this.peerToAddon(peer)));
   }
 
   /** Notified when a peer addon unregisters (goes away). Returns an unsubscribe function. */
   onUnregister(listener: AddonListener): Unsubscribe {
-    this._onUnregister.add(listener);
-
-    return (): void => {
-      this._onUnregister.delete(listener);
-    };
+    return this._discovery.onPeerDown(peer => listener(this.peerToAddon(peer)));
   }
 
   /**
    * Addons heard on the bus that this build cannot talk to, because the protocol ranges the two
    * were built with do not overlap. Present in the world, absent from {@link Registry.all}.
    */
-  incompatible(): IncompatiblePeer[] {
-    return this._discovery.incompatiblePeers;
+  incompatible(): readonly IncompatiblePeer[] {
+    return this._discovery.incompatiblePeers.get();
   }
 
   /** Notified the first time an unreachable addon is heard. Returns an unsubscribe function. */
@@ -143,10 +177,8 @@ export class Registry {
   }
 
   /** This addon's declared dependencies (namespaces) that are not currently present. */
-  missingDependencies(): string[] {
-    const deps = this._self.dependencies ?? [];
-
-    return deps.filter(id => !this.has(id));
+  missingDependencies(): readonly string[] {
+    return this._missing.get();
   }
 
   /**
@@ -157,7 +189,7 @@ export class Registry {
   onDependenciesSatisfied(listener: () => void): Unsubscribe {
     this._onDepsSatisfied.add(listener);
 
-    if (this._depsSatisfied) { listener(); }
+    if (this._satisfied.get()) { listener(); }
 
     return (): void => {
       this._onDepsSatisfied.delete(listener);
@@ -170,20 +202,21 @@ export class Registry {
     return { ...manifest, id: peer.id, self: false, runtimeVersion: runtimeVersionFromPeer(peer.meta) };
   }
 
-  private handlePeerUp(peer: PeerInfo): void {
-    const addon = this.peerToAddon(peer);
+  /** The edge a derived value cannot deliver on its own: the moment the last dependency arrives. */
+  private handleSatisfied(satisfied: boolean): void {
+    if (!satisfied) { return; }
 
-    for (const listener of this._onRegister) { listener(addon); }
-
-    this.evaluateDependencies();
+    for (const listener of this._onDepsSatisfied) { listener(); }
   }
 
-  private handlePeerDown(peer: PeerInfo): void {
-    const addon = this.peerToAddon(peer);
+  private reportDependencies(missing: readonly string[], previous: readonly string[]): void {
+    if (missing.length === 0) {
+      console.info(`[bedrock-core] '${this._self.id}' dependencies resolved: ${previous.join(', ')}`);
 
-    for (const listener of this._onUnregister) { listener(addon); }
+      return;
+    }
 
-    this.evaluateDependencies();
+    console.info(`[bedrock-core] '${this._self.id}' missing dependencies: ${missing.join(', ')}`);
   }
 
   private handleIncompatible(peer: IncompatiblePeer): void {
@@ -199,24 +232,5 @@ export class Registry {
     console.error(`[bedrock-core] collision: another instance shares identity '${info.id}'`);
 
     for (const listener of this._onCollision) { listener(info); }
-  }
-
-  private evaluateDependencies(): void {
-    const missing = this.missingDependencies();
-    const satisfied = missing.length === 0;
-
-    if (satisfied === this._depsSatisfied) { return; }
-
-    this._depsSatisfied = satisfied;
-
-    if (satisfied) {
-      console.info(`[bedrock-core] '${this._self.id}' dependencies resolved: ${this._missingSinceLastCheck.join(', ')}`);
-
-      for (const listener of this._onDepsSatisfied) { listener(); }
-    } else {
-      console.info(`[bedrock-core] '${this._self.id}' missing dependencies: ${missing.join(', ')}`);
-    }
-
-    this._missingSinceLastCheck = missing;
   }
 }

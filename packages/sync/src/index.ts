@@ -12,6 +12,7 @@
  * const sync = createSync({ id: 'myaddon', version: '1.0.0' });
  * sync.start();
  *
+ * sync.discovery.peers.subscribe(peers => console.warn(peers.length, 'peers'));
  * sync.discovery.onPeerUp(peer => console.warn('peer up', peer.id));
  * sync.rpc.onRequest('ping', () => 'pong');
  * sync.state.set('myaddon', 'volume', 5);
@@ -44,6 +45,9 @@ export { State, stateKey } from './state';
 export type { SnapshotEntry, StateChange, StateChangeListener, StateKey, StateOptions } from './state';
 
 export type { Unsubscribe } from './bus';
+
+/** Re-exported so a consumer can type a `discovery.peers` subscription without depending on observable itself. */
+export type { Listener, ReadonlyObservable } from '@bedrock-core/observable';
 export type { Envelope } from './envelope';
 export { Cap, MAX_MESSAGE, MessageType, PROTOCOL_MAX, PROTOCOL_MIN, SELF_CAPS } from './constants';
 export { capsFor, negotiateProtocol } from './negotiate';
