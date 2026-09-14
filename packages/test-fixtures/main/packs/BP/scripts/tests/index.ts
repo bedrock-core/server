@@ -3,15 +3,18 @@
  * realm (they talk over the real `system` bus); the last asserts the separate peer pack
  * is present, so it only passes when both fixture packs are installed.
  *
+ * `./db` and `./sync` hold the tests that need the engine itself rather than several runtimes.
+ *
  * Run in-game: `/gametest runset core` (or `/gametest run core:<name>`). The `bench` tag in
  * `./bench` is registered alongside them but runs only when asked for by name.
  */
 import './bench';
 import './bench-shared';
+import './db';
+import './sync';
 import { world } from '@minecraft/server';
 import { type Test, register } from '@minecraft/server-gametest';
 import { Runtime, authorize, core, event, events, schema, shared } from '@bedrock-core/server-runtime';
-import { config } from '@bedrock-core/config/server';
 
 const STRUCTURE = 'core:empty';
 
@@ -322,140 +325,6 @@ gametest('events_broadcast', (test) => {
 
       a.stop();
       b.stop();
-    })
-    .thenSucceed();
-});
-
-// Config is a db document: a write to the accessor lands in the scope's collection, nested as the
-// schema is; the document reads back with its defaults filled, and the bytes hold only overrides.
-gametest('config_stores_through_db', (test) => {
-  const addon = new Runtime();
-
-  const { config: cfg } = addon.register({
-    manifest: { creator: 'test', pack: 'cfg_db', packName: 'Cfg', version: '1.0.0' },
-    config: config({
-      server: {
-        economy: {
-          taxRate: { type: 'number', default: 0.05, min: 0, max: 1, label: 'Tax' },
-          currency: { type: 'enum', default: 'emerald', options: ['emerald', 'gold'], label: 'Currency' },
-        },
-        tags: { type: 'list', itemType: 'string', default: [], label: 'Tags' },
-      },
-    }),
-  });
-
-  test.startSequence()
-    .thenIdle(20)
-    .thenExecute(() => {
-      cfg.server.economy.taxRate.set(0.2);
-      cfg.server.tags.set(['a', 'b']);
-      // Out of range: coerced to the entry's bounds on the way in.
-      cfg.server.patch({ economy: { taxRate: 7 } });
-    })
-    .thenIdle(10)
-    .thenExecute(() => {
-      if (cfg.server.economy.taxRate.get() !== 1) { test.fail(`the write was not coerced: ${String(cfg.server.economy.taxRate.get())}`); }
-
-      const collection = addon.db.find('config-server');
-
-      if (collection === undefined) {
-        test.fail('config did not declare a server collection on db');
-
-        return;
-      }
-
-      const document = collection.for(world).get();
-
-      if (JSON.stringify(document) !== JSON.stringify({ economy: { taxRate: 1, currency: 'emerald' }, tags: ['a', 'b'] })) {
-        test.fail(`the document did not read back as the schema's shape: ${JSON.stringify(document)}`);
-      }
-
-      // Only overrides are stored, so a key left at its schema default is absent from the bytes —
-      // which is what lets a later default change reach a world that never touched the setting.
-      const key = `core-db:${addon.namespace}:world::config-server:doc`;
-      const raw = world.getDynamicProperty(key);
-
-      if (raw !== '{"v":1,"d":{"economy":{"taxRate":1},"tags":["a","b"]}}') {
-        test.fail(`the stored bytes are not the overrides alone: ${String(raw)}`);
-      }
-
-      // Setting a group replaces it: the omitted key is back at its default, and gone from the bytes.
-      cfg.server.economy.set({ taxRate: 0.05, currency: 'gold' });
-
-      if (cfg.server.economy.taxRate.get() !== 0.05 || cfg.server.economy.currency.get() !== 'gold') {
-        test.fail(`set on a group did not replace it: ${JSON.stringify(cfg.server.economy.get())}`);
-      }
-
-      if (world.getDynamicProperty(key) !== '{"v":1,"d":{"economy":{"currency":"gold"},"tags":["a","b"]}}') {
-        test.fail(`a default was persisted: ${String(world.getDynamicProperty(key))}`);
-      }
-
-      addon.stop();
-    })
-    .thenSucceed();
-});
-
-// Config change notifications are observables: a leaf and the group above it both fire, with the
-// previous value the observable held, and unsubscribing stops delivery.
-gametest('config_subscribe_is_observable', (test) => {
-  const addon = new Runtime();
-
-  const { config: cfg } = addon.register({
-    manifest: { creator: 'test', pack: 'cfg_obs', packName: 'Obs', version: '1.0.0' },
-    config: config({
-      server: {
-        economy: {
-          taxRate: { type: 'number', default: 0.05, min: 0, max: 1, label: 'Tax' },
-        },
-        label: { type: 'string', default: 'Shop', label: 'Label' },
-      },
-    }),
-  });
-
-  const leaf: [number, number][] = [];
-  const group: unknown[] = [];
-  let afterRelease = 0;
-
-  const release = cfg.server.economy.taxRate.subscribe((next, prev) => { leaf.push([next, prev]); });
-
-  cfg.server.economy.subscribe((next) => { group.push(next); });
-  // A sibling's listener hears nothing of the economy writes below.
-  cfg.server.label.subscribe(() => { test.fail('a sibling group fired for an unrelated write'); });
-
-  test.startSequence()
-    .thenIdle(20)
-    .thenExecute(() => { cfg.server.economy.taxRate.set(0.2); })
-    .thenIdle(5)
-    .thenExecute(() => { cfg.server.economy.taxRate.set(0.3); })
-    .thenIdle(5)
-    .thenExecute(() => {
-      release();
-      cfg.server.economy.taxRate.set(0.4);
-    })
-    .thenIdle(5)
-    .thenExecute(() => {
-      afterRelease = leaf.length;
-
-      if (leaf.length !== 2) { test.fail(`leaf fired ${leaf.length} times, expected 2`); }
-
-      // The observable carries the value it held before, not undefined.
-      if (leaf[0]?.[0] !== 0.2 || leaf[0]?.[1] !== 0.05) { test.fail(`first change was ${JSON.stringify(leaf[0])}`); }
-
-      if (leaf[1]?.[0] !== 0.3 || leaf[1]?.[1] !== 0.2) { test.fail(`second change was ${JSON.stringify(leaf[1])}`); }
-
-      // A group above a changed leaf is rebuilt and fires too.
-      if (group.length !== 3) { test.fail(`group fired ${group.length} times, expected 3`); }
-
-      if (JSON.stringify(group[0]) !== JSON.stringify({ taxRate: 0.2 })) {
-        test.fail(`group saw ${JSON.stringify(group[0])}`);
-      }
-
-      // The released leaf listener heard nothing after unsubscribing, though the value did change.
-      if (afterRelease !== 2) { test.fail('a released listener still fired'); }
-
-      if (cfg.server.economy.taxRate.get() !== 0.4) { test.fail('the third write did not apply'); }
-
-      addon.stop();
     })
     .thenSucceed();
 });
