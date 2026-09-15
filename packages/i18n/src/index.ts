@@ -16,6 +16,7 @@ export { resolveDisplay } from './display';
 export type { DisplayText } from './display';
 export { interpolate, templateVars, toPositional } from './interpolate';
 export { pickLocale } from './locale';
+export { overlay } from './overlay';
 export { pluralCategory } from './plural';
 export type { PluralCategory } from './plural';
 export { createResourceBundle } from './resources';

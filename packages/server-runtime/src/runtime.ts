@@ -12,22 +12,24 @@
  * The `Runtime` class stands alone, so tests (and GameTests) can create several runtimes in one
  * script realm; they all talk over the real `system` script-event bus.
  */
-import { SyncNode } from '@bedrock-core/sync';
-import { addonNamespace, type AddonManifest, manifestToMeta, validateManifest } from './manifest';
-import { FeatureManager } from './features';
-import { Registry } from './registry';
-import { type Declaration, isDeclaration } from './declaration';
-import { TranslationsRegistry } from './translations';
-import { HostElection } from './host';
-import type { Rpc } from '@bedrock-core/sync';
-import { createEngineDb } from '@bedrock-core/db/minecraft';
 import type { Db } from '@bedrock-core/db';
-import { SharedRegistry } from './shared/shared-registry';
+import { createEngineDb } from '@bedrock-core/db/minecraft';
+import { currentI18n } from '@bedrock-core/i18n';
+import type { Rpc } from '@bedrock-core/sync';
+import { SyncNode } from '@bedrock-core/sync';
+import { system } from '@minecraft/server';
+import { type Declaration, isDeclaration } from './declaration';
 import { EventsRegistry } from './events/events-registry';
+import { FeatureManager } from './features';
+import { HostElection } from './host';
+import { type AddonManifest, addonNamespace, manifestToMeta, validateManifest } from './manifest';
+import { Registry } from './registry';
+import { SharedRegistry } from './shared/shared-registry';
+import { TranslationsRegistry } from './translations';
 
 /**
  * Everything an addon declares when it registers: the identity `manifest`, plus one field per
- * declaration — `config: config(definition)`, `shared: shared(keys)`, `events: events(tree)`.
+ * declaration — `config: registerConfig(definition)`, `shared: registerShared(keys)`, `events: registerEvents(tree)`.
  * One bag — "tell core what you are" — then run your own code.
  *
  * A field holding a {@link Declaration} is installed and its accessor comes back under that same
@@ -129,7 +131,7 @@ export class Runtime {
   }
 
   /**
-   * The shared mirror as typed trees: this addon's own comes back from its `shared: shared(keys)`
+   * The shared mirror as typed trees: this addon's own comes back from its `shared: registerShared(keys)`
    * declaration, a peer's from `core.shared.of<Def>(ns)` — which an addon that declares nothing of
    * its own may read too. Every node has `get` / `subscribe`; own nodes and opened peer leaves also
    * `set`.
@@ -141,7 +143,7 @@ export class Runtime {
   }
 
   /**
-   * Events as typed trees: this addon's own comes back from its `events: events(tree)` declaration,
+   * Events as typed trees: this addon's own comes back from its `events: registerEvents(tree)` declaration,
    * another addon's from `core.events.of<Def>(ns)` — open to an addon that announces nothing itself.
    * An owner's node has `emit` and `subscribe`, a peer's `subscribe` alone, and a listener may be
    * attached before the announcing addon exists.
@@ -226,6 +228,12 @@ export class Runtime {
       declared[key] = value.install(this);
     }
 
+    // This addon's own strings, on the first tick. `createI18n(bundle)` runs in a module the
+    // entry imports, so the instance exists by now; publishing it from the floor is what lets an
+    // addon that draws nothing still have the translation keys in its manifest — `packName`,
+    // `creatorName`, `description` — resolved by whatever realm lists it.
+    system.run(() => { this.publishOwnTranslations(); });
+
     return declared;
   }
 
@@ -273,6 +281,21 @@ export class Runtime {
     this._db = undefined;
     this._node = undefined;
     this._manifest = undefined;
+  }
+
+  /**
+   * Announce the bundle this addon's default i18n instance was created with.
+   *
+   * Nothing happens for an addon that created none, and nothing happens if the runtime was
+   * stopped before the tick arrived. A package above the floor may publish a different bundle
+   * afterwards; the last one announced is what peers read.
+   */
+  private publishOwnTranslations(): void {
+    const bundle = currentI18n()?.bundle;
+
+    if (bundle === undefined || this._translations === undefined) { return; }
+
+    this._translations.provide(bundle);
   }
 
   private requireManifest(): AddonManifest {
