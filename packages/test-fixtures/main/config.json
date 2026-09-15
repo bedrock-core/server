@@ -11,8 +11,8 @@
 		"dataPath": "./packs/data",
 		"filterDefinitions": {
 			"core": {
-				"runWith": "nodejs",
-				"script": "../../../../regolith-filters/core/main.ts"
+				"url": "github.com/bedrock-core/regolith-filters",
+				"version": "1.0.0"
 			}
 		},
 		"formatVersion": "1.4.0",
@@ -28,7 +28,10 @@
 						"filter": "core",
 						"settings": {
 							"shared": {
-								"namespace": "core_fixture"
+								"namespace": "core_fixture",
+								"pretty": {
+									"indent": "tab"
+								}
 							},
 							"guides": false,
 							"ui-compiler": false,
@@ -47,7 +50,18 @@
 				},
 				"filters": [
 					{
-						"profile": "default"
+						"filter": "core",
+						"settings": {
+							"shared": {
+								"namespace": "core_fixture",
+								"pretty": false
+							},
+							"guides": false,
+							"ui-compiler": false,
+							"bundler": {
+								"debug": true
+							}
+						}
 					}
 				]
 			},
@@ -62,7 +76,10 @@
 						"filter": "core",
 						"settings": {
 							"shared": {
-								"namespace": "core_fixture"
+								"namespace": "core_fixture",
+								"pretty": {
+									"indent": "tab"
+								}
 							},
 							"guides": false,
 							"ui-compiler": false,
@@ -90,7 +107,8 @@
 						"filter": "core",
 						"settings": {
 							"shared": {
-								"namespace": "core_fixture"
+								"namespace": "core_fixture",
+								"pretty": false
 							},
 							"guides": false,
 							"ui-compiler": false,
