@@ -1,10 +1,10 @@
 /**
- * `events(tree)` — the events declaration an addon passes to `register()`.
+ * `registerEvents(tree)` — the events declaration an addon passes to `register()`.
  *
  * ```ts
- * const declared = core.register({ manifest, events: events({ restocked: event<{ item: string }>() }) });
+ * const { events } = core.register({ manifest, events: registerEvents({ restocked: event<{ item: string }>() }) });
  *
- * declared.events.restocked.emit({ item: 'diamond' });
+ * events.restocked.emit({ item: 'diamond' });
  * core.events.of<typeof peerTree>('os_shop').sale.subscribe(listener);
  * ```
  *
@@ -15,6 +15,6 @@ import type { Declaration } from '../declaration';
 import type { EventsDef, EventsTree } from './tree';
 
 /** Declare what this addon announces to every realm: `{ purchase: event<{ playerId: string }>() }`. */
-export function events<Def extends EventsDef>(tree: Def): Declaration<EventsTree<Def>> {
+export function registerEvents<Def extends EventsDef>(tree: Def): Declaration<EventsTree<Def>> {
   return { install: core => core.events.define(tree) };
 }

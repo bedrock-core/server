@@ -6,8 +6,8 @@
 import type { PeerSharedTree, SharedTree } from '../tree';
 import type { AddonManifest } from '../../manifest';
 import type { Runtime } from '../../runtime';
-import { event as declaredEvent, events } from '../../events';
-import { shared } from '../declaration';
+import { event as declaredEvent, registerEvents } from '../../events';
+import { registerShared } from '../declaration';
 
 export const SHARED = {
   spawnRate: 5,
@@ -55,10 +55,10 @@ declare const MANIFEST: AddonManifest;
 export function declaresTrees(core: Runtime): void {
   const both = core.register({
     manifest: MANIFEST,
-    shared: shared(SHARED),
-    events: events({ restocked: declaredEvent<{ item: string }>() }),
+    shared: registerShared(SHARED),
+    events: registerEvents({ restocked: declaredEvent<{ item: string }>() }),
   });
-  const onlyShared = core.register({ manifest: MANIFEST, shared: shared(SHARED) });
+  const onlyShared = core.register({ manifest: MANIFEST, shared: registerShared(SHARED) });
 
   both.shared.spawnRate.set(1);
   both.events.restocked.emit({ item: 'diamond' });

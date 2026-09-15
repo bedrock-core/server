@@ -8,7 +8,7 @@
  * a field to `register()` and have its own types come back typed, without the floor importing them.
  *
  * ```ts
- * const { config, shared } = core.register({ manifest, config: config(definition), shared: shared(keys) });
+ * const { config, shared } = core.register({ manifest, config: registerConfig(definition), shared: registerShared(keys) });
  * ```
  *
  * Lifecycle stays with the runtime: `register()` installs, and `Runtime.stop()` calls `stop?()` on

@@ -11,10 +11,10 @@
  * and the runtime installs it without knowing what it builds.
  *
  * ```ts
- * import { core, event, events, shared } from '@bedrock-core/server-runtime';
- * import { config } from '@bedrock-core/config/server';
+ * import { core, event, registerEvents, registerShared } from '@bedrock-core/server-runtime';
+ * import { registerConfig } from '@bedrock-core/config/server';
  *
- * const declared = core.register({
+ * const { config, shared, events } = core.register({
  *   manifest: {
  *     creator: 'bt',               // creator id, lowercase a-z0-9_
  *     pack: 'gc_shop',             // pack id — together: namespace `bt_gc_shop`
@@ -22,14 +22,14 @@
  *     version: '1.2.0',
  *     dependencies: ['os_economy'],
  *   },
- *   config: config({ server: { taxRate: { type: 'number', default: 0.05, min: 0, max: 1, label: 'Tax Rate' } } }),
- *   shared: shared({ price: 10, sale: { active: false } }),
- *   events: events({ restocked: event<{ item: string }>() }),
+ *   config: registerConfig({ server: { taxRate: { type: 'number', default: 0.05, min: 0, max: 1, label: 'Tax Rate' } } }),
+ *   shared: registerShared({ price: 10, sale: { active: false } }),
+ *   events: registerEvents({ restocked: event<{ item: string }>() }),
  * });
  *
- * declared.config.server.taxRate.get();     // an observable per node, local and synchronous
- * declared.shared.price.set(12);            // every realm reads it this tick
- * declared.events.restocked.emit({ item: 'diamond' });
+ * config.server.taxRate.get();              // an observable per node, local and synchronous
+ * shared.price.set(12);                     // every realm reads it this tick
+ * events.restocked.emit({ item: 'diamond' });
  *
  * core.shared.of<typeof otherShared>('os_shop')?.stock.subscribe(n => hud.set(n));
  * core.events.of<typeof otherEvents>('os_shop').sale.subscribe(({ item }) => hud.flash(item));
@@ -76,7 +76,7 @@ export {
 } from '@bedrock-core/db';
 export type { Collection, Db, Document, IndexedDocument, Schema } from '@bedrock-core/db';
 
-export { event, events } from './events';
+export { event, registerEvents } from './events';
 export type {
   EventsRegistry,
   EventListener,
@@ -89,7 +89,7 @@ export type {
   PeerEventsTree,
 } from './events';
 
-export { shared } from './shared';
+export { registerShared } from './shared';
 export type {
   SharedRegistry,
   PeerSharedTree,

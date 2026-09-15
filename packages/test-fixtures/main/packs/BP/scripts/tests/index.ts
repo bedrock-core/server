@@ -8,13 +8,13 @@
  * Run in-game: `/gametest runset core` (or `/gametest run core:<name>`). The `bench` tag in
  * `./bench` is registered alongside them but runs only when asked for by name.
  */
+import { Runtime, authorize, core, event, registerEvents, registerShared, schema } from '@bedrock-core/server-runtime';
+import { world } from '@minecraft/server';
+import { type Test, register } from '@minecraft/server-gametest';
 import './bench';
 import './bench-shared';
 import './db';
 import './sync';
-import { world } from '@minecraft/server';
-import { type Test, register } from '@minecraft/server-gametest';
-import { Runtime, authorize, core, event, events, schema, shared } from '@bedrock-core/server-runtime';
 
 const STRUCTURE = 'core:empty';
 
@@ -78,7 +78,7 @@ gametest('shared_replication', (test) => {
   const a = new Runtime();
   const { shared: own } = a.register({
     manifest: { creator: 'test', pack: 'shared_a', packName: 'A', version: '1.0.0' },
-    shared: shared({ volume: 5, event: { name: 'none', active: false } }),
+    shared: registerShared({ volume: 5, event: { name: 'none', active: false } }),
   });
   const b = new Runtime();
 
@@ -295,7 +295,7 @@ gametest('events_broadcast', (test) => {
 
   const { events: own } = a.register({
     manifest: { creator: 'test', pack: 'events_a', packName: 'A', version: '1.0.0' },
-    events: events({ purchase: event<{ item: string }>() }),
+    events: registerEvents({ purchase: event<{ item: string }>() }),
   });
 
   own.purchase.subscribe(({ item }) => { heard.push(`self:${item}`); });

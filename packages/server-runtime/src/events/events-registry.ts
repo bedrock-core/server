@@ -1,7 +1,7 @@
 /**
  * `core.events` — what an addon announces to every realm, and what it listens for.
  *
- * The owner declares its events as `events: events(tree)` in `register()` and gets the typed tree
+ * The owner declares its events as `events: registerEvents(tree)` in `register()` and gets the typed tree
  * back; a peer reaches another addon's with `core.events.of<Def>(ns)`, typed by the declaration that
  * addon exports. Nothing is announced and nothing is stored: an event is a name, a payload and the
  * namespace that sent it.
