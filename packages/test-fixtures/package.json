@@ -17,20 +17,19 @@
 		"@bedrock-core/db": "workspace:^",
 		"@bedrock-core/server-runtime": "workspace:^",
 		"@bedrock-core/sync": "workspace:^",
-		"@minecraft/server": "2.9.0",
-		"@minecraft/server-gametest": "1.0.0-beta.1.26.50-preview.25",
-		"@minecraft/server-ui": "2.1.0",
-		"typescript": "^6.0.3"
+		"@minecraft/server": "*",
+		"@minecraft/server-gametest": "*",
+		"@minecraft/server-ui": "*"
 	},
 	"devDependencies": {
-		"@eslint/js": "^10.0.1",
-		"@eslint/json": "^2.0.0",
-		"@stylistic/eslint-plugin": "^5.10.0",
-		"eslint": "^10.5.0",
-		"eslint-plugin-minecraft-linting": "^2.0.12",
-		"globals": "^17.7.0",
-		"typescript": "^6.0.3",
-		"typescript-eslint": "^8.62.0"
+		"@eslint/js": "*",
+		"@eslint/json": "*",
+		"@stylistic/eslint-plugin": "*",
+		"eslint": "*",
+		"eslint-plugin-minecraft-linting": "*",
+		"globals": "*",
+		"typescript": "*",
+		"typescript-eslint": "*"
 	},
 	"packageManager": "yarn@4.9.4"
 }

@@ -57,15 +57,20 @@
 		"packages/test-fixtures"
 	],
 	"resolutions": {
-		"@bedrock-core/config": "portal:../apps/packages/config",
-		"@bedrock-core/flexbox": "portal:../ui/packages/flexbox",
-		"@bedrock-core/guides": "portal:../apps/packages/guides",
-		"@bedrock-core/navigation": "portal:../ui/packages/navigation",
-		"@bedrock-core/ore-styled": "portal:../ui/packages/ore-styled",
-		"@bedrock-core/ui": "portal:../ui",
-		"@bedrock-core/ui-compiler": "portal:../ui/packages/ui-compiler",
-		"@bedrock-core/ui-runtime": "portal:../ui/packages/ui-runtime",
-		"@minecraft/vanilla-data": "1.26.44"
+		"@bedrock-core/bds-runner": "portal:../bds-runner",
+		"@minecraft/server": "2.10.0-rc.1.26.50-preview.25",
+		"@minecraft/server-gametest": "1.0.0-beta.1.26.50-preview.25",
+		"@minecraft/server-ui": "2.1.0",
+		"@minecraft/vanilla-data": "1.26.44",
+		"@eslint/js": "^10.0.1",
+		"@eslint/json": "^2.0.0",
+		"@stylistic/eslint-plugin": "^5.10.0",
+		"eslint": "^10.5.0",
+		"eslint-plugin-minecraft-linting": "^2.0.12",
+		"globals": "^17.7.0",
+		"typescript": "^6.0.3",
+		"typescript-eslint": "^8.62.0",
+		"vitest": "^4.1.10"
 	},
 	"scripts": {
 		"regolith-install": "yarn workspaces foreach -i -A --topological --jobs=1 run regolith-install",
@@ -94,7 +99,7 @@
 		"@bedrock-core/sync": "workspace:*"
 	},
 	"peerDependencies": {
-		"@minecraft/server": ">=2.9.0",
+		"@minecraft/server": ">=2.9.0 || >=2.10.0-0",
 		"@minecraft/server-ui": ">=2.1.0"
 	},
 	"peerDependenciesMeta": {
@@ -103,14 +108,14 @@
 		}
 	},
 	"devDependencies": {
-		"@bedrock-core/bds-runner": "portal:../bds-runner",
+		"@bedrock-core/bds-runner": "*",
 		"@changesets/changelog-github": "^0.7.0",
 		"@changesets/cli": "^2.31.0",
 		"@eslint/js": "^10.0.1",
 		"@eslint/json": "^2.0.0",
-		"@minecraft/server": "2.9.0",
-		"@minecraft/server-ui": "2.1.0",
-		"@minecraft/vanilla-data": "1.26.44",
+		"@minecraft/server": "*",
+		"@minecraft/server-ui": "*",
+		"@minecraft/vanilla-data": "*",
 		"@stylistic/eslint-plugin": "^5.10.0",
 		"@types/node": "^26.0.1",
 		"@vitest/coverage-v8": "^4.1.10",

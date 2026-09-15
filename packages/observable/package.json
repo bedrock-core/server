@@ -43,12 +43,12 @@
 		"lint": "eslint ."
 	},
 	"devDependencies": {
-		"@minecraft/server-ui": "2.1.0",
-		"@stylistic/eslint-plugin": "^5.10.0",
-		"eslint": "^10.5.0",
-		"typescript": "^6.0.3",
-		"typescript-eslint": "^8.62.0",
-		"vitest": "^4.1.10"
+		"@minecraft/server-ui": "*",
+		"@stylistic/eslint-plugin": "*",
+		"eslint": "*",
+		"typescript": "*",
+		"typescript-eslint": "*",
+		"vitest": "*"
 	},
 	"peerDependencies": {
 		"@minecraft/server-ui": ">=2.1.0"

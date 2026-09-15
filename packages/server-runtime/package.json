@@ -47,13 +47,13 @@
 		"@bedrock-core/sync": "workspace:^"
 	},
 	"devDependencies": {
-		"@minecraft/server": "2.9.0",
-		"@stylistic/eslint-plugin": "^5.10.0",
-		"eslint": "^10.5.0",
-		"typescript": "^6.0.3",
-		"typescript-eslint": "^8.62.0"
+		"@minecraft/server": "*",
+		"@stylistic/eslint-plugin": "*",
+		"eslint": "*",
+		"typescript": "*",
+		"typescript-eslint": "*"
 	},
 	"peerDependencies": {
-		"@minecraft/server": ">=2.9.0"
+		"@minecraft/server": ">=2.9.0 || >=2.10.0-0"
 	}
 }
