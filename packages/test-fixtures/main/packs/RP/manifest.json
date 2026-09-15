@@ -1,43 +1,30 @@
 {
-	"format_version": 2,
+	"format_version": 3,
 	"header": {
 		"name": "Bedrock Core fixture resources",
 		"description": "GameTest fixture for the Bedrock Core server runtime",
 		"uuid": "c8ab693a-6740-4f01-a832-c340370c088b",
 		"pack_scope": "world",
-		"version": [
-			1,
-			0,
-			0
-		],
-		"min_engine_version": [
-			1,
-			26,
-			50
-		]
+		"version": "1.0.0",
+		"min_engine_version": "1.26.50"
 	},
 	"modules": [
 		{
 			"type": "resources",
 			"uuid": "c5d9048b-4c74-4f4d-af8a-7ab1e4ac2d60",
-			"version": [
-				1,
-				0,
-				0
-			]
+			"version": "1.0.0"
 		}
 	],
 	"dependencies": [
 		{
 			"uuid": "bf9fb8cc-414b-4b92-aae6-9365d1916edb",
-			"version": [
-				1,
-				0,
-				0
-			]
+			"version": "1.0.0"
 		}
 	],
 	"metadata": {
-		"product_type": "addon"
+		"product_type": "addon",
+		"authors": [
+			"DrAv0011"
+		]
 	}
 }

@@ -16,6 +16,10 @@ export default defineConfig([
       ".bds/**",
       "dist/**",
       "node_modules/**",
+      // Regolith's temporary workspace during filter execution.
+      "**/.regolith/**",
+      // Pack build output in test fixtures.
+      "packages/test-fixtures/**/build/**",
     ],
   },
 

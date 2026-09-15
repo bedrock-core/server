@@ -1,43 +1,30 @@
 {
-	"format_version": 2,
+	"format_version": 3,
 	"header": {
 		"name": "Bedrock Core fixture peer resources",
 		"description": "Second pack for the cross-pack discovery test",
 		"uuid": "e78b0f04-7c7a-4d45-8470-4b60b382eeaf",
 		"pack_scope": "world",
-		"version": [
-			1,
-			0,
-			0
-		],
-		"min_engine_version": [
-			1,
-			26,
-			50
-		]
+		"version": "1.0.0",
+		"min_engine_version": "1.26.50"
 	},
 	"modules": [
 		{
 			"type": "resources",
 			"uuid": "9d9432e9-19cd-4ada-bf30-046c305c6636",
-			"version": [
-				1,
-				0,
-				0
-			]
+			"version": "1.0.0"
 		}
 	],
 	"dependencies": [
 		{
 			"uuid": "6b83adc1-ffae-4081-bc77-d0c7663cad33",
-			"version": [
-				1,
-				0,
-				0
-			]
+			"version": "1.0.0"
 		}
 	],
 	"metadata": {
-		"product_type": "addon"
+		"product_type": "addon",
+		"authors": [
+			"DrAv0011"
+		]
 	}
 }

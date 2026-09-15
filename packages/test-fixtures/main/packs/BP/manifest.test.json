@@ -3,11 +3,7 @@
 	"dependencies": [
 		{
 			"uuid": "c8ab693a-6740-4f01-a832-c340370c088b",
-			"version": [
-				1,
-				0,
-				0
-			]
+			"version": "1.0.0"
 		},
 		{
 			"module_name": "@minecraft/server",
@@ -15,7 +11,7 @@
 		},
 		{
 			"module_name": "@minecraft/server-ui",
-			"version": "2.1.0"
+			"version": "2.2.0"
 		},
 		{
 			"module_name": "@minecraft/server-gametest",
