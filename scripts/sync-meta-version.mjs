@@ -2,95 +2,42 @@
 /**
  * Version the root `@bedrock-core/server` package.
  *
- * Changesets only manages the `packages/*` workspaces — the repo root, which is
- * the meta package itself, is invisible to it — so the meta's version is derived
- * here, immediately after `changeset version`.
+ * Changesets only manages the `packages/*` workspaces — the repo root, which is the meta package
+ * itself, is invisible to it — so the meta's version is set here, immediately after
+ * `changeset version`.
  *
- * The rule: **the meta's MAJOR.MINOR is `@bedrock-core/server-runtime`'s.** The
- * runtime is what the meta *is*; `sync` is support around it. So:
+ * The rule: **the meta's version IS `@bedrock-core/server-runtime`'s**, character for character,
+ * prerelease tag included. The runtime is what the meta is; `db`, `observable` and `sync` are
+ * support around it. So `@bedrock-core/server@0.2.0` is `@bedrock-core/server-runtime@0.2.0`, and
+ * a consumer reading either number is reading the same one.
  *
- *   runtime line moved (0.1.x → 0.2.x, 0.x → 1.x) → meta jumps to <line>.0
- *   a curated package changed, at any level       → meta patch
- *   nothing changed                               → no-op
+ * A release the runtime does not move leaves the meta where it is: what shipped was a package the
+ * meta curates, and the curated set is republished with the runtime that next moves.
  *
- * A minor on `sync` is a *patch* to the meta: what ships is the meta's support
- * for that change, not a new framework line.
+ * The `workspace:*` dependency ranges are left untouched; `publish-tarballs.mjs` resolves them to
+ * concrete versions at pack time.
  *
- * The line only ever moves **forward**. npm can't unpublish, so a meta sitting
- * ahead of the runtime holds where it is, patching, until the runtime's line
- * catches up — from then on the two are pinned.
- *
- * The `workspace:*` dependency ranges are left untouched; `publish-tarballs.mjs`
- * resolves them to concrete versions at pack time.
- *
- * Idempotent: re-running with the meta already on the right version is a no-op.
+ * Idempotent: re-running with the meta already on the runtime's version is a no-op.
  */
-import { execSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
 
 const META_PATH = 'package.json';
 const META_CHANGELOG = 'CHANGELOG.md';
 
-/** The package whose MAJOR.MINOR the meta's version *is*. */
+/** The package whose version the meta's version *is*. */
 const RUNTIME_PATH = 'packages/server-runtime/package.json';
 
-/** Everything the meta curates, in `packages/<dir>` form. */
-const META_DEP_DIRS = ['server-runtime', 'sync'];
+/** Everything the meta curates, in `packages/<dir>` form — what its changelog entry lists. */
+const META_DEP_DIRS = ['db', 'observable', 'server-runtime', 'sync'];
 
 /** Matches the manifest's version field, capturing the quoted value so only it is replaced. */
 const VERSION_FIELD = /("version"\s*:\s*")([^"]*)(")/;
 
-const readVersion = (json) => JSON.parse(json).version;
-const currentVersion = (path) => readVersion(readFileSync(path, 'utf8'));
+const currentVersion = (path) => JSON.parse(readFileSync(path, 'utf8')).version;
 const nameOf = (path) => JSON.parse(readFileSync(path, 'utf8')).name;
 
-/** Version of a package.json at git HEAD, or null if it isn't committed yet. */
-function headVersion(path) {
-	try {
-		return readVersion(execSync(`git show HEAD:${path}`, { encoding: 'utf8' }));
-	} catch {
-		return null;
-	}
-}
-
-/** `1.2.3` → `[1, 2, 3]`. */
-function parse(version) {
-	const match = /^(\d+)\.(\d+)\.(\d+)/.exec(version ?? '');
-
-	if (!match) throw new Error(`sync-meta-version: cannot parse the version "${version}"`);
-
-	return match.slice(1, 4).map(Number);
-}
-
-/** Is `a`'s MAJOR.MINOR strictly ahead of `b`'s? */
-const lineAhead = (a, b) => (a[0] === b[0] ? a[1] > b[1] : a[0] > b[0]);
-
 const written = currentVersion(META_PATH);
-const meta = parse(written);
-const runtime = parse(currentVersion(RUNTIME_PATH));
-
-let next;
-
-if (lineAhead(runtime, meta)) {
-	next = `${runtime[0]}.${runtime[1]}.0`;
-	console.log(`sync-meta-version: server-runtime line → ${runtime[0]}.${runtime[1]} — the meta follows it.`);
-} else {
-	// A package that isn't committed yet (headVersion null) is new, not changed.
-	const changed = META_DEP_DIRS.filter((dir) => {
-		const path = `packages/${dir}/package.json`;
-		const head = headVersion(path);
-
-		return head !== null && head !== currentVersion(path);
-	});
-
-	if (changed.length === 0) {
-		console.log(`sync-meta-version: no @bedrock-core/server dependency changed (${written}) — nothing to pin.`);
-		process.exit(0);
-	}
-
-	next = `${meta[0]}.${meta[1]}.${meta[2] + 1}`;
-	console.log(`sync-meta-version: support for ${changed.join(', ')} — meta patch.`);
-}
+const next = currentVersion(RUNTIME_PATH);
 
 if (next === written) {
 	console.log(`sync-meta-version: @bedrock-core/server already ${written} — no change.`);
@@ -105,7 +52,7 @@ if (!VERSION_FIELD.test(manifest)) {
 
 // Tabs — this manifest is tab-indented; a targeted replace preserves that.
 writeFileSync(META_PATH, manifest.replace(VERSION_FIELD, `$1${next}$3`));
-console.log(`sync-meta-version: @bedrock-core/server ${written} → ${next}`);
+console.log(`sync-meta-version: @bedrock-core/server ${written} → ${next}, matching @bedrock-core/server-runtime.`);
 
 // The meta's changelog is what it curates, so write the entry `changeset version` cannot.
 const pinned = META_DEP_DIRS

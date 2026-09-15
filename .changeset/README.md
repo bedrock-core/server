@@ -29,9 +29,21 @@ things:
   pending changesets, bumping the changed packages **and their dependents**
   (`updateInternalDependencies: patch`, e.g. a `sync` bump patches
   `server-runtime`) and writing CHANGELOGs — then
-  `scripts/sync-runtime-version.mjs`, which rewrites `RUNTIME_VERSION` so the
-  constant can never disagree with the tag that ships it. The PR is refreshed on
-  every further push while it stays open.
+  `scripts/sync-meta-version.mjs` and `scripts/sync-runtime-version.mjs`, which
+  set the root meta's version and rewrite `RUNTIME_VERSION` so neither can
+  disagree with the tag that ships it. The PR is refreshed on every further push
+  while it stays open.
+
+**`@bedrock-core/server`'s version IS `@bedrock-core/server-runtime`'s**,
+character for character, prerelease tag included. The runtime is what the meta
+is; `db`, `observable` and `sync` are support around it, so a consumer reading
+either number is reading the same one. A release the runtime does not move leaves
+the meta where it is. The root is not a valid changeset target — do not select
+it.
+
+`0.0.0` is what an unreleased package sits at, and `publish-tarballs.mjs` skips
+it, so a package reaches its first release by having its `version` set by hand in
+the commit that means to ship it.
 - **No changesets left** → merging that PR lands the bumps on `main`, and the run
   that follows executes `yarn release` (`lint:libs`, `build:libs`, then
   `changeset publish`): each changed package goes to npm, gets tagged

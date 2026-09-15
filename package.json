@@ -89,7 +89,7 @@
 		"bds:where": "bc-bds where",
 		"changeset": "changeset",
 		"version-packages": "changeset version && node scripts/sync-meta-version.mjs && node scripts/sync-runtime-version.mjs",
-		"release": "yarn lint:libs && yarn build:libs && node scripts/publish-tarballs.mjs && node scripts/publish-tarballs.mjs --only @bedrock-core/server && changeset tag && node scripts/tag-meta.mjs",
+		"release": "yarn lint:libs && yarn build:libs && node scripts/publish-tarballs.mjs && changeset tag && node scripts/tag-meta.mjs",
 		"clean": "node scripts/clean.mjs"
 	},
 	"dependencies": {
