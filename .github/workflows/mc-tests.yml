@@ -2,9 +2,9 @@
 # Dedicated Server. Kept off every-push because it downloads a ~200 MB server and takes minutes;
 # opt in with the `run-mc-tests` label on a PR, or let it run on main.
 #
-# Four repos are checked out side by side, the same arrangement as the release rehearsal: this
-# repo's `portal:` resolutions need siblings `ui` and `bds-runner`, and the addons' Regolith config
-# runs the guides, i18n and manifest filters from a sibling `regolith-filters`.
+# Nothing is checked out beside this repo: `@bedrock-core/bds-runner` installs from npm and the
+# Regolith filters are pinned to published tags. Until the root `resolutions` carry versions
+# instead of `portal:` entries, this cannot install — that swap is the release step.
 name: GameTests (BDS)
 
 on:
@@ -38,25 +38,9 @@ jobs:
         with:
           path: server
 
-      - uses: actions/checkout@v7
-        with:
-          repository: bedrock-core/ui
-          path: ui
-
-      - uses: actions/checkout@v7
-        with:
-          repository: bedrock-core/regolith-filters
-          path: regolith-filters
-
-      # The GameTest harness, resolved through `portal:../bds-runner`.
-      - uses: actions/checkout@v7
-        with:
-          repository: bedrock-core/bds-runner
-          path: bds-runner
-
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 24
           cache: yarn
           cache-dependency-path: server/yarn.lock
 
@@ -64,13 +48,12 @@ jobs:
 
       - run: yarn install --immutable
 
-      - name: Install Regolith
-        run: |
-          curl -sSL -o regolith.tar.gz \
-            "https://github.com/Bedrock-OSS/regolith/releases/download/${REGOLITH_VERSION}/regolith-${REGOLITH_VERSION}-linux-amd64.tar.gz"
-          tar xzf regolith.tar.gz
-          sudo install regolith /usr/local/bin/
-          regolith --version
+      - name: Set up Regolith
+        uses: bedrock-core/setup-regolith@1.0.1
+        with:
+          regolith-version: ${{ env.REGOLITH_VERSION }}
+          resolvers: |
+            github.com/bedrock-core/regolith-filters
 
       - name: Read the pinned server version
         id: bds
