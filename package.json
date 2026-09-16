@@ -34,6 +34,10 @@
 			"types": "./src/db.ts",
 			"import": "./src/db.ts"
 		},
+		"./i18n": {
+			"types": "./src/i18n.ts",
+			"import": "./src/i18n.ts"
+		},
 		"./observable": {
 			"types": "./src/observable.ts",
 			"import": "./src/observable.ts"
@@ -94,6 +98,7 @@
 	},
 	"dependencies": {
 		"@bedrock-core/db": "workspace:*",
+		"@bedrock-core/i18n": "workspace:*",
 		"@bedrock-core/observable": "workspace:*",
 		"@bedrock-core/server-runtime": "workspace:*",
 		"@bedrock-core/sync": "workspace:*"

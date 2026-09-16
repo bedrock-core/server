@@ -4,30 +4,19 @@
 
 > ⚠️ Beta Status: Active development. Breaking changes may occur until 1.0.0. Pin exact versions for stability.
 
+A framework for Minecraft Bedrock addon development, built for cross-addon compatibility: every
+addon runs in its own isolated script realm, and bedrock-core lets addons from different creators find each other, call
+each other, and share state, settings and guides.
 
-A framework for Minecraft Bedrock addon development, built for cross-addon compatibility. Every addon runs in its own isolated script realm — bedrock-core lets addons from different creators find each other, call each other, and share state, settings and guides.
-
-Full documentation & guides: https://bedrock-core.drav.dev/
-
----
-
-## ✨ Features
-
-- **Addon discovery** — addons announce their identity, version and dependencies, and enumerate their peers at runtime.
-- **Replicated state** — shared last-write-wins key/value, scoped to your namespace.
-- **Typed RPC** — typed request/response calls between addons, with timeouts.
-- **Features** — enable or disable behaviour based on which peers are present.
-- **Configuration** — server / dimension / player scopes, with typed accessors and live change subscriptions.
-- **Guides** — compiled in-game guides, declared when the addon registers.
-
-## 🚀 Quick start
+## Install
 
 ```sh
 yarn add @bedrock-core/server
 ```
 
-`@minecraft/server` is a peer dependency (`>=2.8.0`) — pin the version your pack's
-`manifest.json` declares.
+`@minecraft/server` is a peer dependency, pinned to what your pack's `manifest.json` declares.
+
+## Usage
 
 Register once, near the top of your script entry. `register()` is what brings the addon online — there is no separate `start()` — and everything the addon declares rides in that one call:
 
@@ -60,24 +49,17 @@ await core.rpc.request('os_economy', 'getBalance', { player: 'Steve' });
 
 Each package the runtime is built on has its own subpath, for when you reach past `core` to the
 thing itself: `@bedrock-core/server/sync` for the transport, `/db` for the rest of the document
-surface, and `/observable` for `computed` / `effect` / `last` and the `toNative` bridge to a
-data-driven form.
+surface, `/observable` for `computed` / `effect` / `last` and the `toNative` bridge to a
+data-driven form, and `/i18n` for `createI18n` and the translation verbs.
 
-Full API — registry, features, shared, events, db, config, translations, guides, host election —
-on the [docs site](https://bedrock-core.drav.dev/docs/server).
+## Documentation
 
-## 📦 Packages
+https://bedrock-core.drav.dev
 
-- **`@bedrock-core/server`** — this repository's root: one install for the whole stack. Re-exports the runtime at the root and the transport at `/sync`.
-- **`@bedrock-core/server-runtime`** — the framework runtime: registration, the cross-addon registry, features, config, shared state, events and guides. Built on `sync`.
-- **`@bedrock-core/sync`** — the low-level transport: message bus, discovery, RPC and replicated state over script events.
-- **`@bedrock-core/db`** — persisted documents on dynamic properties, keyed by target.
-- **`@bedrock-core/observable`** — the reactive primitive the accessors are built from.
+## Contributing
 
-## 🤝 Contributing
+Discord: https://bedrock-core.drav.dev/discord
 
-Let's talk in Discord: <https://bedrock-core.drav.dev/discord>
-
-## 📄 License
+## License
 
 MIT

@@ -2,13 +2,12 @@
 
 ![Logo](https://raw.githubusercontent.com/bedrock-core/server/main/assets/logo/title.png)
 
-The bedrock-core **server runtime** — the framework layer addons build on.
-
-Every behavior pack runs its scripts in its own isolated realm, so two addons in the same world
-normally cannot see each other at all. Where [`@bedrock-core/sync`](https://bedrock-core.drav.dev/docs/sync)
-is the low-level transport that breaks that isolation, the runtime is the thing you *register into*:
-an addon declares its identity and its data once, and that declaration flows into a **cross-addon
-registry** — a live directory of every bedrock-core addon present in the world.
+The bedrock-core **server runtime** — the framework layer addons build on, on top of
+`@bedrock-core/sync`. Every behavior pack runs its scripts in its own isolated realm, so two
+addons in the same world normally cannot see each other at all; where sync is the low-level
+transport that breaks that isolation, the runtime is the thing you *register into* — an addon
+declares its identity and its data once, and that declaration flows into a **cross-addon
+registry**, a live directory of every bedrock-core addon present in the world.
 
 ## Install
 
@@ -16,31 +15,8 @@ registry** — a live directory of every bedrock-core addon present in the world
 yarn add @bedrock-core/server-runtime
 ```
 
-`@minecraft/server` is a peer dependency (`>=2.8.0`) — it stays yours to pin, since the version you
-build against has to match the one your pack's `manifest.json` declares.
-
-## What it gives you
-
-- **`core.register()`** — one call brings the addon online (there is no separate `start()`).
-  Identity is `creator` + `pack`, joined into the single namespace Bedrock requires an addon to use
-  for its items, its commands and its command enum
-- **A registry** — `core.registry` lists every addon in the world, fires on join/leave, reports
-  namespace collisions, and tracks soft dependencies by namespace
-- **Features** — `core.features.add()` declares a capability that auto-enables when its condition
-  holds, driven by registry presence, replicated state, or another addon's published features
-- **Declarations** — every field beside `manifest` in `register()` installs itself and hands back
-  its own typed accessor, so a package outside this one adds a subsystem to the call without the
-  runtime importing its types. `@bedrock-core/config/server`'s `config(definition)` is one
-- **Translations, guides and pages** — announce your i18n bundle, guide reference and list page,
-  and resolve any peer's strings server-side for text measurement; every such feed is an
-  `Announcement` with `provide` / `own` / `of` / `namespaces` / `subscribe`
-- **Host election** — `core.host` picks the realm running the newest runtime, with no negotiation
-  messages, for work that exactly one realm in a world may do. Nothing elects anything today: it
-  is the mechanism one owner per capability will need, and no capability declares one yet
-- **Messaging and the shared mirror** — `core.rpc`, and a `shared` shape declared in `register()` that every realm mirrors as a typed tree (`core.shared.of()` for a peer's), with the
-  raw sync node available at `core.node`
-- **Events** — declare what this addon announces in `register({ events })`, `emit` it, and any realm listens with `core.events.of()`; delivered in the same tick and kept by nobody
-- **Documents** — `core.db`, this addon's `@bedrock-core/db`: typed, versioned documents keyed by player, entity, block or world, stored on whatever the target itself can hold; local until the addon answers an rpc method over it
+`@minecraft/server` is a peer dependency — it stays yours to pin, since the version you build
+against has to match the one your pack's `manifest.json` declares.
 
 ## Usage
 
@@ -101,23 +77,7 @@ core.rpc.request('os_shop', 'openShop', { playerId }).catch(console.warn);
 
 ## Documentation
 
-- [`core`](https://bedrock-core.drav.dev/docs/server/api/runtime) — the singleton, `register()`,
-  every manifest field, and running several runtimes in one realm
-- [`core.registry`](https://bedrock-core.drav.dev/docs/server/api/registry) ·
-  [`core.features`](https://bedrock-core.drav.dev/docs/server/api/features) ·
-  [`core.host`](https://bedrock-core.drav.dev/docs/server/api/host)
-- [`core.shared`](https://bedrock-core.drav.dev/docs/server/api/shared) ·
-  [`core.events`](https://bedrock-core.drav.dev/docs/server/api/events) ·
-  [`core.db`](https://bedrock-core.drav.dev/docs/server/api/db)
-- [`core.translations`](https://bedrock-core.drav.dev/docs/server/api/translations) ·
-  [`authorize`](https://bedrock-core.drav.dev/docs/server/api/authorize)
-- [Sharing data between addons](https://bedrock-core.drav.dev/docs/server/guides/channels) ·
-  [Trust model](https://bedrock-core.drav.dev/docs/server/guides/trust-model) ·
-  [UI integration](https://bedrock-core.drav.dev/docs/server/guides/ui-integration)
-
-`packages/test-fixture` in this repository carries GameTests covering discovery, RPC, the shared
-mirror, collisions and features, and `packages/test-fixture-peer` is a second pack so cross-pack
-discovery is covered too. The Economy and Shop example addons live in the `examples` repository.
+https://bedrock-core.drav.dev/docs/server
 
 ## License
 

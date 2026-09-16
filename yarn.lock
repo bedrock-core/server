@@ -82,7 +82,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@bedrock-core/i18n@workspace:^, @bedrock-core/i18n@workspace:packages/i18n":
+"@bedrock-core/i18n@workspace:*, @bedrock-core/i18n@workspace:^, @bedrock-core/i18n@workspace:packages/i18n":
   version: 0.0.0-use.local
   resolution: "@bedrock-core/i18n@workspace:packages/i18n"
   dependencies:
@@ -160,6 +160,7 @@ __metadata:
   dependencies:
     "@bedrock-core/bds-runner": "npm:*"
     "@bedrock-core/db": "workspace:*"
+    "@bedrock-core/i18n": "workspace:*"
     "@bedrock-core/observable": "workspace:*"
     "@bedrock-core/server-runtime": "workspace:*"
     "@bedrock-core/sync": "workspace:*"
