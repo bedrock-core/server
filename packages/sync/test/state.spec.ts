@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import type { Bus, EnvelopeHandler, Unsubscribe } from '../src/bus';
-import { PROTOCOL_MAX } from '../src/constants';
+import { MessageType, PROTOCOL_MAX } from '../src/constants';
 import type { Envelope } from '../src/envelope';
 import { State } from '../src/state';
 
@@ -127,13 +127,11 @@ describe('owner-only apply', () => {
   it('refuses a snapshot relayed from a node that is not the namespace owner', () => {
     const w = wire();
     const a = new State(fakeBus(w, 'a'), 'a');
-    const b = new State(fakeBus(w, 'b'), 'b', { ownedNamespaces: ['b', 'a'] });
 
     a.start();
-    b.start();
-    b.set('a', 'price', 1);
+    w.deliver('b', undefined, MessageType.StateSnapshot, { ns: 'a', entries: [{ k: 'price', v: 1, ver: 1, src: 'b' }] });
 
     expect(a.get('a', 'price')).toBeUndefined();
-    expect(b.get('a', 'price')).toBe(1);
+    expect(a.droppedForeign).toBe(1);
   });
 });

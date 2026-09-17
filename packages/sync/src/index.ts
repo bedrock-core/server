@@ -42,7 +42,7 @@ export { Events } from './events';
 export type { EventHandler } from './events';
 
 export { State, stateKey } from './state';
-export type { SnapshotEntry, StateChange, StateChangeListener, StateKey, StateOptions } from './state';
+export type { SnapshotEntry, StateChange, StateChangeListener, StateKey } from './state';
 
 export type { Unsubscribe } from './bus';
 

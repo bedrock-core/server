@@ -45,7 +45,7 @@ const elevators = db.collection('elevators', {
     },
   }),
   accept: blockTypes('papi:elevator'),
-  require: { own: true }, // papi:elevator declares minecraft:block_entity, so the document dies with the block
+  require: { own: true }, // papi:elevator turns on block entity dynamic_properties, so the document dies with the block
 });
 
 system.beforeEvents.startup.subscribe(({ blockComponentRegistry }) => {

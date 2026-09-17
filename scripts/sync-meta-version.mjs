@@ -7,7 +7,7 @@
  * `changeset version`.
  *
  * The rule: **the meta's version IS `@bedrock-core/server-runtime`'s**, character for character,
- * prerelease tag included. The runtime is what the meta is; `db`, `observable` and `sync` are
+ * prerelease tag included. The runtime is what the meta is; `db`, `i18n`, `observable` and `sync` are
  * support around it. So `@bedrock-core/server@0.2.0` is `@bedrock-core/server-runtime@0.2.0`, and
  * a consumer reading either number is reading the same one.
  *
@@ -28,7 +28,7 @@ const META_CHANGELOG = 'CHANGELOG.md';
 const RUNTIME_PATH = 'packages/server-runtime/package.json';
 
 /** Everything the meta curates, in `packages/<dir>` form — what its changelog entry lists. */
-const META_DEP_DIRS = ['db', 'observable', 'server-runtime', 'sync'];
+const META_DEP_DIRS = ['db', 'i18n', 'observable', 'server-runtime', 'sync'];
 
 /** Matches the manifest's version field, capturing the quoted value so only it is replaced. */
 const VERSION_FIELD = /("version"\s*:\s*")([^"]*)(")/;

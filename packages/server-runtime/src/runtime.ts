@@ -197,8 +197,6 @@ export class Runtime {
       id: namespace,
       version: validated.version,
       meta: manifestToMeta(validated),
-      // Only owned namespaces are answered in sync's late-join snapshot exchange.
-      ownedNamespaces: [namespace],
     });
     const registry = new Registry(node.discovery, validated);
     const features = new FeatureManager(registry, node.state, namespace);

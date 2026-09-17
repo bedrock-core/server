@@ -1,9 +1,9 @@
 /**
  * Replicated key/value state — the shared channel.
  *
- * Model: **shared-mutable runtime.** Any node may read or write any
- * `namespace:key`. Writes broadcast a `state-delta` and every node applies it to its
- * in-memory mirror, so reads are always local — no round-trip. Conflicts resolve
+ * Model: **owner-written, replicated.** Any node may read any `namespace:key`; only the
+ * namespace's owner, the node whose id it is, writes it. Writes broadcast a `state-delta` and
+ * every node applies it to its in-memory mirror, so reads are always local — no round-trip. Conflicts resolve
  * last-write-wins on a Lamport-style logical clock, tie-broken by the writer's id, so all
  * mirrors converge regardless of delivery order.
  *
@@ -102,36 +102,19 @@ export interface StateChange {
 /** Told every change to the mirror, local or from the wire. */
 export type StateChangeListener = (change: StateChange) => void;
 
-/** What `new State()` takes beside the bus and the id. */
-export interface StateOptions {
-
-  /** Namespaces this node is authoritative for (answers snapshot requests for them). */
-  ownedNamespaces?: string[];
-
-  /**
-   * When `true`, `set()` and `delete()` are restricted to owned namespaces. Any attempt to
-   * write a namespace not in `ownedNamespaces` throws. Defaults to `false` (shared-mutable).
-   */
-  strictOwnership?: boolean;
-}
-
 /** The replicated key/value mirror: local reads, broadcast deltas, owner-only apply, snapshots for late joiners. */
 export class State {
   private readonly _bus: Bus;
   private readonly _selfId: string;
-  private readonly _owned: Set<string>;
-  private readonly _strictOwnership: boolean;
   private readonly _store = new Map<string, Map<string, Entry>>();
   private readonly _changeListeners = new Set<StateChangeListener>();
   private readonly _disposers: Unsubscribe[] = [];
   private _clock = 0;
   private _droppedForeign = 0;
 
-  constructor(bus: Bus, selfId: string, options: StateOptions = {}) {
+  constructor(bus: Bus, selfId: string) {
     this._bus = bus;
     this._selfId = selfId;
-    this._owned = new Set(options.ownedNamespaces ?? [selfId]);
-    this._strictOwnership = options.strictOwnership ?? false;
   }
 
   /** Register handlers and pull existing state from peers (late-join sync). */
@@ -183,28 +166,24 @@ export class State {
   }
 
   /**
-   * Write a key. Broadcasts a delta. Throws if `strictOwnership` is enabled and `ns` is not owned.
+   * Write a key. Broadcasts a delta.
    * Only the owner of a namespace — the node whose id it is — may write it; every mirror applies
    * that rule, this node's own included, so a write is visible here exactly when it is visible
    * everywhere.
    */
   set<T = unknown>(ns: string, key: StateKey<T>, value: NoInfer<T>): void;
   set(ns: string, key: string, value: unknown): void {
-    this.assertWritable(ns);
-
     const entry: Entry = { value, ver: ++this._clock, src: this._selfId };
 
-    this.applyEntry(ns, key, entry, this._owned.has(ns));
+    this.applyEntry(ns, key, entry, ns === this._selfId);
     this._bus.send({ type: MessageType.StateDelta, data: { ns, key, value, ver: entry.ver } });
   }
 
-  /** Delete a key (tombstone). Broadcasts a delta. Throws if `strictOwnership` is enabled and `ns` is not owned. */
+  /** Delete a key (tombstone). Broadcasts a delta. Owner-only, like {@link State.set}. */
   delete(ns: string, key: string): void {
-    this.assertWritable(ns);
-
     const entry: Entry = { ver: ++this._clock, src: this._selfId, del: true };
 
-    this.applyEntry(ns, key, entry, this._owned.has(ns));
+    this.applyEntry(ns, key, entry, ns === this._selfId);
     this._bus.send({ type: MessageType.StateDelta, data: { ns, key, ver: entry.ver, del: true } });
   }
 
@@ -237,20 +216,13 @@ export class State {
     }));
   }
 
-  /** Broadcast a full snapshot of every owned namespace (used at startup). */
+  /** Broadcast a full snapshot of this node's own namespace (used at startup). */
   broadcastOwnedSnapshots(): void {
-    for (const ns of this._owned) {
-      const entries = this.snapshot(ns);
+    const ns = this._selfId;
+    const entries = this.snapshot(ns);
 
-      if (entries.length > 0) {
-        this._bus.send({ type: MessageType.StateSnapshot, data: { ns, entries } });
-      }
-    }
-  }
-
-  private assertWritable(ns: string): void {
-    if (this._strictOwnership && !this._owned.has(ns)) {
-      throw new Error(`[sync] cannot write to namespace '${ns}': not owned by this node (strictOwnership is enabled)`);
+    if (entries.length > 0) {
+      this._bus.send({ type: MessageType.StateSnapshot, data: { ns, entries } });
     }
   }
 
@@ -265,15 +237,14 @@ export class State {
 
   private handleStateRequest(envelope: Envelope): void {
     const requested = requestedNamespace(envelope.data);
+    const ns = this._selfId;
 
-    for (const ns of this._owned) {
-      if (requested !== undefined && requested !== ns) { continue; }
+    if (requested !== undefined && requested !== ns) { return; }
 
-      const entries = this.snapshot(ns);
+    const entries = this.snapshot(ns);
 
-      if (entries.length > 0) {
-        this._bus.send({ dst: envelope.src, type: MessageType.StateSnapshot, data: { ns, entries } });
-      }
+    if (entries.length > 0) {
+      this._bus.send({ dst: envelope.src, type: MessageType.StateSnapshot, data: { ns, entries } });
     }
   }
 

@@ -25,15 +25,6 @@ export interface SyncNodeOptions {
   /** Opaque metadata broadcast with every announce; surfaced on peers as `PeerInfo.meta`. */
   meta?: Record<string, unknown>;
 
-  /** Namespaces this node is authoritative for. Defaults to `[id]`. */
-  ownedNamespaces?: string[];
-
-  /**
-   * When `true`, `state.set()` and `state.delete()` are restricted to owned namespaces.
-   * Attempts to write an unowned namespace throw. Defaults to `false` (shared-mutable).
-   */
-  strictOwnership?: boolean;
-
   /** Override the per-message size budget (mainly for tests). */
   maxMessage?: number;
 
@@ -52,8 +43,6 @@ export class SyncNode {
   readonly events: Events;
 
   constructor(options: SyncNodeOptions) {
-    const owned = options.ownedNamespaces ?? [options.id];
-
     this.id = options.id;
     this.bus = new Bus(options.id, { maxMessage: options.maxMessage, instanceId: options.instanceId });
     this.discovery = new Discovery(this.bus, {
@@ -62,7 +51,7 @@ export class SyncNode {
       meta: options.meta,
     });
     this.rpc = new Rpc(this.bus);
-    this.state = new State(this.bus, options.id, { ownedNamespaces: owned, strictOwnership: options.strictOwnership });
+    this.state = new State(this.bus, options.id);
     this.events = new Events(this.bus, options.id);
   }
 

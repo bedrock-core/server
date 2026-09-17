@@ -5,6 +5,13 @@
 Everything an addon owns is declared in `register()`, and everything that crosses a realm goes over
 one of three channels.
 
+**Breaking.** `register()` installs declarations, not plain objects: `shared: registerShared(keys)`,
+`events: registerEvents(tree)`, and one field per app, such as `config: registerConfig(definition)`
+from `@bedrock-core/config`. Config and guides are no longer part of the runtime. They are the
+`@bedrock-core/config` and `@bedrock-core/guides` apps, which keep their state in a `RuntimeSlots`
+slot the runtime fills and hands back (`core.fill` / `core.slot`); `core.config`, `core.guides` and
+`core.pages` are gone.
+
 **`core.shared`** — a flat `shared` shape comes back as a typed tree, one observable per key with
 `get` / `set` / `subscribe` and the usual `(next, prev)` listener. Peers read
 `core.shared.of<Def>(ns)`, materialized from the key names the owner announces under
@@ -26,28 +33,10 @@ API (`schema`, the acceptors and combinators, the errors) re-exported so a colle
 from the runtime import alone. It is local: a peer reaches a document only through a method the
 owner wrote.
 
-**Config** is stored as three db collections, one nested document per target. `patch` merges deep,
-and the accessor tree answers schema defaults until dynamic properties become readable. Nine
-`core:config.<scope>.<get|patch|set>` methods are served, each authorized by actor. Config peers are
-not told when a value changes: an owner that wants them told mirrors the value on a shared key or
-emits an event.
-
-**Guides and pages publish references.** An addon whose guide compiles into screens declares
-`guideReference(ns)` from `@bedrock-core/guides`, and one whose list page compiles into its pack
-declares `addonPageReference(Page)` from `@bedrock-core/config/compiled`: per screen or reserved
-entry, the compiled title, the baked values and where a press leads — and nothing of what it says,
-since every client already holds it in the pack. `core.guides.provide()` and
-`core.pages.provide()` publish them under `core-guide/reference` and `core-addon/page`;
-`core.guides.of()` and `core.pages.of()` read a peer's. The elected host presents from a reference
-and renders nothing of the owning addon's; a manifest, at `core.guides.manifest`, keeps working for
-hosts that only render manifests.
-
 **Every cross-addon feed is an `Announcement`** — one value under a `core-` key in the owner's
 namespace, with `provide` / `own` / `of(ns)` / `namespaces` / `subscribe` and a guard on read.
-`core.pages` is one; `core.guides` is one over the reference, with the manifest at
-`core.guides.manifest`; `core.translations` is one over the bundle, its verbs at `i18n(ns)`;
-`core.features.flags` announces every flag as one record under `core-feature/flags`; the config
-schema and groups sit at `core.config.schema` and `core.config.groups`, and the shared shape at
+`core.translations` is one over the bundle, its verbs at `i18n(ns)`; `core.features.flags`
+announces every flag as one record under `core-feature/flags`; the shared shape sits at
 `core.shared.shape`. `provideManifest`, `provideReference`, `referenceOf`, `bundleOf`,
 `addonsWithGuides` and `has` are gone with it.
 

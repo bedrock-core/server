@@ -65,9 +65,9 @@ interface Realm {
  * the namespace, which is how owner-only replication is enforced — a mismatch is silently treated
  * as a foreign write and dropped.
  */
-function realm(id: string, owned: string[]): Realm {
+function realm(id: string): Realm {
   const bus = new Bus(id);
-  const state = new State(bus, id, { ownedNamespaces: owned });
+  const state = new State(bus, id);
 
   bus.start();
   state.start();
@@ -90,7 +90,7 @@ function stopAll(realms: Realm[]): void {
  * are listening, so it is measured once per size rather than once per fan-out.
  */
 benchmark('shared_publish', (test) => {
-  const owner = realm('s6pub', ['s6pub']);
+  const owner = realm('s6pub');
   const RUNS = 50;
 
   for (const { label, value } of SIZES) {
@@ -120,8 +120,8 @@ benchmark('shared_publish', (test) => {
  */
 function convergence(test: Test, peerCount: number): void {
   const ns = `s6c${peerCount}`;
-  const owner = realm(ns, [ns]);
-  const peers = Array.from({ length: peerCount }, (_, i) => realm(`s6_conv_peer_${peerCount}_${i}`, []));
+  const owner = realm(ns);
+  const peers = Array.from({ length: peerCount }, (_, i) => realm(`s6_conv_peer_${peerCount}_${i}`));
   const all = [owner, ...peers];
 
   const seen = new Map<string, { ticks: number; ms: number }[]>();
@@ -184,8 +184,8 @@ benchmark('shared_converge_4', test => convergence(test, 4));
 benchmark('shared_persist_boot', (test) => {
   const ns = 's6boot';
   const KEYS = 100;
-  const owner = realm(ns, [ns]);
-  const peer = realm('s6_boot_peer', []);
+  const owner = realm(ns);
+  const peer = realm('s6_boot_peer');
   const value = payload(200);
 
   let applied = 0;
