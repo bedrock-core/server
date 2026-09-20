@@ -1,6 +1,6 @@
 {
 	"name": "@bedrock-core/db",
-	"version": "0.0.0",
+	"version": "0.1.0",
 	"description": "Persisted documents for @bedrock-core: a resolver that finds where a target can hold dynamic properties, and typed collections over it",
 	"keywords": [
 		"minecraft",
