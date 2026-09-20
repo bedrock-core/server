@@ -52,7 +52,10 @@ for (const workspace of workspaces) {
 	run('git', ['tag', tag], { stdio: 'inherit' });
 	console.log(`tag     ${tag}`);
 
-	if (process.env.CHANGESETS_OUTPUT) {
+	// Changesets Action's package map contains child workspaces only. The root
+	// meta package is pushed and released by release-root-package.mjs after the
+	// action has handled the child packages.
+	if (process.env.CHANGESETS_OUTPUT && workspace.location !== '.') {
 		appendFileSync(
 			process.env.CHANGESETS_OUTPUT,
 			`${JSON.stringify({ type: 'git-tag', tag, packageName: manifest.name })}\n`,
