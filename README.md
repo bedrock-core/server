@@ -2,11 +2,9 @@
 
 ![@bedrock-core](./assets/logo/title.png)
 
-> ⚠️ Beta Status: Active development. Breaking changes may occur until 1.0.0. Pin exact versions for stability.
+> ⚠️ Beta status: the API may change before 1.0.0. Pin exact versions for stability.
 
-A framework for Minecraft Bedrock addon development, built for cross-addon compatibility: every
-addon runs in its own isolated script realm, and bedrock-core lets addons from different creators find each other, call
-each other, and share state, settings and guides.
+The meta package for Bedrock Core's server stack. It lets Minecraft Bedrock addons in separate script realms discover each other, exchange typed messages, share live state, and persist their own data.
 
 ## Install
 
@@ -14,47 +12,67 @@ each other, and share state, settings and guides.
 yarn add @bedrock-core/server
 ```
 
-`@minecraft/server` is a peer dependency, pinned to what your pack's `manifest.json` declares.
+`@minecraft/server` is a peer dependency. Pin the version that your behavior pack declares in
+`manifest.json`. `@minecraft/server-ui` is an optional peer dependency.
+
+The package ships TypeScript source, so your behavior-pack build must compile dependencies from
+`node_modules`. The Bedrock Core Regolith bundler filter handles this automatically.
 
 ## Usage
 
-Register once, near the top of your script entry. `register()` is what brings the addon online — there is no separate `start()` — and everything the addon declares rides in that one call:
+Call `register()` once near the top of your script entry. It validates the manifest, brings the
+addon online, and installs each declaration in the same call.
 
 ```ts
-import { core } from '@bedrock-core/server';
+import { core, event, registerEvents, registerShared } from '@bedrock-core/server';
 
-const { config, shared } = core.register({
+const sharedDef = {
+  currency: 'gold',
+  sale: { item: '', active: false },
+};
+
+const eventsDef = {
+  purchase: event<{ playerId: string; amount: number }>(),
+};
+
+const { shared, events } = core.register({
   manifest: {
-    creator: 'ms',                  // creator id — [a-z0-9_]+
-    pack: 'shop',                   // pack id    — [a-z0-9_]+ → namespace `ms_shop`
-    packName: 'My Cool Shop',       // display label only, not part of identity
+    creator: 'ms',
+    pack: 'shop',
+    packName: 'My Shop',
     version: '1.0.0',
-    dependencies: ['os_economy'],   // soft — logs while absent, never blocks
+    dependencies: ['os_economy'], // Soft dependency: warns while absent, never blocks startup.
   },
-  config: {
-    server: {
-      taxRate: { type: 'number', default: 0.05, min: 0, max: 1, label: 'Tax Rate' },
-    },
-  },
-  shared: { open: false },          // what every other realm may read
+  shared: registerShared(sharedDef),
+  events: registerEvents(eventsDef),
 });
 
-config.server.taxRate.get();        // 0.05 — a dotted accessor tree mirroring the schema
-config.server.taxRate.subscribe((next, prev) => { /* … */ });
+shared.currency.set('emerald');
+events.purchase.emit({ playerId: 'player-id', amount: 5 });
 
-core.registry.all();                // every bedrock-core addon present in the world
-shared.open.set(true);              // every realm sees it this tick
-await core.rpc.request('os_economy', 'getBalance', { player: 'Steve' });
+core.registry.addons.subscribe(addons => console.warn(`${String(addons.length)} addons online`));
+await core.rpc.request('os_economy', 'getBalance', { playerId: 'player-id' });
 ```
 
-Each package the runtime is built on has its own subpath, for when you reach past `core` to the
-thing itself: `@bedrock-core/server/sync` for the transport, `/db` for the rest of the document
-surface, `/observable` for `computed` / `effect` / `last` and the `toNative` bridge to a
-data-driven form, and `/i18n` for `createI18n` and the translation verbs.
+The namespace is `creator_pack`; the example above registers as `ms_shop`. Shared values are live
+mirrors and do not persist across reloads. Use `core.db` for persisted documents, events for
+one-time broadcasts, and RPC for requests that need a response.
+
+Settings, catalog entries, and guides live in their own packages. They integrate with the same
+`register()` call through `registerConfig()`, `registerCatalog()`, and `registerGuides()` rather
+than through members on `core`.
+
+## Package entry points
+
+- `@bedrock-core/server` — runtime, registry, declarations, RPC, and database declaration helpers.
+- `@bedrock-core/server/sync` — low-level cross-realm transport.
+- `@bedrock-core/server/db` — the complete persisted-document API.
+- `@bedrock-core/server/observable` — observables, `computed`, `effect`, `last`, and `toNative`.
+- `@bedrock-core/server/i18n` — typed translation helpers.
 
 ## Documentation
 
-https://bedrock-core.drav.dev
+https://bedrock-core.drav.dev/docs/server
 
 ## Contributing
 

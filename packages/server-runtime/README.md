@@ -2,82 +2,105 @@
 
 ![Logo](https://raw.githubusercontent.com/bedrock-core/server/main/assets/logo/title.png)
 
-The bedrock-core **server runtime** — the framework layer addons build on, on top of
-`@bedrock-core/sync`. Every behavior pack runs its scripts in its own isolated realm, so two
-addons in the same world normally cannot see each other at all; where sync is the low-level
-transport that breaks that isolation, the runtime is the thing you *register into* — an addon
-declares its identity and its data once, and that declaration flows into a **cross-addon
-registry**, a live directory of every bedrock-core addon present in the world.
+The framework runtime beneath `@bedrock-core/server`. It gives each addon an identity, discovers
+other Bedrock Core addons across isolated script realms, and provides the registry, RPC, shared
+state, events, local persistence, feature flags, translations, and runtime declaration slots.
+
+Most addons should install `@bedrock-core/server`, which pins compatible versions of the full
+stack and re-exports this package. Install `@bedrock-core/server-runtime` directly when building a
+framework layer on top of the runtime.
 
 ## Install
 
-```bash
+```sh
 yarn add @bedrock-core/server-runtime
 ```
 
-`@minecraft/server` is a peer dependency — it stays yours to pin, since the version you build
-against has to match the one your pack's `manifest.json` declares.
+`@minecraft/server` is a peer dependency. Pin the version that your behavior pack declares in
+`manifest.json`.
 
 ## Usage
 
-```ts
-import { authorize, core, event, players, schema } from '@bedrock-core/server-runtime';
+Call `register()` exactly once. Values beside `manifest` must be declarations such as
+`registerShared()` and `registerEvents()`; `register()` installs them and returns their typed
+accessors.
 
-// register() declares everything and brings the addon online. It returns the typed accessors of
-// what was declared, one key each.
+```ts
+import {
+  authorize,
+  core,
+  event,
+  players,
+  registerEvents,
+  registerShared,
+  schema,
+} from '@bedrock-core/server-runtime';
+import { world } from '@minecraft/server';
+
+const sharedDef = {
+  currency: 'gold',
+  sale: { item: '', active: false },
+};
+
+const eventsDef = {
+  purchase: event<{ playerId: string; amount: number }>(),
+};
+
 const { shared, events } = core.register({
   manifest: {
-    creator: 'drav0011',          // creator/vendor id — [a-z0-9_]+
-    pack: 'economy',              // abbreviated pack id — together: namespace `drav0011_economy`
-    packName: 'Economy',          // display label only, never part of identity
+    creator: 'drav0011',
+    pack: 'economy',
+    packName: 'Economy',
     version: '1.0.0',
-    dependencies: ['os_shop'],    // namespaces you need — soft, logs, never blocks
+    dependencies: ['os_shop'],
   },
-  shared: {                       // optional — what every realm mirrors; only this one writes it
-    currency: 'gold',
-    event: { name: 'none', active: false },   // one key, one value, written whole
-  },
-  events: {                       // optional — what this addon announces to every realm
-    purchase: event<{ playerId: string; gold: number }>(),
-  },
+  shared: registerShared(sharedDef),
+  events: registerEvents(eventsDef),
 });
 
-// Persisted documents keyed by target, on the target's own dynamic properties. Local.
-const balances = core.db.collection('balances', { schema: schema<{ gold: number }>(), accept: players() });
-balances.for(player).patch({ gold: 10 });
+const balances = core.db.collection('balances', {
+  schema: schema<{ amount: number }>({ defaults: { amount: 0 } }),
+  accept: players(),
+});
 
-// What peers may ask for, and the one player rule every handler applies. Export the interface so
-// a peer gets a typed client from core.rpc.typed<EconomyApi>('drav0011_economy').
-export interface EconomyApi { balance(p: { playerId: string; actorId?: string }): { gold: number } | undefined }
+interface EconomyApi {
+  getBalance(params: { playerId: string; actorId?: string }): number;
+}
 
 core.rpc.serve<EconomyApi>({
-  balance: ({ playerId, actorId }) => {
+  getBalance: ({ playerId, actorId }) => {
     authorize({ entity: playerId }, actorId, 'read');
 
-    return balances.for(playerOf(playerId)).get();
+    const player = world.getAllPlayers().find(candidate => candidate.id === playerId);
+
+    if (player === undefined) { return 0; }
+
+    return balances.for(player).get()?.amount ?? 0;
   },
 });
 
-shared.currency.set('emerald');       // every realm sees it this tick
-events.purchase.emit({ playerId: player.id, gold: 5 });   // announced once, kept by nobody
-shared.event.subscribe(event => console.warn('event', event.name, event.active));
+shared.currency.set('emerald');
+events.purchase.emit({ playerId: 'player-id', amount: 5 });
 
-// A peer's shared tree, typed by the declaration the peer exports. Read-only: only an owner writes.
-core.shared.of<ShopShared>('os_shop')?.stock.subscribe(stock => console.warn('stock', stock));
-
-// A peer's events. Attaching before that addon exists is fine — an event missed is missed for good.
-core.events.of<ShopEvents>('os_shop').sale.subscribe(({ item }) => console.warn('sold', item));
-
-core.registry.onRegister(addon => console.warn('joined:', addon.id));
-
-// And an action that is not data at all.
-core.rpc.onRequest('openShop', ({ playerId }) => openFor(playerId));
-core.rpc.request('os_shop', 'openShop', { playerId }).catch(console.warn);
+core.registry.addons.subscribe(addons => console.warn('online:', addons.length));
+core.shared.of<typeof sharedDef>('os_shop')?.currency.subscribe(console.warn);
 ```
+
+The runtime provides three cross-addon channels:
+
+- Shared values are observable live state. The owner writes; peers receive read-only trees.
+- Events are broadcasts delivered once and never replayed.
+- RPC handles requests and responses. An owner can expose local database data through typed methods.
+
+`core.db` remains local to the addon and persists documents on Minecraft dynamic properties. A
+peer can access that data only through an API the owner explicitly serves.
+
+Config, Catalog, and Guides are packages above the runtime. They contribute declarations and use
+runtime slots; they are not properties of `core`.
 
 ## Documentation
 
-https://bedrock-core.drav.dev/docs/server
+https://bedrock-core.drav.dev/docs/server/api/runtime
 
 ## License
 
