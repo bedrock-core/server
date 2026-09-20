@@ -1,0 +1,45 @@
+{
+	"format_version": 3,
+	"header": {
+		"name": "Bedrock Core fixture peer",
+		"description": "Second pack for the cross-pack discovery test",
+		"uuid": "6b83adc1-ffae-4081-bc77-d0c7663cad33",
+		"pack_scope": "world",
+		"version": "1.0.0",
+		"min_engine_version": "1.26.50"
+	},
+	"modules": [
+		{
+			"type": "data",
+			"uuid": "9f3f0254-caad-409f-a01c-43162b8626b2",
+			"version": "1.0.0"
+		},
+		{
+			"type": "script",
+			"language": "javascript",
+			"uuid": "0a401278-1cde-4b16-8f5e-52708bd21924",
+			"entry": "scripts/main.js",
+			"version": "1.0.0"
+		}
+	],
+	"dependencies": [
+		{
+			"uuid": "e78b0f04-7c7a-4d45-8470-4b60b382eeaf",
+			"version": "1.0.0"
+		},
+		{
+			"module_name": "@minecraft/server",
+			"version": "2.10.0"
+		},
+		{
+			"module_name": "@minecraft/server-ui",
+			"version": "2.2.0"
+		}
+	],
+	"metadata": {
+		"product_type": "addon",
+		"authors": [
+			"DrAv0011"
+		]
+	}
+}

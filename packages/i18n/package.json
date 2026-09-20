@@ -1,0 +1,57 @@
+{
+	"name": "@bedrock-core/i18n",
+	"version": "0.1.0",
+	"description": "Localization for Minecraft Bedrock: typed keys, interpolation and plurals, resolved client-side per player",
+	"keywords": [
+		"i18n",
+		"i18next",
+		"localization",
+		"minecraft",
+		"bedrock",
+		"typescript"
+	],
+	"license": "MIT",
+	"author": "DrAv0011",
+	"contributors": [
+		{
+			"name": "DrAv0011",
+			"email": "contact@drav.dev",
+			"url": "https://drav.dev"
+		}
+	],
+	"repository": "github:bedrock-core/server",
+	"type": "module",
+	"main": "src/index.ts",
+	"types": "src/index.ts",
+	"exports": {
+		".": {
+			"types": "./src/index.ts",
+			"import": "./src/index.ts"
+		}
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"files": [
+		"src/**/*",
+		"!src/**/__tests__/**"
+	],
+	"sideEffects": false,
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"lint": "eslint .",
+		"test": "vitest run",
+		"coverage": "vitest run --coverage"
+	},
+	"devDependencies": {
+		"@minecraft/server": "*",
+		"@stylistic/eslint-plugin": "*",
+		"eslint": "*",
+		"typescript": "*",
+		"typescript-eslint": "*",
+		"vitest": "*"
+	},
+	"peerDependencies": {
+		"@minecraft/server": ">=2.9.0 || >=2.10.0-0"
+	}
+}

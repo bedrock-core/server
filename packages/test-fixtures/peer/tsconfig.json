@@ -1,0 +1,42 @@
+{
+	"compilerOptions": {
+		"target": "esnext",
+		"module": "esnext",
+		"moduleResolution": "bundler",
+		"resolveJsonModule": true,
+		"allowJs": false,
+		"checkJs": false,
+		"noEmit": true,
+		"declaration": true,
+		"declarationMap": true,
+		"sourceMap": true,
+		"strict": true,
+		"noUnusedLocals": true,
+		"noUnusedParameters": true,
+		"noImplicitReturns": true,
+		"noFallthroughCasesInSwitch": true,
+		"skipLibCheck": true,
+		"esModuleInterop": true,
+		"forceConsistentCasingInFileNames": true,
+		"paths": {
+			"@bedrock-core/generated/i18n": [
+				"./packs/data/i18n/i18n.generated.json"
+			],
+			"@bedrock-core/generated/ui": [
+				"./packs/data/ui/ui.generated.ts"
+			]
+		}
+	},
+	"files": [
+		"packs/BP/scripts/main.ts"
+	],
+	"include": [
+		"packs/BP/scripts/**/*",
+		"packs/data/**/*.d.ts"
+	],
+	"exclude": [
+		"node_modules",
+		"**/__tests__/*",
+		"eslint.config.mjs"
+	]
+}

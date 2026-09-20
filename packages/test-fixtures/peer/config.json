@@ -1,0 +1,119 @@
+{
+	"$schema": "https://raw.githubusercontent.com/Bedrock-OSS/regolith-schemas/main/config/v1.4.json",
+	"author": "DrAv0011",
+	"description": "Second pack for the cross-pack discovery test",
+	"name": "core-server-fixture-peer",
+	"packs": {
+		"behaviorPack": "./packs/BP",
+		"resourcePack": "./packs/RP"
+	},
+	"regolith": {
+		"dataPath": "./packs/data",
+		"filterDefinitions": {
+			"core": {
+				"url": "github.com/bedrock-core/regolith-filters",
+				"version": "1.0.0"
+			},
+			"manifest": {
+				"url": "github.com/bedrock-core/regolith-filters",
+				"version": "2.0.0"
+			},
+			"generator": {
+				"url": "github.com/bedrock-core/regolith-filters",
+				"version": "1.2.0"
+			},
+			"guides": {
+				"url": "github.com/bedrock-core/regolith-filters",
+				"version": "1.2.0"
+			},
+			"i18n": {
+				"url": "github.com/bedrock-core/regolith-filters",
+				"version": "1.2.0"
+			},
+			"ui-compiler": {
+				"url": "github.com/bedrock-core/regolith-filters",
+				"version": "0.1.0"
+			},
+			"bundler": {
+				"url": "github.com/bedrock-core/regolith-filters",
+				"version": "1.2.0"
+			}
+		},
+		"formatVersion": "1.4.0",
+		"profiles": {
+			"default": {
+				"export": {
+					"build": "standard",
+					"readOnly": false,
+					"target": "development"
+				},
+				"filters": [
+					{
+						"filter": "core",
+						"settings": {
+							"shared": {
+								"namespace": "core_fixture_peer",
+								"pretty": {
+									"indent": "tab"
+								}
+							},
+							"guides": false,
+							"ui-compiler": false,
+							"bundler": {
+								"debug": true
+							}
+						}
+					}
+				]
+			},
+			"build": {
+				"export": {
+					"build": "standard",
+					"readOnly": false,
+					"target": "local"
+				},
+				"filters": [
+					{
+						"filter": "core",
+						"settings": {
+							"shared": {
+								"namespace": "core_fixture_peer",
+								"pretty": false
+							},
+							"guides": false,
+							"ui-compiler": false,
+							"bundler": {
+								"debug": true
+							}
+						}
+					}
+				]
+			},
+			"build-test": {
+				"export": {
+					"build": "standard",
+					"bpPath": "./build/test/BP",
+					"readOnly": false,
+					"rpPath": "./build/test/RP",
+					"target": "exact"
+				},
+				"filters": [
+					{
+						"filter": "core",
+						"settings": {
+							"shared": {
+								"namespace": "core_fixture_peer",
+								"pretty": false
+							},
+							"guides": false,
+							"ui-compiler": false,
+							"bundler": {
+								"debug": true
+							}
+						}
+					}
+				]
+			}
+		}
+	}
+}

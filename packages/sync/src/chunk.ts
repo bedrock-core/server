@@ -24,6 +24,7 @@ export interface Frame {
   p: string;
 }
 
+/** One frame as it travels: the JSON of the frame object. */
 export function encodeFrame(frame: Frame): string {
   return JSON.stringify(frame);
 }
@@ -46,6 +47,7 @@ function isFrame(value: unknown): value is Frame {
   );
 }
 
+/** A frame back from the wire, or `undefined` when the text is not one. */
 export function decodeFrame(json: string): Frame | undefined {
   let parsed: unknown;
 
@@ -59,24 +61,79 @@ export function decodeFrame(json: string): Frame | undefined {
 }
 
 /**
- * Split an encoded envelope into frames whose individual encoded size stays within
- * `maxMessage`. The part budget is halved to absorb worst-case JSON string escaping (every
- * character of `p` could become two), guaranteeing each `encodeFrame` result fits.
+ * Width of one character once JSON escapes it inside a string literal. `"` and `\` gain a
+ * backslash; anything below U+0020 becomes a six-character `\uXXXX`; everything else, printable
+ * non-ASCII included, is copied verbatim.
+ */
+function escapedWidth(code: number): number {
+  if (code === 0x22 || code === 0x5c) { return 2; }
+
+  if (code < 0x20) { return 6; }
+
+  return 1;
+}
+
+/**
+ * Cut `payload` into the longest slices whose *escaped* length still fits `budget`.
+ *
+ * The slicing is exact rather than pessimistic: each character is charged what JSON will actually
+ * spend on it, so ordinary JSON — which escapes roughly one character in eight — fills a frame
+ * instead of leaving half of it reserved against an all-quotes payload that never arrives. A
+ * genuinely hostile payload simply yields more slices; no slice can ever exceed the budget.
+ */
+function sliceToEscapedBudget(payload: string, budget: number): string[] {
+  const parts: string[] = [];
+  let start = 0;
+
+  while (start < payload.length) {
+    let cost = 0;
+    let end = start;
+
+    while (end < payload.length) {
+      const code = payload.charCodeAt(end);
+      let width = escapedWidth(code);
+      let advance = 1;
+
+      // A surrogate pair is one character to JSON. Splitting it would leave a lone high surrogate
+      // at the end of one frame and a lone low surrogate at the start of the next, so the pair
+      // moves as a unit or not at all.
+      if (code >= 0xd800 && code <= 0xdbff && end + 1 < payload.length) {
+        const low = payload.charCodeAt(end + 1);
+
+        if (low >= 0xdc00 && low <= 0xdfff) {
+          width += 1;
+          advance = 2;
+        }
+      }
+
+      if (cost + width > budget) { break; }
+
+      cost += width;
+      end += advance;
+    }
+
+    // Progress guard: reachable only if `maxMessage` cannot hold one escaped character, which
+    // would otherwise spin forever. Such a frame overruns the cap; every real cap is far above it.
+    if (end === start) { end = start + 1; }
+
+    parts.push(payload.slice(start, end));
+    start = end;
+  }
+
+  return parts.length > 0 ? parts : [''];
+}
+
+/**
+ * Split an encoded envelope into frames whose individual encoded size stays within `maxMessage`.
+ *
+ * `s` and `t` are costed at their widest, because the frame count is not known until the split has
+ * been made — reserving six digits for each is cheaper than splitting twice.
  */
 export function splitIntoFrames(payload: string, cid: string, maxMessage: number): string[] {
   const overhead = encodeFrame({ c: cid, s: 999999, t: 999999, p: '' }).length;
-  const partBudget = Math.max(1, Math.floor((maxMessage - overhead) / 2));
-  const total = Math.max(1, Math.ceil(payload.length / partBudget));
+  const parts = sliceToEscapedBudget(payload, Math.max(1, maxMessage - overhead));
 
-  const frames: string[] = [];
-
-  for (let seq = 0; seq < total; seq++) {
-    const part = payload.slice(seq * partBudget, (seq + 1) * partBudget);
-
-    frames.push(encodeFrame({ c: cid, s: seq, t: total, p: part }));
-  }
-
-  return frames;
+  return parts.map((part, seq) => encodeFrame({ c: cid, s: seq, t: parts.length, p: part }));
 }
 
 interface PendingGroup {

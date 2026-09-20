@@ -1,22 +1,20 @@
 name: Release
 
-# Standard Changesets flow, powered by changesets/action.
+# Changesets flow with a manual publish — the same shape every bedrock-core repo uses.
 #
-# Author changesets during development (`yarn changeset`). Every push to `main`
-# runs this workflow:
-#   • changesets pending  → the action opens/updates a "Version Packages" PR that
-#     bumps versions + writes changelogs (running the `version` command below).
-#     The PR is refreshed on every push while it stays open.
-#   • no changesets left  → merging that PR lands the bumps on `main`; this run
-#     then executes the `publish` command, pushing each changed package to npm,
-#     tagging it and cutting a GitHub release.
+# Author changesets during development (`yarn changeset`).
 #
-# The @bedrock-core/{server,sync,server-runtime} libraries have no cross-repo
-# dependencies, so we install ONLY those (plus the monorepo root, for the
-# changesets CLI) with `yarn workspaces focus`. The `portal:../ui` resolutions used
-# by the private test addons are therefore never resolved — this release is
-# self-contained and does NOT need the sibling `ui` checkout. (If that ever stops
-# being true, check out `bedrock-core/ui` as a sibling and run a full install.)
+#   • push to `main` with changesets pending → the action opens/updates a
+#     "Version Packages" PR that bumps the changed packages and writes their
+#     changelogs. Nothing is published from a push, ever.
+#   • Run this workflow by hand (Actions → Release → Run workflow) after that PR
+#     has merged → the changed packages are published to npm and tagged.
+#
+# Only the publishable libraries are installed, with `yarn workspaces focus`, so
+# the GameTest fixtures and their Regolith toolchain stay out of a release.
+#
+# Nothing is checked out beside this repo: every dependency resolves from the
+# registry, including the published BDS runner used by the test fixtures.
 #
 # NOTE: opening the Version PR needs "Allow GitHub Actions to create and approve
 # pull requests" enabled under Settings → Actions → General. If that is off,
@@ -24,6 +22,7 @@ name: Release
 on:
   push:
     branches: [main]
+  workflow_dispatch:
 
 concurrency: ${{ github.workflow }}-${{ github.ref }}
 
@@ -33,41 +32,86 @@ permissions:
   id-token: write        # OIDC for npm trusted publishing — no npm token anywhere
 
 jobs:
-  release:
-    name: Version or publish changed packages
+  version:
+    name: Open or refresh the Version PR
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: server
+
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
+          path: server
           fetch-depth: 0
 
-      - name: Enable Corepack
-        run: corepack enable
+      - run: corepack enable
 
-      - name: Use Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 24
           cache: 'yarn'
+          cache-dependency-path: server/yarn.lock
+
+      - run: yarn install --immutable
+
+      # No `publish` input: with changesets pending this opens the PR, and with
+      # none pending it does nothing.
+      - uses: changesets/action@v2
+        with:
+          cwd: server
+          version-script: yarn version-packages
+          commit-message: 'chore(release): version packages'
+          pr-title: 'chore(release): version packages'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish:
+    name: Publish to npm
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: server
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: server
+          fetch-depth: 0
+
+      - run: corepack enable
+
+      # Node 24, not 22: trusted publishing needs the OIDC exchange that shipped in
+      # npm 11.5.1, and the 22 line tops out at npm 10.9.x. 24.5.0+ bundles 11.5.1+.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: 'yarn'
+          cache-dependency-path: server/yarn.lock
           registry-url: 'https://registry.npmjs.org'
           scope: '@bedrock-core'
 
-      # Trusted publishing needs the OIDC exchange in the npm CLI, which shipped in
-      # npm 11.5.1 — newer than what the runner's Node bundles.
-      - name: Update npm for trusted publishing
-        run: npm install -g npm@latest
+      - name: Install the publishable libraries only
+        run: yarn workspaces focus @bedrock-core/server @bedrock-core/sync @bedrock-core/server-runtime
 
-      - name: Install publishable libraries only
-        run: yarn workspaces focus @bedrock-core/server-monorepo @bedrock-core/server @bedrock-core/sync @bedrock-core/server-runtime
+      # Refuse to publish while changesets are still pending: merge the Version PR first.
+      - name: Check that nothing is pending
+        run: |
+          pending=$(ls .changeset/*.md 2>/dev/null | grep -v '/README\.md$' || true)
+          if [ -n "$pending" ]; then
+            echo "Unreleased changesets are pending; merge the Version PR before publishing:"
+            echo "$pending"
+            exit 1
+          fi
 
-      - name: Create Version PR or publish
-        uses: changesets/action@v1
+      - uses: changesets/action@v2
         with:
-          version: yarn version-packages
-          publish: yarn release
-          commit: 'chore(release): version packages'
-          title: 'chore(release): version packages'
+          cwd: server
+          publish-script: yarn release
         env:
           # No npm token: publishes authenticate via OIDC trusted publishing (the
           # id-token permission above + a trusted publisher configured per package

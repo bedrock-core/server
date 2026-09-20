@@ -1,0 +1,21 @@
+{
+	"format_version": "1.26.50",
+	"minecraft:block": {
+		"description": {
+			"identifier": "core_fixture:db_probe",
+			"menu_category": {
+				"category": "none"
+			}
+		},
+		"components": {
+			"minecraft:block_entity": {
+				"dynamic_properties": true
+			},
+			"core_fixture:db_cleanup": {},
+			"minecraft:destructible_by_mining": {
+				"seconds_to_destroy": 0.1
+			},
+			"minecraft:map_color": "#FF00FF"
+		}
+	}
+}

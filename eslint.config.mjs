@@ -12,8 +12,14 @@ export default defineConfig([
   {
     ignores: [
       ".yarn/**",
+      // The Bedrock Dedicated Server tree the GameTest runner downloads and runs from.
+      ".bds/**",
       "dist/**",
       "node_modules/**",
+      // Regolith's temporary workspace during filter execution.
+      "**/.regolith/**",
+      // Pack build output in test fixtures.
+      "packages/test-fixtures/**/build/**",
     ],
   },
 
@@ -130,5 +136,6 @@ export default defineConfig([
       '@typescript-eslint/naming-convention': 'off',
     },
   },
+
 ]);
 

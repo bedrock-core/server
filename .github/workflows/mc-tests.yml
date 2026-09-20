@@ -1,0 +1,88 @@
+# The slow gate: builds the test addons with Regolith and runs their GameTests on a real Bedrock
+# Dedicated Server. Kept off every-push because it downloads a ~200 MB server and takes minutes;
+# opt in with the `run-mc-tests` label on a PR, or let it run on main.
+#
+# Nothing is checked out beside this repo: `@bedrock-core/bds-runner` installs from npm and the
+# Regolith filters are pinned to published tags.
+name: GameTests (BDS)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [labeled, synchronize]
+  workflow_dispatch:
+
+concurrency:
+  group: mc-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  REGOLITH_VERSION: '1.8.0'
+
+jobs:
+  gametest:
+    if: >-
+      github.event_name != 'pull_request' ||
+      contains(github.event.pull_request.labels.*.name, 'run-mc-tests')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    defaults:
+      run:
+        working-directory: server
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: server
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: yarn
+          cache-dependency-path: server/yarn.lock
+
+      - run: corepack enable
+
+      - run: yarn install --immutable
+
+      - name: Set up Regolith
+        uses: bedrock-core/setup-regolith@1.0.1
+        with:
+          regolith-version: ${{ env.REGOLITH_VERSION }}
+          resolvers: |
+            github.com/bedrock-core/regolith-filters
+
+      - name: Read the pinned server version
+        id: bds
+        run: echo "version=$(jq -r .version bds-runner.json)" >> "$GITHUB_OUTPUT"
+
+      # Keyed on the resolved version alone, not on a file hash, so an unrelated edit to
+      # bds-runner.json cannot invalidate a 200 MB download.
+      - name: Cache Bedrock Dedicated Server
+        uses: actions/cache@v6
+        with:
+          path: server/.bds/cache
+          key: bds-${{ runner.os }}-${{ steps.bds.outputs.version }}
+
+      - run: yarn bds:fetch
+
+      # Installs the url-pinned bundler and, for the filters run from the sibling checkout, their
+      # npm dependencies — Regolith does that for local-script filters too.
+      - run: yarn regolith-install
+
+      # Both addons are built and deployed into one world: the last test asserts that the Shop pack
+      # is registered with the live runtime, so it can only pass with both installed.
+      - name: GameTests
+        run: yarn test:mc
+
+      # The server console is the only debugging surface for a CI failure, so keep it either way.
+      - name: Upload server logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: bds-logs
+          path: server/.bds/logs/**
+          if-no-files-found: warn
+          retention-days: 14

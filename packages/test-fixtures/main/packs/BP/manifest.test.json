@@ -1,0 +1,21 @@
+{
+	"extends": "./manifest.json",
+	"dependencies": [
+		{
+			"uuid": "c8ab693a-6740-4f01-a832-c340370c088b",
+			"version": "1.0.0"
+		},
+		{
+			"module_name": "@minecraft/server",
+			"version": "2.10.0"
+		},
+		{
+			"module_name": "@minecraft/server-ui",
+			"version": "2.2.0"
+		},
+		{
+			"module_name": "@minecraft/server-gametest",
+			"version": "1.0.0-beta"
+		}
+	]
+}

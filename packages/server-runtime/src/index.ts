@@ -1,104 +1,68 @@
-/**
- * `@bedrock-core/server-runtime` — the bedrock-core server runtime.
- *
- * Addons register their identity + base data with the runtime, which flows into a
- * cross-addon registry built on `@bedrock-core/sync`. Typical usage:
- *
- * ```ts
- * import { core } from '@bedrock-core/server-runtime';
- * import bundle from '@bedrock-core/generated/i18n';
- * import guides from '@bedrock-core/generated/guides';
- *
- * // register() brings the addon online — there is no separate start(). Everything the
- * // addon declares rides in the one call; translations/guide/config are all optional.
- * const config = core.register({
- *   creator: 'bt',                 // creator/vendor id, lowercase a-z0-9_
- *   pack: 'gc_shop',               // abbreviated pack id — together: namespace `bt_gc_shop`
- *   packName: 'My Cool Shop',      // display label only
- *   version: '1.2.0',
- *   dependencies: ['os_economy'],                     // namespaces (`creator_pack`)
- *   optionalDependencies: ['os_leaderboards'],
- *   translations: bundle,          // the i18n filter's bundle, shared with other addons' UIs
- *   guide: guides,                 // compiled guide manifest from the guides filter
- *   config: { server: { taxRate: { type: 'number', default: 0.05, min: 0, max: 1, label: 'Tax Rate' } } },
- * });
- *
- * config.server.get().taxRate;     // typed accessors, same as core.config.define()'s return
- * core.registry.onRegister(addon => console.warn('registered', addon.id));
- * core.registry.onNamespaceCollision(info => console.error('collision', info.id));
- * core.features.add('leaderboard-sync', {
- *   condition: ctx => ctx.registry.has('os_leaderboards'),
- *   onEnable() { console.warn('leaderboards available'); },
- *   onDisable() { console.warn('leaderboards gone'); },
- * });
- * core.rpc.onRequest('buy', params => purchase(params));
- * core.state.set('price', 10);   // namespace pre-filled from core.namespace
- * ```
- */
-export { Runtime, core } from './runtime';
-export type { RegisterOptions } from './runtime';
+export { core, Runtime } from './runtime';
+export type { Declared, RegisterOptions, RuntimeSlots } from './runtime';
+
+export type { Declaration } from './declaration';
 
 export { RUNTIME_VERSION } from './runtime-version';
 
-export { compareVersions } from './version';
+export { Announcement, isRecord } from './announcement';
+export type { AnnouncementListener } from './announcement';
 
-export { HostElection } from './host';
-export type { HostListener } from './host';
+export type { HostElection, HostListener } from './host';
 
-export { Registry } from './registry';
-export type { RegisteredAddon, AddonListener, CollisionListener } from './registry';
+export type { IncompatibleListener, IncompatiblePeer } from '@bedrock-core/sync';
+export type { AddonListener, CollisionListener, RegisteredAddon, Registry } from './registry';
 
-export { FeatureManager } from './features';
-export type { FeatureSpec, FeatureConditionContext, TypedFeatureAccessor } from './features';
+export type { FeatureConditionContext, FeatureFlags, FeatureManager, FeatureSpec, TypedFeatureAccessor } from './features';
 
-export { ScopedState, RESERVED_STATE_PREFIX, isReservedStateKey } from './scoped-state';
+// What an addon needs to declare a collection on `core.db`; the package itself is the source for the rest.
+export {
+  accepting,
+  allOf,
+  anyOf,
+  blockTypes,
+  DbBudgetError,
+  DbTargetError,
+  dimensions,
+  entityTypes,
+  except,
+  players,
+  schema,
+  slots,
+  worldTarget,
+} from '@bedrock-core/db';
+export type { Collection, Db, Document, IndexedDocument, Schema } from '@bedrock-core/db';
 
-export { addonNamespace, validateManifest } from './manifest';
+export { event, registerEvents } from './events';
+export type {
+  EventListener,
+  EventMarker,
+  EventsDef,
+  EventsRegistry,
+  EventsTree,
+  OwnEvent,
+  PayloadOf,
+  PeerEvent,
+  PeerEventsTree,
+} from './events';
+
+export { registerShared } from './shared';
+export type {
+  PeerSharedTree,
+  PeerValue,
+  Shape,
+  SharedDef, SharedRegistry, SharedTree,
+  SharedValue,
+} from './shared';
+
 export type { AddonManifest, ManifestMeta } from './manifest';
 
-export type { TypedClient, RPCHandlerMap } from '@bedrock-core/sync';
+export type { RPCHandlerMap, TypedClient } from '@bedrock-core/sync';
 
-export { TranslationsRegistry } from './translations';
-export type { TranslationsChangeListener } from './translations';
+export { isUsable, type EngineHandle } from './handle';
+
 export type { I18nBundle, TranslationResolver } from '@bedrock-core/i18n';
+export type { TranslationsRegistry } from './translations';
 
-export { GuidesRegistry } from './guides/guides-registry';
-export type { GuidesChangeListener } from './guides/guides-registry';
-export type { GuideManifest } from './guides/types';
-
-export { ConfigRegistry } from './config/config-registry';
-export type { Config, ConfigAccessOptions, LocalConfigScopes, RemoteConfigAccessor, TypedRemoteConfig } from './config/config-registry';
-export { denyReason, isOperator } from './config/authorization';
-export type { ConfigScopeName } from './config/authorization';
-export { EntityConfigScope } from './config/scopes';
-export { ServerConfigScope } from './config/scopes';
-export type {
-  ServerConfigTree,
-  ConfigTree,
-  ConfigNode,
-  ConfigChildren,
-  ConfigGroupAccessor,
-  ConfigLeafAccessor,
-  NodeValue,
-} from './config/scopes';
-export { RESERVED_KEYS, flattenGroups, flattenSchema, isGroupMetaKey, validateConfigSchema } from './config/schema';
-export type {
-  ConfigDefinition,
-  ConfigEntry,
-  ConfigValue,
-  BooleanEntry,
-  NumberEntry,
-  StringEntry,
-  EnumEntry,
-  ListEntry,
-  MultiselectEntry,
-  FlatSchema,
-  FlatGroups,
-  GroupMeta,
-  SerializedEntry,
-  SerializedGroup,
-  SchemaToValue,
-  DotPath,
-  PathValue,
-  DeepPartial,
-} from './config/schema';
+export { authorize, denyReason, isOperator } from './authorization';
+export type { AccessTarget, Operation } from './authorization';

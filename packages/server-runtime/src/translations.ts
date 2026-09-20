@@ -1,93 +1,66 @@
 /**
- * Cross-addon translation sync — i18n-bundle native, no tables anywhere.
+ * `core.translations` — every addon's i18n bundle, announced, with resolvers over all of them.
  *
- * Each addon publishes its {@link I18nBundle} — the module the i18n Regolith
- * filter generates, or `createResourceBundle`'s runtime equivalent — via
- * `core.register({ translations: bundle })`. The registry replicates the
- * bundle itself: templates stay in `{{var}}` form with their recorded argument
- * order. Peers get two views, both lazy over the bundles:
+ * Each addon announces its {@link I18nBundle} — the module the i18n Regolith filter generates,
+ * or `createResourceBundle`'s runtime equivalent — under `core-i18n/bundle` via
+ * `core.translations.provide(bundle)`. The bundle itself travels: templates stay in
+ * `{{var}}` form with their recorded argument order. Peers get two views, both lazy over the
+ * announced bundles:
  *
- * - **Verbs** — `of(addonId)` wraps a peer's bundle in `createI18n`, giving
- *   `t()`/`key()`/`raw()`/`resolve()` over another addon's strings (loosely
- *   typed: their resource tree's types never travel).
- * - **Resolution** — `forLocale()`/`forPlayer()` return a
- *   {@link TranslationResolver} that chains every addon's bundle, later
- *   registrations overriding earlier ones the way Bedrock's world-level
- *   `.lang` merge does. Nothing is flattened or copied; each lookup reads the
- *   winning bundle's objects and converts the one template it needs.
+ * - **Verbs** — `i18n(addonId)` wraps a peer's bundle in `createI18n`, giving `t()` / `key()` /
+ *   `raw()` / `resolve()` over another addon's strings, loosely typed since their resource
+ *   tree's types never travel.
+ * - **Resolution** — `forLocale()` / `forPlayer()` return a {@link TranslationResolver} that
+ *   chains every addon's bundle, later registrations overriding earlier ones the way Bedrock's
+ *   world-level `.lang` merge does. Nothing is flattened or copied; each lookup reads the winning
+ *   bundle's objects and converts the one template it needs.
  *
- * Registry display fields (`packName`, `description`, `creatorName`) ARE
- * translation keys shipped in each addon's generated `.lang` — this registry
- * is what lets one addon's UI measure and resolve another addon's keys
- * server-side. Late joiners are covered by sync's state snapshot exchange.
+ * Registry display fields (`packName`, `description`, `creatorName`) are translation keys
+ * shipped in each addon's generated `.lang`, so this is what lets one addon's UI resolve
+ * another addon's keys server-side.
  */
 import { createI18n, LOCALE_PROPERTY, pickLocale } from '@bedrock-core/i18n';
 import type { I18n, I18nBundle, TranslationResolver } from '@bedrock-core/i18n';
-import { stateKey } from '@bedrock-core/sync';
 import type { State, Unsubscribe } from '@bedrock-core/sync';
 import type { Player } from '@minecraft/server';
+import { Announcement, isRecord } from './announcement';
+import { isUsable } from './handle';
 
 /** Locale `forPlayer` falls back to when no candidate locale is published. */
 const DEFAULT_LOCALE = 'en_US';
 
-/** State key each addon publishes its bundle under (namespace = the addon's namespace). */
-const TRANSLATIONS_STATE_KEY = stateKey<I18nBundle>('core-i18n/bundle');
-
-export type TranslationsChangeListener = () => void;
-
-export class TranslationsRegistry {
-  private readonly _state: State;
-  private readonly _addonId: string;
-  private readonly _listeners = new Set<TranslationsChangeListener>();
-  private readonly _disposers: Unsubscribe[] = [];
-  /** Caches over replicated bundles, cleared whenever any addon re-publishes. */
+/** Each addon's i18n bundle, announced, with resolvers over all of them. */
+export class TranslationsRegistry extends Announcement<I18nBundle> {
+  /** Caches over announced bundles, cleared whenever any addon re-publishes. */
   private readonly _verbs = new Map<string, I18n<unknown> | undefined>();
   private readonly _resolvers = new Map<string, TranslationResolver>();
   private _locales: Set<string> | undefined;
+  private _release: Unsubscribe | undefined;
 
   constructor(state: State, addonId: string) {
-    this._state = state;
-    this._addonId = addonId;
+    super(state, addonId, 'i18n/bundle', isBundle);
   }
 
   start(): void {
-    this._disposers.push(
-      this._state.subscribe((change) => {
-        if (change.key !== TRANSLATIONS_STATE_KEY) { return; }
-
-        this.invalidate();
-        this.emitChange();
-      }),
-    );
+    this._release = this.subscribe(() => this.invalidate());
   }
 
   stop(): void {
-    for (const dispose of this._disposers.splice(0)) { dispose(); }
-
-    this._listeners.clear();
+    this._release?.();
+    this._release = undefined;
     this.invalidate();
   }
 
   /**
-   * Publish this addon's bundle to replicated state so every addon can resolve
-   * its strings. Usually declared up front via `core.register({ translations })`;
-   * call directly to publish late or replace the bundle.
+   * The verbs over one addon's announced strings — `t()`, `key()`, `raw()`, `resolve()`,
+   * `forPlayer()` — exactly what `createI18n` gives that addon locally, minus its compile-time
+   * resource types. `undefined` until that addon publishes.
    */
-  provide(bundle: I18nBundle): void {
-    this._state.set(this._addonId, TRANSLATIONS_STATE_KEY, bundle);
-  }
-
-  /**
-   * The verbs over one addon's published strings — `t()`, `key()`, `raw()`,
-   * `resolve()`, `forPlayer()` — exactly what `createI18n` gives that addon
-   * locally, minus its compile-time resource types (those never travel; paths
-   * are plain strings here). `undefined` until that addon publishes.
-   */
-  of(addonId: string): I18n<unknown> | undefined {
+  i18n(addonId: string): I18n<unknown> | undefined {
     if (this._verbs.has(addonId)) { return this._verbs.get(addonId); }
 
-    const bundle = this.publishedBundle(addonId);
-    // NEVER the default instance — these are peers' bundles, not this addon's.
+    const bundle = this.of(addonId);
+    // Never the default instance: these are peers' bundles, not this addon's.
     const verbs = bundle ? createI18n(bundle, { asDefault: false }) : undefined;
 
     this._verbs.set(addonId, verbs);
@@ -95,16 +68,10 @@ export class TranslationsRegistry {
     return verbs;
   }
 
-  /** The raw bundle an addon published, or `undefined`. Local-mirror read. */
-  bundleOf(addonId: string): I18nBundle | undefined {
-    return this.publishedBundle(addonId);
-  }
-
   /**
-   * One resolver over every published bundle, for a SINGLE locale. Later
-   * registrations win collisions (mirroring Bedrock's world-level `.lang`
-   * merge), so the chain probes namespaces in reverse. Cached per locale;
-   * rebuilt when any addon re-publishes.
+   * One resolver over every announced bundle, for a single locale. Later registrations win
+   * collisions, mirroring Bedrock's world-level `.lang` merge, so the chain probes namespaces in
+   * reverse. Cached per locale; rebuilt when any addon re-publishes.
    */
   forLocale(locale: string): TranslationResolver {
     const cached = this._resolvers.get(locale);
@@ -113,8 +80,8 @@ export class TranslationsRegistry {
 
     const chain: TranslationResolver[] = [];
 
-    for (const ns of [...this._state.namespaces()].reverse()) {
-      const verbs = this.of(ns);
+    for (const ns of this.namespaces().reverse()) {
+      const verbs = this.i18n(ns);
 
       if (verbs) { chain.push(verbs.forLocale(locale).resolve); }
     }
@@ -135,13 +102,16 @@ export class TranslationsRegistry {
   }
 
   /**
-   * The chained resolver for a specific player, through the same chain the
-   * i18n engine uses: persisted override → client locale → sibling region of
-   * that language → `defaultLocale` → anything published. Resolves nothing
-   * when nothing is published — a missing key already falls back to rendering
-   * the literal key.
+   * The chained resolver for a specific player, through the same chain the i18n engine uses:
+   * persisted override → client locale → sibling region of that language → `defaultLocale` →
+   * anything published. Resolves nothing when nothing is published — a missing key already
+   * falls back to rendering the literal key.
    */
   forPlayer(player: Player, defaultLocale = DEFAULT_LOCALE): TranslationResolver {
+    // Both reads below throw on an invalidated handle, and callers reach this from event
+    // subscribers. A player who is gone has no locale to prefer, so fall back to the default.
+    if (!isUsable(player)) { return this.forLocale(defaultLocale); }
+
     const override = player.getDynamicProperty(LOCALE_PROPERTY);
     const chosen = pickLocale([...this.availableLocales()], [
       typeof override === 'string' ? override : undefined,
@@ -151,23 +121,14 @@ export class TranslationsRegistry {
     return this.forLocale(chosen ?? defaultLocale);
   }
 
-  /** Notified when any addon's published bundle changes (coarse — rebuild via `forLocale`/`forPlayer`/`of`). */
-  subscribe(listener: TranslationsChangeListener): Unsubscribe {
-    this._listeners.add(listener);
-
-    return (): void => {
-      this._listeners.delete(listener);
-    };
-  }
-
   /** Every locale any addon has published (resource locales and passthrough alike). */
   private availableLocales(): Set<string> {
     if (this._locales) { return this._locales; }
 
     const locales = new Set<string>();
 
-    for (const ns of this._state.namespaces()) {
-      const bundle = this.publishedBundle(ns);
+    for (const ns of this.namespaces()) {
+      const bundle = this.of(ns);
 
       if (!bundle) { continue; }
 
@@ -181,37 +142,14 @@ export class TranslationsRegistry {
     return locales;
   }
 
-  /**
-   * The bundle an addon published under this namespace, or `undefined` if
-   * none/malformed — one addon publishing a bad payload can't poison the
-   * chain for everyone else.
-   */
-  private publishedBundle(ns: string): I18nBundle | undefined {
-    const value = this._state.get(ns, TRANSLATIONS_STATE_KEY);
-
-    return isBundle(value) ? value : undefined;
-  }
-
   private invalidate(): void {
     this._verbs.clear();
     this._resolvers.clear();
     this._locales = undefined;
   }
-
-  private emitChange(): void {
-    for (const listener of this._listeners) { listener(); }
-  }
 }
 
-/** True for any non-null, non-array object. */
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-/**
- * True when `value` is a locale table: a record whose every value is a string.
- * An empty record qualifies — nothing contradicts it, and merging it is a no-op.
- */
+/** A locale table: a record whose every value is a string. An empty record qualifies. */
 function isFlatMap(value: unknown): value is Record<string, string> {
   if (!isRecord(value)) { return false; }
 
@@ -222,15 +160,11 @@ function isFlatMap(value: unknown): value is Record<string, string> {
   return true;
 }
 
-/** True when every value of a record satisfies {@link isFlatMap}. */
 function isFlatMapRecord(value: unknown): value is Record<string, Record<string, string>> {
   return isRecord(value) && Object.values(value).every(isFlatMap);
 }
 
-/**
- * Structural validation of a replicated bundle — the shape `createI18n`
- * relies on. Narrows so callers avoid an `as` cast.
- */
+/** The shape `createI18n` relies on, so one addon's bad payload cannot poison the chain. */
 function isBundle(value: unknown): value is I18nBundle {
   if (!isRecord(value)) { return false; }
 

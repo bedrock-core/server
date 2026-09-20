@@ -1,94 +1,90 @@
 /**
- * Togglable features driven by a condition over registry + state.
+ * `core.features` — togglable behavior driven by a condition over the registry and the mirror.
  *
- * A feature declares a `condition(ctx): boolean`; the runtime re-evaluates it on every
- * registry or state change and edge-triggers `onEnable`/`onDisable` when the result flips.
- * Each feature's enabled state is published to sync state so other addons can observe it.
+ * A feature declares a `condition(ctx): boolean`; the runtime re-evaluates it on every registry
+ * or mirror change and edge-triggers `onEnable` / `onDisable` when the result flips. The enabled
+ * flags are announced under `core-feature/flags` as one record, so a peer's condition can depend
+ * on them.
  *
- * Local feature:
  * ```ts
  * core.features.add('leaderboard-sync', {
  *   condition: ctx => ctx.registry.has('other_studio_leaderboard'),
  *   onEnable() { startSync(); },
  *   onDisable() { stopSync(); },
  * });
- * ```
  *
- * Cross-addon feature check (in a condition):
- * ```ts
  * core.features.add('cross-pvp', {
- *   condition: ctx =>
- *     ctx.registry.has('other_studio_pvp') &&
- *     ctx.feature('other_studio_pvp', 'arena-mode'),
- *   onEnable() { /* … *\/ },
- *   onDisable() { /* … *\/ },
+ *   condition: ctx => ctx.feature('other_studio_pvp', 'arena-mode'),
+ *   onEnable() { … },
+ *   onDisable() { … },
  * });
- * ```
  *
- * Typed cross-addon read (outside a condition):
- * ```ts
  * const pvp = core.features.of<PvpFeatures>('other_studio_pvp');
- * pvp.isEnabled('arena-mode');    // type-checked
+ * pvp.isEnabled('arena-mode');
  * ```
  */
-import { stateKey } from '@bedrock-core/sync';
-import type { State, StateKey, Unsubscribe } from '@bedrock-core/sync';
+import type { State, Unsubscribe } from '@bedrock-core/sync';
+import { Announcement, isRecord } from './announcement';
 import type { Registry } from './registry';
 
-const FEATURE_STATE_PREFIX = 'core-feature/';
+/** Feature id → enabled, the whole record announced on every flip. */
+export type FeatureFlags = Record<string, boolean>;
 
-/** Published enabled-flag for one feature of one addon. */
-const featureStateKey = (featureId: string): StateKey<boolean> => stateKey(`${FEATURE_STATE_PREFIX}${featureId}`);
+function isFeatureFlags(value: unknown): value is FeatureFlags {
+  return isRecord(value) && Object.values(value).every(flag => typeof flag === 'boolean');
+}
 
-// ─── Public types ─────────────────────────────────────────────────────────────
-
+/** What a condition is evaluated against. */
 export interface FeatureConditionContext {
   registry: Registry;
   state: State;
+  /** Whether a peer's feature is enabled, read from its announced flags. */
   feature(addonId: string, featureId: string): boolean;
 }
 
+/** One feature: when it is on, and what to do at each flip. */
 export interface FeatureSpec {
 
   /**
-   * Whether the feature should be enabled right now. Re-evaluated on **every** registry
-   * and state change, so it must be a cheap, pure predicate over `ctx` — no side effects,
-   * no expensive work.
+   * Whether the feature should be enabled right now. Re-evaluated on **every** registry and
+   * mirror change, so it must be a cheap, pure predicate over `ctx` — no side effects, no
+   * expensive work.
    */
   condition(ctx: FeatureConditionContext): boolean;
   onEnable(): void;
   onDisable(): void;
 }
 
+/** A typed reader over one addon's flags. */
 export interface TypedFeatureAccessor<T extends string> { isEnabled(id: T): boolean }
-
-// ─── FeatureManager ───────────────────────────────────────────────────────────
 
 interface FeatureState {
   spec: FeatureSpec;
   enabled: boolean;
 }
 
+/** Features that switch themselves on and off with a condition, announcing their flags. */
 export class FeatureManager {
+  /** Every addon's flags, this one's included. */
+  readonly flags: Announcement<FeatureFlags>;
+
   private readonly _registry: Registry;
   private readonly _state: State;
-  private readonly _addonId: string;
   private readonly _features = new Map<string, FeatureState>();
   private readonly _disposers: Unsubscribe[] = [];
 
   constructor(registry: Registry, state: State, addonId: string) {
     this._registry = registry;
     this._state = state;
-    this._addonId = addonId;
+    this.flags = new Announcement<FeatureFlags>(state, addonId, 'feature/flags', isFeatureFlags);
   }
 
   start(): void {
     this._disposers.push(
-      this._registry.onRegister(() => this.evaluateAll()),
-      this._registry.onUnregister(() => this.evaluateAll()),
-      // Re-evaluate on every state change (conditions may read any published value,
-      // including other addons' config). Feature-flag writes triggered by evaluation
-      // can't loop: evaluate() short-circuits when the condition result hasn't flipped.
+      // Who is present, as a value: one subscription covers an addon arriving and one leaving.
+      this._registry.addons.subscribe(() => this.evaluateAll()),
+      // Every mirror change, since a condition may read any announced value. Announcing a flag
+      // cannot loop: evaluate() returns before publishing when the result has not flipped.
       this._state.subscribe(() => this.evaluateAll()),
     );
     this.evaluateAll();
@@ -98,7 +94,7 @@ export class FeatureManager {
     for (const dispose of this._disposers.splice(0)) { dispose(); }
   }
 
-  /** Declare a feature. Evaluated immediately, then on every registry or state change. */
+  /** Declare a feature. Evaluated immediately, then on every registry or mirror change. */
   add(id: string, spec: FeatureSpec): void {
     this._features.set(id, { spec, enabled: false });
     this.evaluate(id);
@@ -109,12 +105,13 @@ export class FeatureManager {
     return this._features.get(id)?.enabled ?? false;
   }
 
-  /**
-   * Returns a typed accessor for reading another addon's feature flags.
-   * Reads are synchronous from the in-memory state mirror.
-   */
+  /** A typed reader over another addon's announced flags; synchronous, from the local mirror. */
   of<T extends string = string>(addonId: string): TypedFeatureAccessor<T> {
-    return { isEnabled: (id: T) => this._state.get(addonId, featureStateKey(id)) === true };
+    return { isEnabled: (id: T) => this.flagOf(addonId, id) };
+  }
+
+  private flagOf(addonId: string, featureId: string): boolean {
+    return this.flags.of(addonId)?.[featureId] === true;
   }
 
   private evaluateAll(): void {
@@ -129,7 +126,7 @@ export class FeatureManager {
     const ctx: FeatureConditionContext = {
       registry: this._registry,
       state: this._state,
-      feature: (addonId, featureId) => this._state.get(addonId, featureStateKey(featureId)) === true,
+      feature: (addonId, featureId) => this.flagOf(addonId, featureId),
     };
 
     const available = feature.spec.condition(ctx);
@@ -137,7 +134,12 @@ export class FeatureManager {
     if (available === feature.enabled) { return; }
 
     feature.enabled = available;
-    this._state.set(this._addonId, featureStateKey(id), available);
+
+    const flags: FeatureFlags = {};
+
+    for (const [featureId, entry] of this._features) { flags[featureId] = entry.enabled; }
+
+    this.flags.provide(flags);
 
     if (available) {
       feature.spec.onEnable();

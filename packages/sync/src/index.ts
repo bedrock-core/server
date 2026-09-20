@@ -12,6 +12,7 @@
  * const sync = createSync({ id: 'myaddon', version: '1.0.0' });
  * sync.start();
  *
+ * sync.discovery.peers.subscribe(peers => console.warn(peers.length, 'peers'));
  * sync.discovery.onPeerUp(peer => console.warn('peer up', peer.id));
  * sync.rpc.onRequest('ping', () => 'pong');
  * sync.state.set('myaddon', 'volume', 5);
@@ -28,6 +29,8 @@ export type {
   CollisionInfo,
   CollisionListener,
   DiscoveryOptions,
+  IncompatibleListener,
+  IncompatiblePeer,
   PeerInfo,
   PeerListener,
 } from './discovery';
@@ -35,9 +38,16 @@ export type {
 export { Rpc } from './rpc';
 export type { RequestHandler, RequestOptions, RpcOptions, TypedClient, RPCHandlerMap } from './rpc';
 
+export { Events } from './events';
+export type { EventHandler } from './events';
+
 export { State, stateKey } from './state';
-export type { SnapshotEntry, StateChange, StateChangeListener, StateKey, StateOptions } from './state';
+export type { SnapshotEntry, StateChange, StateChangeListener, StateKey } from './state';
 
 export type { Unsubscribe } from './bus';
+
+/** Re-exported so a consumer can type a `discovery.peers` subscription without depending on observable itself. */
+export type { Listener, ReadonlyObservable } from '@bedrock-core/observable';
 export type { Envelope } from './envelope';
-export { MessageType, PROTOCOL_VERSION } from './constants';
+export { Cap, MAX_MESSAGE, MessageType, PROTOCOL_MAX, PROTOCOL_MIN, SELF_CAPS } from './constants';
+export { capsFor, negotiateProtocol } from './negotiate';

@@ -1,0 +1,35 @@
+{
+	"name": "@bedrock-core/server-test-fixtures",
+	"version": "1.0.1",
+	"private": true,
+	"description": "GameTest fixtures for the Bedrock Core server runtime: the test pack and the peer it discovers",
+	"scripts": {
+		"regolith-install": "cd main && regolith install-all && cd ../peer && regolith install-all",
+		"build": "cd main && regolith run build && cd ../peer && regolith run build",
+		"build:test": "cd main && regolith run build-test && cd ../peer && regolith run build-test",
+		"watch": "cd main && regolith watch",
+		"watch:test": "cd main && regolith watch test",
+		"lint": "eslint .",
+		"loopback": "CheckNetIsolation.exe LoopbackExempt -a -p=S-1-15-2-1958404141-86561845-1752920682-3514627264-368642714-62675701-733520436",
+		"loopback:preview": "CheckNetIsolation.exe LoopbackExempt -a -p=S-1-15-2-424268864-5579737-879501358-346833251-474568803-887069379-4040235476"
+	},
+	"dependencies": {
+		"@bedrock-core/db": "workspace:^",
+		"@bedrock-core/server-runtime": "workspace:^",
+		"@bedrock-core/sync": "workspace:^",
+		"@minecraft/server": "*",
+		"@minecraft/server-gametest": "*",
+		"@minecraft/server-ui": "*"
+	},
+	"devDependencies": {
+		"@eslint/js": "*",
+		"@eslint/json": "*",
+		"@stylistic/eslint-plugin": "*",
+		"eslint": "*",
+		"eslint-plugin-minecraft-linting": "*",
+		"globals": "*",
+		"typescript": "*",
+		"typescript-eslint": "*"
+	},
+	"packageManager": "yarn@4.9.4"
+}
