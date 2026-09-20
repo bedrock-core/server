@@ -47,17 +47,18 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@bedrock-core/bds-runner@portal:../bds-runner::locator=%40bedrock-core%2Fserver%40workspace%3A.":
-  version: 0.0.0-use.local
-  resolution: "@bedrock-core/bds-runner@portal:../bds-runner::locator=%40bedrock-core%2Fserver%40workspace%3A."
+"@bedrock-core/bds-runner@npm:^0.1.0":
+  version: 0.1.0
+  resolution: "@bedrock-core/bds-runner@npm:0.1.0"
   dependencies:
     jiti: "npm:^2.7.0"
     prismarine-nbt: "npm:^2.7.0"
     yauzl: "npm:^3.2.0"
   bin:
-    bc-bds: ./bin/bc-bds.mjs
+    bc-bds: bin/bc-bds.mjs
+  checksum: 10c0/963172c97f9b94aef827e5ec82f7db7ae7060aa2cb297edbee05b5391d5af871b311daae3b09d81aaa5fb600aea599e7c41c153e7f331af03aff7cec39b8c264
   languageName: node
-  linkType: soft
+  linkType: hard
 
 "@bedrock-core/db@workspace:*, @bedrock-core/db@workspace:^, @bedrock-core/db@workspace:packages/db":
   version: 0.0.0-use.local
@@ -151,7 +152,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@bedrock-core/server@workspace:."
   dependencies:
-    "@bedrock-core/bds-runner": "npm:*"
+    "@bedrock-core/bds-runner": "npm:^0.1.0"
     "@bedrock-core/db": "workspace:*"
     "@bedrock-core/i18n": "workspace:*"
     "@bedrock-core/observable": "workspace:*"

@@ -33,7 +33,8 @@
 		"access": "public"
 	},
 	"files": [
-		"src"
+		"src/**/*",
+		"!src/**/__tests__/**"
 	],
 	"sideEffects": false,
 	"scripts": {

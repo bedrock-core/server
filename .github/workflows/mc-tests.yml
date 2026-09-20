@@ -3,8 +3,7 @@
 # opt in with the `run-mc-tests` label on a PR, or let it run on main.
 #
 # Nothing is checked out beside this repo: `@bedrock-core/bds-runner` installs from npm and the
-# Regolith filters are pinned to published tags. Until the root `resolutions` carry versions
-# instead of `portal:` entries, this cannot install — that swap is the release step.
+# Regolith filters are pinned to published tags.
 name: GameTests (BDS)
 
 on:

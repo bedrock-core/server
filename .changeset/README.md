@@ -31,7 +31,7 @@ The **Release** workflow (`.github/workflows/publish.yml`) has two jobs:
   a push.
 - **A manual run** (Actions, Release, Run workflow) after that PR merges runs
   `yarn release`: `lint:libs`, `build:libs`, `scripts/publish-tarballs.mjs`,
-  `changeset tag` and `scripts/tag-meta.mjs`. Each changed package goes to npm
+  and `scripts/tag-packages.mjs`. Each changed package goes to npm
   through trusted publishing (OIDC), with no npm token, and is tagged
   `@bedrock-core/<name>@<version>`.
 

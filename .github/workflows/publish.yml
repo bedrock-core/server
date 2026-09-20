@@ -14,8 +14,7 @@ name: Release
 # the GameTest fixtures and their Regolith toolchain stay out of a release.
 #
 # Nothing is checked out beside this repo: every dependency resolves from the
-# registry. Until the root `resolutions` carry versions instead of `portal:`
-# entries, this cannot install — that swap is the release step.
+# registry, including the published BDS runner used by the test fixtures.
 #
 # NOTE: opening the Version PR needs "Allow GitHub Actions to create and approve
 # pull requests" enabled under Settings → Actions → General. If that is off,
@@ -71,7 +70,7 @@ jobs:
 
   publish:
     name: Publish to npm
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
 
     defaults:
