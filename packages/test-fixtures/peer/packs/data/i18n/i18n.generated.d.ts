@@ -13,9 +13,7 @@ declare module '@bedrock-core/generated/i18n' {
 		/** locale → REAL key → value: .lang passthrough (guides, hand-written) for measurement */
 		readonly extra: Record<string, Record<string, string>>;
 		/** Type-only: the tree the t()/key()/raw() selectors navigate. Absent at runtime. */
-		readonly resources?: Omit<Own, 'vanilla'> & {
-			readonly vanilla: import('@bedrock-core/generated/i18n-vanilla').VanillaResources;
-		};
+		readonly resources?: Own;
 	};
 	export default bundle;
 }

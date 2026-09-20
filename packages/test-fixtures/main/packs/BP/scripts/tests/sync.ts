@@ -14,7 +14,7 @@
 import { system } from '@minecraft/server';
 import { type Test, register } from '@minecraft/server-gametest';
 import { Bus, MAX_MESSAGE } from '@bedrock-core/sync';
-import { Runtime, core, shared } from '@bedrock-core/server-runtime';
+import { Runtime, core, registerShared } from '@bedrock-core/server-runtime';
 
 const STRUCTURE = 'core:empty';
 
@@ -183,7 +183,7 @@ gametest('sync_late_joiner_snapshot', (test) => {
   const owner = new Runtime();
   const { shared: own } = owner.register({
     manifest: { creator: 'test', pack: 'late_owner', packName: 'Owner', version: '1.0.0' },
-    shared: shared({ volume: 1, motd: 'quiet' }),
+    shared: registerShared({ volume: 1, motd: 'quiet' }),
   });
   let late: Runtime | undefined;
 

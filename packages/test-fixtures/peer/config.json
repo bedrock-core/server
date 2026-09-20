@@ -13,6 +13,30 @@
 			"core": {
 				"url": "github.com/bedrock-core/regolith-filters",
 				"version": "1.0.0"
+			},
+			"manifest": {
+				"url": "github.com/bedrock-core/regolith-filters",
+				"version": "2.0.0"
+			},
+			"generator": {
+				"url": "github.com/bedrock-core/regolith-filters",
+				"version": "1.2.0"
+			},
+			"guides": {
+				"url": "github.com/bedrock-core/regolith-filters",
+				"version": "1.2.0"
+			},
+			"i18n": {
+				"url": "github.com/bedrock-core/regolith-filters",
+				"version": "1.2.0"
+			},
+			"ui-compiler": {
+				"url": "github.com/bedrock-core/regolith-filters",
+				"version": "0.1.0"
+			},
+			"bundler": {
+				"url": "github.com/bedrock-core/regolith-filters",
+				"version": "1.2.0"
 			}
 		},
 		"formatVersion": "1.4.0",

@@ -115,7 +115,7 @@
 	"devDependencies": {
 		"@bedrock-core/bds-runner": "*",
 		"@changesets/changelog-github": "^0.7.0",
-		"@changesets/cli": "^2.31.0",
+		"@changesets/cli": "3.0.3",
 		"@eslint/js": "^10.0.1",
 		"@eslint/json": "^2.0.0",
 		"@minecraft/server": "*",
