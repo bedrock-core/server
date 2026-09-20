@@ -1,6 +1,6 @@
 {
 	"name": "@bedrock-core/observable",
-	"version": "0.0.0",
+	"version": "0.1.0",
 	"description": "The reactive primitive for @bedrock-core: observable values with get / set / subscribe, computed values, effects and batching, plus a bridge to Minecraft's data-driven UI observables",
 	"keywords": [
 		"minecraft",
