@@ -37,13 +37,15 @@ jobs:
         with:
           path: server
 
+      # setup-node's Yarn cache invokes `yarn` during the action, so Corepack
+      # must select the packageManager-pinned Yarn before setup-node starts.
+      - run: corepack enable
+
       - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: yarn
           cache-dependency-path: server/yarn.lock
-
-      - run: corepack enable
 
       - run: yarn install --immutable
 
