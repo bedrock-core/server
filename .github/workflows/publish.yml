@@ -117,3 +117,8 @@ jobs:
           # id-token permission above + a trusted publisher configured per package
           # on npmjs.com pointing at this repo and workflow file).
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish root meta Git tag and GitHub release
+        run: node scripts/release-root-package.mjs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
