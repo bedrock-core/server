@@ -15,8 +15,9 @@
  * new CustomForm(p, 'Settings').slider('Volume', volume, 0, 100).show().then(dispose);
  * ```
  *
- * The bridge is the only part that imports `@minecraft/server-ui`, so this subpath carries it as an
- * optional peer dependency: a pack that reaches for `toNative` declares the module in its manifest.
+ * `debounce(source, afterTicks(ticks))` publishes the latest source value after a quiet period
+ * measured in Minecraft ticks. The Minecraft adapters import `@minecraft/server` and
+ * `@minecraft/server-ui`; a pack using this entry declares both modules in its manifest.
  */
 export * from '@bedrock-core/observable';
 export * from '@bedrock-core/observable/minecraft';

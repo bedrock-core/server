@@ -95,6 +95,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@bedrock-core/observable@workspace:packages/observable"
   dependencies:
+    "@minecraft/server": "npm:*"
     "@minecraft/server-ui": "npm:*"
     "@stylistic/eslint-plugin": "npm:*"
     eslint: "npm:*"
@@ -102,8 +103,11 @@ __metadata:
     typescript-eslint: "npm:*"
     vitest: "npm:*"
   peerDependencies:
+    "@minecraft/server": ">=2.0.0"
     "@minecraft/server-ui": ">=2.1.0"
   peerDependenciesMeta:
+    "@minecraft/server":
+      optional: true
     "@minecraft/server-ui":
       optional: true
   languageName: unknown

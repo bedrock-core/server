@@ -43,6 +43,7 @@
 		"lint": "eslint ."
 	},
 	"devDependencies": {
+		"@minecraft/server": "*",
 		"@minecraft/server-ui": "*",
 		"@stylistic/eslint-plugin": "*",
 		"eslint": "*",
@@ -51,9 +52,13 @@
 		"vitest": "*"
 	},
 	"peerDependencies": {
+		"@minecraft/server": ">=2.0.0",
 		"@minecraft/server-ui": ">=2.1.0"
 	},
 	"peerDependenciesMeta": {
+		"@minecraft/server": {
+			"optional": true
+		},
 		"@minecraft/server-ui": {
 			"optional": true
 		}

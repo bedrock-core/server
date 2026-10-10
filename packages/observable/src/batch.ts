@@ -3,7 +3,7 @@
  *
  * Notification is synchronous by default: a listener runs inside the `set` that changed the
  * value, in the same tick, because a `before` event handler that flips a value must see its
- * listeners run before the event resolves. `batch` is the one place that defers — everything
+ * listeners run before the event resolves. `batch` defers notifications — everything
  * queued inside it is delivered once, at the end, in the order it was queued.
  *
  * A flush is itself a batching window: a listener that sets another observable during delivery

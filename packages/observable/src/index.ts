@@ -11,6 +11,9 @@ export type {
 export { computed, effect } from './computed';
 export type { Computed } from './computed';
 
+export { debounce } from './debounce';
+export type { Debounced, DebounceScheduler } from './debounce';
+
 export { batch } from './batch';
 
 export { last } from './last';

@@ -51,7 +51,7 @@ function isUpdater<T>(next: T | ((prev: T) => T)): next is (prev: T) => T {
 }
 
 /**
- * The observable behind `observable()`, `computed()` and `last()`: synchronous delivery, `equals`
+ * The observable behind `observable()`, `computed()`, `last()` and `debounce()`: synchronous delivery, `equals`
  * gating, listener isolation, and deferral inside a batch.
  */
 export class ObservableImpl<T> implements Observable<T>, Flushable {
