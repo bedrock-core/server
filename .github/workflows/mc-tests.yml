@@ -1,9 +1,8 @@
-# The slow gate: builds the test addons with Regolith and runs their GameTests on a real Bedrock
+# The slow gate: builds the test addons and runs their GameTests on a real Bedrock
 # Dedicated Server. Kept off every-push because it downloads a ~200 MB server and takes minutes;
 # opt in with the `run-mc-tests` label on a PR, or let it run on main.
 #
-# Nothing is checked out beside this repo: `@bedrock-core/bds-runner` installs from npm and the
-# Regolith filters are pinned to published tags.
+# Build and server tooling install from npm.
 name: GameTests (BDS)
 
 on:
@@ -16,9 +15,6 @@ on:
 concurrency:
   group: mc-tests-${{ github.ref }}
   cancel-in-progress: true
-
-env:
-  REGOLITH_VERSION: '1.8.0'
 
 jobs:
   gametest:
@@ -49,13 +45,6 @@ jobs:
 
       - run: yarn install --immutable
 
-      - name: Set up Regolith
-        uses: bedrock-core/setup-regolith@1.0.1
-        with:
-          regolith-version: ${{ env.REGOLITH_VERSION }}
-          resolvers: |
-            github.com/bedrock-core/regolith-filters
-
       - name: Read the pinned server version
         id: bds
         run: echo "version=$(jq -r .version bds-runner.json)" >> "$GITHUB_OUTPUT"
@@ -70,12 +59,7 @@ jobs:
 
       - run: yarn bds:fetch
 
-      # Installs the url-pinned bundler and, for the filters run from the sibling checkout, their
-      # npm dependencies — Regolith does that for local-script filters too.
-      - run: yarn regolith-install
-
-      # Both addons are built and deployed into one world: the last test asserts that the Shop pack
-      # is registered with the live runtime, so it can only pass with both installed.
+      # Both fixtures are loaded into one world for cross-pack discovery checks.
       - name: GameTests
         run: yarn test:mc
 

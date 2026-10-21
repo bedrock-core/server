@@ -11,7 +11,7 @@ name: Release
 #     has merged → the changed packages are published to npm and tagged.
 #
 # Only the publishable libraries are installed, with `yarn workspaces focus`, so
-# the GameTest fixtures and their Regolith toolchain stay out of a release.
+# the GameTest fixtures stay out of a release.
 #
 # Nothing is checked out beside this repo: every dependency resolves from the
 # registry, including the published BDS runner used by the test fixtures.

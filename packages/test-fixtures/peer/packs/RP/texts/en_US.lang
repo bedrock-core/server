@@ -1,2 +1,0 @@
-## Registry display strings live in packs/data/i18n/<locale>.ts — the i18n filter
-## regenerates them here (namespaced, marker-delimited section) on every build.

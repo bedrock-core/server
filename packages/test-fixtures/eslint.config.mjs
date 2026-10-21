@@ -39,13 +39,14 @@ export default defineConfig([
 
   {
     ignores: [
-      ".*/**",           // Any directory starting with dot (.yarn, .vscode, .regolith, etc.)
+      ".*/**",           // Root directories starting with dot (.yarn, .vscode, etc.)
+      "**/.bedrock-core/**", // Builder cache and generated declarations in each pack.
       ".*",              // Any file starting with dot
       "node_modules/**",
       "**/*.generated.*", // Filter-generated files (i18n bundle + declarations)
       "**/*.*js",        // Generated JS files
       "filters/**",      // The filters directory
-      "build/**",        // Build output
+      "**/build/**",     // Build output in each pack.
       "*.json",          // Root level JSON files (config.json, package.json, tsconfig.json)
       "*.md",            // Root level markdown files
       "*.mjs",           // Root level mjs files (like this config)

@@ -1,119 +1,92 @@
 {
-	"$schema": "https://raw.githubusercontent.com/Bedrock-OSS/regolith-schemas/main/config/v1.4.json",
-	"author": "DrAv0011",
-	"description": "Second pack for the cross-pack discovery test",
-	"name": "core-server-fixture-peer",
-	"packs": {
-		"behaviorPack": "./packs/BP",
-		"resourcePack": "./packs/RP"
-	},
-	"regolith": {
-		"dataPath": "./packs/data",
-		"filterDefinitions": {
-			"core": {
-				"url": "github.com/bedrock-core/regolith-filters",
-				"version": "1.0.0"
-			},
-			"manifest": {
-				"url": "github.com/bedrock-core/regolith-filters",
-				"version": "2.0.0"
-			},
-			"generator": {
-				"url": "github.com/bedrock-core/regolith-filters",
-				"version": "1.2.0"
-			},
-			"guides": {
-				"url": "github.com/bedrock-core/regolith-filters",
-				"version": "1.2.0"
-			},
-			"i18n": {
-				"url": "github.com/bedrock-core/regolith-filters",
-				"version": "1.2.0"
-			},
-			"ui-compiler": {
-				"url": "github.com/bedrock-core/regolith-filters",
-				"version": "0.1.0"
-			},
-			"bundler": {
-				"url": "github.com/bedrock-core/regolith-filters",
-				"version": "1.2.0"
-			}
-		},
-		"formatVersion": "1.4.0",
-		"profiles": {
-			"default": {
-				"export": {
-					"build": "standard",
-					"readOnly": false,
-					"target": "development"
-				},
-				"filters": [
-					{
-						"filter": "core",
-						"settings": {
-							"shared": {
-								"namespace": "core_fixture_peer",
-								"pretty": {
-									"indent": "tab"
-								}
-							},
-							"guides": false,
-							"ui-compiler": false,
-							"bundler": {
-								"debug": true
-							}
-						}
-					}
-				]
-			},
-			"build": {
-				"export": {
-					"build": "standard",
-					"readOnly": false,
-					"target": "local"
-				},
-				"filters": [
-					{
-						"filter": "core",
-						"settings": {
-							"shared": {
-								"namespace": "core_fixture_peer",
-								"pretty": false
-							},
-							"guides": false,
-							"ui-compiler": false,
-							"bundler": {
-								"debug": true
-							}
-						}
-					}
-				]
-			},
-			"build-test": {
-				"export": {
-					"build": "standard",
-					"bpPath": "./build/test/BP",
-					"readOnly": false,
-					"rpPath": "./build/test/RP",
-					"target": "exact"
-				},
-				"filters": [
-					{
-						"filter": "core",
-						"settings": {
-							"shared": {
-								"namespace": "core_fixture_peer",
-								"pretty": false
-							},
-							"guides": false,
-							"ui-compiler": false,
-							"bundler": {
-								"debug": true
-							}
-						}
-					}
-				]
-			}
-		}
-	}
+  "$schema": "../../../node_modules/@bedrock-core/builder/schemas/config.schema.json",
+  "targetVersion": "1.26.50",
+  "namespace": "core_fixture_peer",
+  "name": "core-server-fixture-peer",
+  "description": "Second pack for the cross-pack discovery test",
+  "authors": [
+    "DrAv0011"
+  ],
+  "packs": {
+    "behaviorPack": "./packs/BP",
+    "resourcePack": "./packs/RP"
+  },
+  "bedrockCore": {
+    "formatVersion": "1.0.0",
+    "profiles": {
+      "default": {
+        "stages": {
+          "manifest": {
+            "pretty": {
+              "indent": "tab"
+            }
+          },
+          "generator": false,
+          "guides": false,
+          "i18n": {
+            "owner": "behaviorPack",
+            "resourcePack": "resourcePack",
+            "sourceDir": "i18n"
+          },
+          "ui-compiler": false,
+          "bundler": {
+            "pretty": {
+              "indent": "tab"
+            },
+            "debug": true
+          }
+        },
+        "export": {
+          "behaviorPack": "%APPDATA%/Minecraft Bedrock/Users/Shared/games/com.mojang/development_behavior_packs/core-server-fixture-peer_bp",
+          "resourcePack": "%APPDATA%/Minecraft Bedrock/Users/Shared/games/com.mojang/development_resource_packs/core-server-fixture-peer_rp"
+        }
+      },
+      "build": {
+        "stages": {
+          "manifest": {
+            "pretty": false
+          },
+          "generator": false,
+          "guides": false,
+          "i18n": {
+            "owner": "behaviorPack",
+            "resourcePack": "resourcePack",
+            "sourceDir": "i18n"
+          },
+          "ui-compiler": false,
+          "bundler": {
+            "pretty": false,
+            "debug": true
+          }
+        },
+        "export": {
+          "behaviorPack": "./build/BP",
+          "resourcePack": "./build/RP"
+        }
+      },
+      "build-test": {
+        "stages": {
+          "manifest": {
+            "pretty": false
+          },
+          "generator": false,
+          "guides": false,
+          "i18n": {
+            "owner": "behaviorPack",
+            "resourcePack": "resourcePack",
+            "sourceDir": "i18n"
+          },
+          "ui-compiler": false,
+          "bundler": {
+            "pretty": false,
+            "debug": true
+          }
+        },
+        "export": {
+          "behaviorPack": "./build/test/BP",
+          "resourcePack": "./build/test/RP"
+        }
+      }
+    }
+  }
 }

@@ -4,11 +4,12 @@
 	"private": true,
 	"description": "GameTest fixtures for the Bedrock Core server runtime: the test pack and the peer it discovers",
 	"scripts": {
-		"regolith-install": "cd main && regolith install-all && cd ../peer && regolith install-all",
-		"build": "cd main && regolith run build && cd ../peer && regolith run build",
-		"build:test": "cd main && regolith run build-test && cd ../peer && regolith run build-test",
-		"watch": "cd main && regolith watch",
-		"watch:test": "cd main && regolith watch test",
+		"build": "bc-builder build main/config.json build && bc-builder build peer/config.json build",
+		"build:test": "bc-builder build main/config.json build-test && bc-builder build peer/config.json build-test",
+		"watch": "bc-builder watch main/config.json default",
+		"watch:peer": "bc-builder watch peer/config.json default",
+		"watch:test": "bc-builder watch main/config.json test",
+		"watch:test:peer": "bc-builder watch peer/config.json default",
 		"lint": "eslint .",
 		"loopback": "CheckNetIsolation.exe LoopbackExempt -a -p=S-1-15-2-1958404141-86561845-1752920682-3514627264-368642714-62675701-733520436",
 		"loopback:preview": "CheckNetIsolation.exe LoopbackExempt -a -p=S-1-15-2-424268864-5579737-879501358-346833251-474568803-887069379-4040235476"
@@ -22,6 +23,7 @@
 		"@minecraft/server-ui": "*"
 	},
 	"devDependencies": {
+		"@bedrock-core/builder": "0.1.0",
 		"@eslint/js": "*",
 		"@eslint/json": "*",
 		"@stylistic/eslint-plugin": "*",

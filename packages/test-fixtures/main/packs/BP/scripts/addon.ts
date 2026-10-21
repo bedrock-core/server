@@ -1,7 +1,6 @@
 /**
- * What the fixture says about itself. Display fields are plain text rather than
- * translation keys: the fixture ships no .lang, and Bedrock falls back to the
- * literal string when no key matches.
+ * What the fixture says about itself. Registry display fields are literal
+ * strings; pack translations are independent of this manifest.
  */
 export const manifest = {
   creator: 'core',

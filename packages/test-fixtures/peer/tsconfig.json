@@ -17,22 +17,14 @@
 		"noFallthroughCasesInSwitch": true,
 		"skipLibCheck": true,
 		"esModuleInterop": true,
-		"forceConsistentCasingInFileNames": true,
-		"paths": {
-			"@bedrock-core/generated/i18n": [
-				"./packs/data/i18n/i18n.generated.json"
-			],
-			"@bedrock-core/generated/ui": [
-				"./packs/data/ui/ui.generated.ts"
-			]
-		}
+		"forceConsistentCasingInFileNames": true
 	},
 	"files": [
 		"packs/BP/scripts/main.ts"
 	],
 	"include": [
 		"packs/BP/scripts/**/*",
-		"packs/data/**/*.d.ts"
+		".bedrock-core/generated/i18n/**/*.d.ts"
 	],
 	"exclude": [
 		"node_modules",

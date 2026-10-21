@@ -19,15 +19,7 @@
 		"preserveConstEnums": true,
 		"noImplicitReturns": true,
 		"allowJs": true,
-		"resolveJsonModule": true,
-		"paths": {
-			"@bedrock-core/generated/i18n": [
-				"./packs/data/i18n/i18n.generated.json"
-			],
-			"@bedrock-core/generated/ui": [
-				"./packs/data/ui/ui.generated.ts"
-			]
-		}
+		"resolveJsonModule": true
 	},
 	// Single entry point for the compilation
 	"files": [
@@ -35,7 +27,7 @@
 	],
 	"include": [
 		"packs/BP/scripts/**/*",
-		"packs/data/**/*.d.ts"
+		".bedrock-core/generated/i18n/**/*.d.ts"
 	],
 	"exclude": [
 		"node_modules",

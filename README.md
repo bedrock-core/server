@@ -1,6 +1,6 @@
 # @bedrock-core/server
 
-A framework for Minecraft Bedrock addons, with packages for cross-addon communication, persistence, reactive state, and translations.
+Build Minecraft Bedrock addons that work together. A shared foundation for addon discovery, messaging, live state, persistent storage, and translations.
 
 https://bedrock-core.drav.dev/docs/server
 
