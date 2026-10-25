@@ -1,5 +1,17 @@
 # @bedrock-core/server
 
+## 0.2.1
+
+### Patch Changes
+
+- Curates:
+
+  - @bedrock-core/db@0.1.1
+  - @bedrock-core/i18n@0.2.0
+  - @bedrock-core/observable@1.0.0
+  - @bedrock-core/server-runtime@0.2.1
+  - @bedrock-core/sync@1.0.0
+
 ## 0.2.0
 
 ### Patch Changes

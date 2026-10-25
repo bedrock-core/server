@@ -1,5 +1,15 @@
 # @bedrock-core/observable
 
+## 1.0.0
+
+### Major Changes
+
+- [`dbd986e`](https://github.com/bedrock-core/server/commit/dbd986eab69a2eddfbb926c781adacf2df6db0cd) Thanks [@drav0011](https://github.com/drav0011)! - Release the observable and synchronization packages as stable 1.0 APIs. Their public exports follow semantic versioning independently of the server runtime.
+
+### Minor Changes
+
+- [`7aec84d`](https://github.com/bedrock-core/server/commit/7aec84d48f48b2758cdc55d470d765de262fe9db) Thanks [@drav0011](https://github.com/drav0011)! - Add `debounce(source, schedule, options?)` for read-only values that publish the latest source change after a quiet period, with cancellation and disposal. Add `afterTicks(ticks)` to the `/minecraft` entry for reusable Minecraft tick scheduling, and declare `@minecraft/server` as an optional peer dependency. Both helpers are re-exported through `@bedrock-core/server/observable`.
+
 ## 0.1.0
 
 ### Minor Changes
