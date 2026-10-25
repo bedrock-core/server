@@ -183,7 +183,7 @@ __metadata:
     "@types/node": "npm:25.9.9"
     ajv: "npm:8.17.1"
   bin:
-    bc-builder: ./dist/bin/builder.js
+    bc-builder: dist/bin/builder.js
   checksum: 10c0/34919fdd4d1e67cc39b0f7a00de00ec2fca4d38eaf562d61732c292dccc7512abe7edd079953aca2eec9c79dc07a4397a6083d4f1f8619d90b0caa986a2c7c52
   languageName: node
   linkType: hard
