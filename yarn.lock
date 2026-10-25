@@ -254,6 +254,7 @@ __metadata:
     eslint: "npm:*"
     typescript: "npm:*"
     typescript-eslint: "npm:*"
+    vitest: "npm:*"
   peerDependencies:
     "@minecraft/server": ">=2.9.0 || >=2.10.0-0"
   languageName: unknown

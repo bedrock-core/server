@@ -51,7 +51,8 @@
 		"@stylistic/eslint-plugin": "*",
 		"eslint": "*",
 		"typescript": "*",
-		"typescript-eslint": "*"
+		"typescript-eslint": "*",
+		"vitest": "*"
 	},
 	"peerDependencies": {
 		"@minecraft/server": ">=2.9.0 || >=2.10.0-0"
