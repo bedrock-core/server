@@ -79,6 +79,7 @@ __metadata:
     "@bedrock-core/builder-plugin": "npm:0.1.0"
     esbuild: "npm:0.25.12"
     typescript: "npm:5.9.3"
+  checksum: 10c0/c2fe32b64a13c2a192d1ff3e8006eca04113cb7b68e604a9c5e147e3975e86426ae91f1046919d1c2c5413def0cec819fd2f8525afde81cba7394d4b6b9cdd74
   languageName: node
   linkType: hard
 
@@ -90,6 +91,7 @@ __metadata:
     "@bedrock-core/builder-plugin": "npm:0.1.0"
     json-schema-to-typescript: "npm:15.0.4"
     typescript: "npm:5.9.3"
+  checksum: 10c0/2d57456016f6382499c5af6bc0e370185a64c13ee9808eb6b2f76a95252cc5b920ce9cc55b61f759794b94be9fccc0bb0edd61e1e6c8a96a3a84390302fba19d
   languageName: node
   linkType: hard
 
@@ -109,6 +111,7 @@ __metadata:
     remark-parse: "npm:^11.0.0"
     unified: "npm:^11.0.5"
     yaml: "npm:^2.8.0"
+  checksum: 10c0/107021152ddba6d8c35989f115f5c16c6f5a839f097b8a91bba5a153021d44a45335dd2f8792519643f72c2683b6867d638a4f3980aece7a6feaaa2170454fb3
   languageName: node
   linkType: hard
 
@@ -118,6 +121,7 @@ __metadata:
   dependencies:
     "@bedrock-core/builder-bundler": "npm:0.1.0"
     "@bedrock-core/builder-plugin": "npm:0.1.0"
+  checksum: 10c0/e3fec145df14deacecb5e60f52b37f369609c51193694abd00c9c581d56a3efc5a7f0ca9faf6a44f5b4448dd1430a79bf03c07da306152e0f502af9a8266bcfb
   languageName: node
   linkType: hard
 
@@ -126,6 +130,7 @@ __metadata:
   resolution: "@bedrock-core/builder-manifest@npm:0.1.0"
   dependencies:
     "@bedrock-core/builder-plugin": "npm:0.1.0"
+  checksum: 10c0/a21e24e625c38195aefa64d229e202d868ceac17a7a9c0c008696053d8b66168219cdaff34730e1ae7a83d42cf388efbac0f9fb8d79bcfbf3eb235893813e2c1
   languageName: node
   linkType: hard
 
@@ -134,6 +139,7 @@ __metadata:
   resolution: "@bedrock-core/builder-plugin@npm:0.1.0"
   dependencies:
     esbuild: "npm:0.25.12"
+  checksum: 10c0/8ab52ecfdf09adbd36eabdb5475a9e96a961b0941ea35e2af2c1465cd535dd3f04577963cb4cda71972c285463970f88753dcdaee9a558a5ce066eda4d57e151
   languageName: node
   linkType: hard
 
@@ -146,6 +152,7 @@ __metadata:
     "@bedrock-core/builder-plugin": "npm:0.1.0"
     esbuild: "npm:0.25.12"
     typescript: "npm:5.9.3"
+  checksum: 10c0/5ac6f2ed46b93c1aa07dd515b1be3cca8a0a9fa9bcd5867b9613777c0cce1ed33bcb68690a495f4f21185fe403b0da781f1a4ec81cdc1db6bb7357ceeaa08546
   languageName: node
   linkType: hard
 
@@ -157,6 +164,7 @@ __metadata:
     ajv: "npm:8.17.1"
     jsonc-parser: "npm:3.3.1"
     picomatch: "npm:^4.0.2"
+  checksum: 10c0/47ece053b25378bbebd171ae0a6e5b90477cb8d5269bde3c0d09777a20785ee8b9891463ba3d742143ea80c8602f49284e81f2d4dddcaf63478371a02d170d83
   languageName: node
   linkType: hard
 
@@ -176,6 +184,7 @@ __metadata:
     ajv: "npm:8.17.1"
   bin:
     bc-builder: ./dist/bin/builder.js
+  checksum: 10c0/34919fdd4d1e67cc39b0f7a00de00ec2fca4d38eaf562d61732c292dccc7512abe7edd079953aca2eec9c79dc07a4397a6083d4f1f8619d90b0caa986a2c7c52
   languageName: node
   linkType: hard
 
