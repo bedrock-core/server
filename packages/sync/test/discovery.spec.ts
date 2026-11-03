@@ -26,7 +26,7 @@ const { Discovery } = await import('../src/discovery');
 const { PEER_TTL_TICKS } = await import('../src/constants');
 
 /** A `Bus` double with only the members `Discovery` reaches for. */
-function fakeBus(selfId: string): { bus: Bus; announce: (src: string, data: unknown) => void } {
+function fakeBus(selfId: string): { bus: Bus; announce: (src: string, data: unknown, instanceId?: string) => void } {
   const handlers = new Map<string, Set<EnvelopeHandler>>();
 
   const bus = {
@@ -50,11 +50,11 @@ function fakeBus(selfId: string): { bus: Bus; announce: (src: string, data: unkn
     forgetPeer: (): void => { /* likewise */ },
   };
 
-  const announce = (src: string, data: unknown): void => {
+  const announce = (src: string, data: unknown, instanceId = src + '-iid'): void => {
     const envelope: Envelope = {
       v: PROTOCOL_MIN,
       src,
-      iid: `${src}-iid`,
+      iid: instanceId,
       type: MessageType.Announce,
       mid: `${src}/1`,
       data,
@@ -73,7 +73,7 @@ function payload(overrides: Record<string, unknown> = {}): Record<string, unknow
 
 function setup(): {
   discovery: InstanceType<typeof Discovery>;
-  announce: (src: string, data: unknown) => void;
+  announce: (src: string, data: unknown, instanceId?: string) => void;
   sweep: () => void;
 } {
   engine.tick = 0;
@@ -186,6 +186,27 @@ describe('Discovery.peers', () => {
 });
 
 describe('Discovery.incompatiblePeers', () => {
+  it('retains announce metadata and republishes changes without repeating identical heartbeats', () => {
+    const { discovery, announce } = setup();
+    const listener = vi.fn();
+    const range = { pmin: PROTOCOL_MAX + 5, pmax: PROTOCOL_MAX + 9 };
+
+    discovery.incompatiblePeers.subscribe(listener);
+    announce('core', payload({ ...range, meta: { runtimeVersion: '1.0.0' } }));
+
+    expect(discovery.incompatiblePeers.get()[0]?.meta).toEqual({ runtimeVersion: '1.0.0' });
+    announce('core', payload({ ...range, meta: { runtimeVersion: '1.0.0' } }));
+    expect(listener).toHaveBeenCalledTimes(1);
+
+    announce('core', payload({ ...range, meta: { runtimeVersion: '1.0.1' } }));
+    expect(discovery.incompatiblePeers.get()[0]?.meta).toEqual({ runtimeVersion: '1.0.1' });
+    expect(listener).toHaveBeenCalledTimes(2);
+
+    announce('core', payload(range));
+    expect(discovery.incompatiblePeers.get()[0]?.meta).toBeUndefined();
+    expect(listener).toHaveBeenCalledTimes(3);
+  });
+
   it('publishes an unreachable node once and stays quiet on its heartbeats', () => {
     const { discovery, announce } = setup();
     const listener = vi.fn();
@@ -218,5 +239,39 @@ describe('Discovery.incompatiblePeers', () => {
     expect(listener).toHaveBeenCalledTimes(1);
     expect(discovery.incompatiblePeers.get()).toEqual([]);
     expect(discovery.peers.get().map(peer => peer.id)).toEqual(['old']);
+  });
+});
+
+describe('discovery instance and event delivery', () => {
+  it('publishes a changed running instance even with identical advertised metadata', () => {
+    const { bus, announce } = fakeBus('self');
+    const discovery = new Discovery(bus);
+    const changed = vi.fn();
+
+    discovery.start();
+    discovery.peers.subscribe(changed);
+    announce('peer', payload(), 'first');
+    announce('peer', payload(), 'first');
+    expect(changed).toHaveBeenCalledTimes(1);
+    announce('peer', payload(), 'second');
+    expect(changed).toHaveBeenCalledTimes(2);
+    expect(discovery.getPeer('peer')?.instanceId).toBe('second');
+    discovery.stop();
+  });
+
+  it('isolates listeners while delivering a peer arrival', () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { bus, announce } = fakeBus('self');
+    const discovery = new Discovery(bus);
+    const later = vi.fn();
+
+    discovery.start();
+    discovery.onPeerUp(() => { throw new Error('listener failed'); });
+    discovery.onPeerUp(later);
+    expect(() => announce('peer', payload())).not.toThrow();
+    expect(later).toHaveBeenCalledTimes(1);
+    expect(error).toHaveBeenCalledTimes(1);
+    discovery.stop();
+    error.mockRestore();
   });
 });

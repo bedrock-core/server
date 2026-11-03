@@ -17,7 +17,6 @@ interface RequestData {
 }
 
 interface ResponseData {
-
   /** The request's message id. */
   rid: string;
   ok: boolean;
@@ -26,6 +25,8 @@ interface ResponseData {
 }
 
 interface Pending {
+  dst: string;
+  instanceId?: string;
   resolve: (value: unknown) => void;
   reject: (error: Error) => void;
   timeoutHandle: number;
@@ -51,7 +52,7 @@ function isResponseData(value: unknown): value is ResponseData {
 export type RequestHandler = (params: unknown, from: string) => unknown | Promise<unknown>;
 
 /** What one `request()` takes beside the target, method and params. */
-export interface RequestOptions { timeoutTicks?: number }
+export interface RequestOptions { timeoutTicks?: number; instanceId?: string }
 
 /** What `new Rpc()` takes beside the bus. */
 export interface RpcOptions { defaultTimeoutTicks?: number }
@@ -83,10 +84,13 @@ export class Rpc {
     this._defaultTimeoutTicks = options.defaultTimeoutTicks ?? DEFAULT_RPC_TIMEOUT_TICKS;
   }
 
+  /** Default request lifetime, also used by resources owned by a call. */
+  get defaultTimeoutTicks(): number { return this._defaultTimeoutTicks; }
+
   start(): void {
     this._disposers.push(
-      this._bus.on(MessageType.Request, env => this.handleRequest(env)),
-      this._bus.on(MessageType.Response, env => this.handleResponse(env)),
+      this._bus.on(MessageType.Request, env => this._handleRequest(env)),
+      this._bus.on(MessageType.Response, env => this._handleResponse(env)),
     );
   }
 
@@ -120,7 +124,7 @@ export class Rpc {
         reject(new Error(`RPC '${method}' to '${dst}' timed out`));
       }, timeoutTicks);
 
-      this._pending.set(mid, { resolve, reject, timeoutHandle });
+      this._pending.set(mid, { dst, instanceId: options.instanceId, resolve, reject, timeoutHandle });
     });
   }
 
@@ -155,31 +159,56 @@ export class Rpc {
     };
   }
 
-  private handleRequest(envelope: Envelope): void {
+  /** Reject calls still waiting for a departed running instance. */
+  forgetPeer(id: string, instanceId: string): void {
+    for (const [mid, pending] of this._pending) {
+      if (pending.dst !== id || (pending.instanceId !== undefined && pending.instanceId !== instanceId)) { continue; }
+
+      this._pending.delete(mid);
+      system.clearRun(pending.timeoutHandle);
+      pending.reject(new Error(`RPC target '${id}' stopped`));
+    }
+  }
+
+  private _handleRequest(envelope: Envelope): void {
     if (!isRequestData(envelope.data)) { return; }
 
     const { method, params } = envelope.data;
     const handler = this._handlers.get(method);
 
+    const respond = (data: ResponseData): void => {
+      try {
+        this._respond(envelope, data);
+      } catch (error) {
+        if (data.ok) { respond({ rid: envelope.mid, ok: false, err: errorMessage(error) }); } else { console.warn('[sync] RPC response failed: ' + errorMessage(error)); }
+      }
+    };
+
     if (!handler) {
-      this.respond(envelope, { rid: envelope.mid, ok: false, err: `unknown method '${method}'` });
+      respond({ rid: envelope.mid, ok: false, err: `unknown method '${method}'` });
 
       return;
     }
 
-    void Promise.resolve()
-      .then(() => handler(params, envelope.src))
-      .then(result => this.respond(envelope, { rid: envelope.mid, ok: true, data: result }))
-      .catch((error: unknown) => this.respond(envelope, { rid: envelope.mid, ok: false, err: errorMessage(error) }));
+    try {
+      const result = handler(params, envelope.src);
+
+      void Promise.resolve(result).then(
+        value => respond({ rid: envelope.mid, ok: true, data: value }),
+        (error: unknown) => respond({ rid: envelope.mid, ok: false, err: errorMessage(error) }),
+      );
+    } catch (error) {
+      respond({ rid: envelope.mid, ok: false, err: errorMessage(error) });
+    }
   }
 
-  private handleResponse(envelope: Envelope): void {
+  private _handleResponse(envelope: Envelope): void {
     if (!isResponseData(envelope.data)) { return; }
 
     const { rid, ok, data: result, err } = envelope.data;
     const pending = this._pending.get(rid);
 
-    if (!pending) { return; }
+    if (!pending || pending.dst !== envelope.src || (pending.instanceId !== undefined && pending.instanceId !== envelope.iid)) { return; }
 
     this._pending.delete(rid);
     system.clearRun(pending.timeoutHandle);
@@ -191,11 +220,11 @@ export class Rpc {
     }
   }
 
-  private respond(to: Envelope, data: ResponseData): void {
+  private _respond(to: Envelope, data: ResponseData): void {
     this._bus.send({ dst: to.src, type: MessageType.Response, data });
   }
 }
 
 function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  try { return error instanceof Error ? error.message : String(error); } catch { return 'RPC handler failed'; }
 }

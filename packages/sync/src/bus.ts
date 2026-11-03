@@ -30,9 +30,8 @@ import { type Envelope, decodeEnvelope, encodeEnvelope } from './envelope';
 import { OutboundQueue } from './queue';
 import { decodeWire, encodeLegacy, tagChunk } from './wire';
 
-/** What every `on*` / `subscribe` returns: call it to stop listening. */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type Unsubscribe = (...args: any[]) => void;
+export type { Unsubscribe } from '@bedrock-core/observable';
+import type { Unsubscribe } from '@bedrock-core/observable';
 
 const EVICT_INTERVAL_TICKS = 20;
 
@@ -70,6 +69,8 @@ export interface BusOptions {
 
   /** Override the auto-generated instance id (mainly for tests). */
   instanceId?: string;
+  /** Optional node policy for accepting traffic from the current running sender. */
+  accept?: (envelope: Envelope) => boolean;
 }
 
 /** The transport: envelopes in and out over one script-event channel, framed, packed and rate-limited. */
@@ -78,6 +79,7 @@ export class Bus {
   private readonly _instanceId: string;
   private readonly _maxMessage: number;
   private readonly _queue: OutboundQueue;
+  private readonly _accept: ((envelope: Envelope) => boolean) | undefined;
   private readonly _reassembler = new Reassembler();
   private readonly _handlers = new Map<string, Set<EnvelopeHandler>>();
   private readonly _peerProtocols = new Map<string, PeerProtocol>();
@@ -88,10 +90,11 @@ export class Bus {
 
   constructor(selfId: string, options: BusOptions = {}) {
     this._selfId = selfId;
+    this._accept = options.accept;
     this._instanceId = options.instanceId ?? `${system.currentTick.toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
     this._maxMessage = options.maxMessage ?? MAX_MESSAGE;
     this._queue = new OutboundQueue({ channel: BUS_CHANNEL, maxMessage: this._maxMessage });
-    this.recomputeBroadcast();
+    this._recomputeBroadcast();
   }
 
   get selfId(): string {
@@ -118,12 +121,12 @@ export class Bus {
    */
   setPeerProtocol(id: string, protocol: number, caps: readonly string[]): void {
     this._peerProtocols.set(id, { protocol, caps });
-    this.recomputeBroadcast();
+    this._recomputeBroadcast();
   }
 
   /** Drop a peer that has gone quiet, letting the world's encoding rise if it was holding it down. */
   forgetPeer(id: string): void {
-    if (this._peerProtocols.delete(id)) { this.recomputeBroadcast(); }
+    if (this._peerProtocols.delete(id)) { this._recomputeBroadcast(); }
   }
 
   /** Subscribe to the bus channel and start the flush + chunk-eviction loops. */
@@ -131,7 +134,7 @@ export class Bus {
     if (this._unsubscribe) { return; }
 
     const handler = system.afterEvents.scriptEventReceive.subscribe(
-      event => this.handleScriptEvent(event),
+      event => this._handleScriptEvent(event),
       { namespaces: [BUS_NAMESPACE] },
     );
 
@@ -154,8 +157,8 @@ export class Bus {
 
   /** Build, frame and queue an envelope. Returns the message id. */
   send(options: SendOptions): string {
-    const mid = options.mid ?? this.nextMid();
-    const protocol = options.protocol ?? this.protocolFor(options.dst);
+    const mid = options.mid ?? this._nextMid();
+    const protocol = options.protocol ?? this._protocolFor(options.dst);
     const envelope: Envelope = {
       v: protocol,
       src: this._selfId,
@@ -173,13 +176,17 @@ export class Bus {
     // heard). Deliver it to local handlers directly, on the next tick to preserve the
     // async semantics of a real hop. This makes RPC-to-self work (e.g. the config UI
     // reading the config of the very addon hosting it).
+    const encoded = encodeEnvelope(envelope);
+
     if (options.dst === this._selfId) {
-      system.run(() => this.dispatch(envelope));
+      const local = decodeEnvelope(encoded);
+
+      if (local === undefined) { throw new Error('invalid loopback envelope'); }
+
+      system.run(() => this._dispatch(local));
 
       return mid;
     }
-
-    const encoded = encodeEnvelope(envelope);
 
     // A reader from before the wire tag takes bare frames and nothing else, so there is no
     // whole-envelope shortcut here and nothing this may be packed with.
@@ -231,7 +238,7 @@ export class Bus {
   }
 
   /** The encoding to use for one destination; `undefined` means a broadcast. */
-  private protocolFor(dst: string | undefined): number {
+  private _protocolFor(dst: string | undefined): number {
     if (dst === undefined) { return this._broadcastProtocol; }
 
     return this._peerProtocols.get(dst)?.protocol ?? PROTOCOL_MIN;
@@ -242,7 +249,7 @@ export class Bus {
    * and whether every one of them can read a packed message. Both rise on their own as the peers
    * holding them down expire, so a world speeds back up once its last old addon is gone.
    */
-  private recomputeBroadcast(): void {
+  private _recomputeBroadcast(): void {
     if (this._peerProtocols.size === 0) {
       this._broadcastProtocol = PROTOCOL_MIN;
       this._queue.setPacking(false);
@@ -263,11 +270,11 @@ export class Bus {
     this._queue.setPacking(packable);
   }
 
-  private nextMid(): string {
+  private _nextMid(): string {
     return `${this._instanceId}/${++this._counter}`;
   }
 
-  private handleScriptEvent(event: ScriptEventCommandMessageAfterEvent): void {
+  private _handleScriptEvent(event: ScriptEventCommandMessageAfterEvent): void {
     if (event.id !== BUS_CHANNEL) { return; }
 
     const wire = decodeWire(event.message);
@@ -275,7 +282,7 @@ export class Bus {
     if (!wire) { return; }
 
     if (wire.kind === 'envelopes') {
-      for (const envelope of wire.envelopes) { this.receive(envelope); }
+      for (const envelope of wire.envelopes) { this._receive(envelope); }
 
       return;
     }
@@ -286,7 +293,7 @@ export class Bus {
 
     const envelope = decodeEnvelope(payload);
 
-    if (envelope) { this.receive(envelope); }
+    if (envelope) { this._receive(envelope); }
   }
 
   /**
@@ -294,15 +301,17 @@ export class Bus {
    * instance id, so a same-src twin is still heard. Self-addressed messages never reach here;
    * `send` loops those back locally.
    */
-  private receive(envelope: Envelope): void {
+  private _receive(envelope: Envelope): void {
     if (envelope.iid === this._instanceId) { return; }
 
-    this.dispatch(envelope);
+    this._dispatch(envelope);
   }
 
   /** Deliver an envelope to its type handlers, unless it is addressed to a different node. */
-  private dispatch(envelope: Envelope): void {
+  private _dispatch(envelope: Envelope): void {
     if (envelope.dst !== undefined && envelope.dst !== this._selfId) { return; }
+
+    if (this._accept !== undefined && !this._accept(envelope)) { return; }
 
     const handlers = this._handlers.get(envelope.type);
 

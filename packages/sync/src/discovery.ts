@@ -30,7 +30,7 @@
 import { system } from '@minecraft/server';
 import { ANNOUNCE_INTERVAL_TICKS, MessageType, PEER_TTL_TICKS, PROTOCOL_MAX, PROTOCOL_MIN, SELF_CAPS } from './constants';
 import { capsFor, negotiateProtocol } from './negotiate';
-import { observable, type Observable, type ReadonlyObservable } from '@bedrock-core/observable';
+import { observable, signal, type Observable, type ReadonlyObservable } from '@bedrock-core/observable';
 import type { Bus, Unsubscribe } from './bus';
 import type { Envelope } from './envelope';
 
@@ -39,6 +39,8 @@ const PEER_SWEEP_INTERVAL_TICKS = 40;
 /** Everything a node advertises about itself. */
 export interface PeerInfo {
   id: string;
+  /** The running instance that owns this namespace. Changes when the peer restarts. */
+  instanceId: string;
   version: string;
   schemaVersion: number;
 
@@ -68,6 +70,9 @@ export interface CollisionInfo {
  */
 export interface IncompatiblePeer {
   id: string;
+
+  /** Opaque metadata attached to the peer's announce. */
+  meta?: Record<string, unknown>;
 
   /** The range the peer advertised. */
   pmin: number;
@@ -114,6 +119,8 @@ function sameMeta(a: Record<string, unknown> | undefined, b: Record<string, unkn
 
 /** Whether two readings of the same peer say the same thing. */
 function sameAdvertisement(a: PeerInfo, b: PeerInfo): boolean {
+  if (a.instanceId !== b.instanceId) { return false; }
+
   return a.version === b.version
     && a.schemaVersion === b.schemaVersion
     && a.protocol === b.protocol
@@ -158,10 +165,10 @@ export class Discovery {
   private readonly _incompatibleList: Observable<readonly IncompatiblePeer[]>
     = observable<readonly IncompatiblePeer[]>([], { label: 'discovery.incompatiblePeers' });
 
-  private readonly _onUp = new Set<PeerListener>();
-  private readonly _onDown = new Set<PeerListener>();
-  private readonly _onCollision = new Set<CollisionListener>();
-  private readonly _onIncompatible = new Set<IncompatibleListener>();
+  private readonly _onUp = signal<PeerInfo>();
+  private readonly _onDown = signal<PeerInfo>();
+  private readonly _onCollision = signal<CollisionInfo>();
+  private readonly _onIncompatible = signal<IncompatiblePeer>();
   private readonly _disposers: Unsubscribe[] = [];
   private readonly _handles: number[] = [];
 
@@ -199,8 +206,8 @@ export class Discovery {
   /** Wire up handlers, announce + whois immediately, then start the heartbeat/sweep loops. */
   start(): void {
     this._disposers.push(
-      this._bus.on(MessageType.Announce, env => this.handleAnnounce(env)),
-      this._bus.on(MessageType.Whois, env => this.handleWhois(env)),
+      this._bus.on(MessageType.Announce, env => this._handleAnnounce(env)),
+      this._bus.on(MessageType.Whois, env => this._handleWhois(env)),
     );
 
     this.announce();
@@ -208,7 +215,7 @@ export class Discovery {
 
     this._handles.push(
       system.runInterval(() => this.announce(), this._announceIntervalTicks),
-      system.runInterval(() => this.sweep(), PEER_SWEEP_INTERVAL_TICKS),
+      system.runInterval(() => this._sweep(), PEER_SWEEP_INTERVAL_TICKS),
     );
   }
 
@@ -230,6 +237,13 @@ export class Discovery {
     this._bus.send({ type: MessageType.Announce, data: this._self, protocol: PROTOCOL_MIN });
   }
 
+  /** Replace this running addon's advertised metadata and publish it when live. */
+  updateMeta(meta: Record<string, unknown>): void {
+    this._self.meta = meta;
+
+    if (this._handles.length > 0) { this.announce(); }
+  }
+
   /** Ask every peer to announce itself (used at startup to discover existing nodes). */
   whois(): void {
     this._bus.send({ type: MessageType.Whois, protocol: PROTOCOL_MIN });
@@ -246,29 +260,17 @@ export class Discovery {
 
   /** Notified when a peer is first seen. Returns an unsubscribe function. */
   onPeerUp(listener: PeerListener): Unsubscribe {
-    this._onUp.add(listener);
-
-    return (): void => {
-      this._onUp.delete(listener);
-    };
+    return this._onUp.subscribe(listener);
   }
 
   /** Notified when a peer expires. Returns an unsubscribe function. */
   onPeerDown(listener: PeerListener): Unsubscribe {
-    this._onDown.add(listener);
-
-    return (): void => {
-      this._onDown.delete(listener);
-    };
+    return this._onDown.subscribe(listener);
   }
 
   /** Notified when another instance is announcing our own id. Returns an unsubscribe function. */
   onCollision(listener: CollisionListener): Unsubscribe {
-    this._onCollision.add(listener);
-
-    return (): void => {
-      this._onCollision.delete(listener);
-    };
+    return this._onCollision.subscribe(listener);
   }
 
   /**
@@ -276,30 +278,26 @@ export class Discovery {
    * unsubscribe function.
    */
   onIncompatible(listener: IncompatibleListener): Unsubscribe {
-    this._onIncompatible.add(listener);
-
-    return (): void => {
-      this._onIncompatible.delete(listener);
-    };
+    return this._onIncompatible.subscribe(listener);
   }
 
-  private handleAnnounce(envelope: Envelope): void {
+  private _handleAnnounce(envelope: Envelope): void {
     // An announce carrying our own id (from a different instance — the bus already dropped
     // our own echoes) is a namespace collision, not a peer.
     if (envelope.src === this._bus.selfId) {
-      for (const listener of this._onCollision) { listener({ id: envelope.src, instanceId: envelope.iid }); }
+      this._onCollision.emit({ id: envelope.src, instanceId: envelope.iid });
 
       return;
     }
 
-    const data = this.parseAnnounce(envelope.data);
+    const data = this._parseAnnounce(envelope.data);
 
     if (!data) { return; }
 
     const protocol = negotiateProtocol(data.pmin, data.pmax);
 
     if (protocol === undefined) {
-      this.recordIncompatible(envelope.src, data);
+      this._recordIncompatible(envelope.src, data);
 
       return;
     }
@@ -307,6 +305,7 @@ export class Discovery {
     const existing = this._peers.get(envelope.src);
     const peer: PeerInfo = {
       id: envelope.src,
+      instanceId: envelope.iid,
       version: data.version,
       schemaVersion: data.schemaVersion,
       protocol,
@@ -316,20 +315,20 @@ export class Discovery {
 
     this._lastSeen.set(envelope.src, system.currentTick);
 
-    if (this._incompatible.delete(envelope.src)) { this.publishIncompatible(); }
+    if (this._incompatible.delete(envelope.src)) { this._publishIncompatible(); }
 
     this._bus.setPeerProtocol(peer.id, peer.protocol, peer.caps);
 
     if (existing === undefined) {
       this._peers.set(envelope.src, peer);
-      this.publishPeers();
+      this._publishPeers();
 
-      for (const listener of this._onUp) { listener(peer); }
+      this._onUp.emit(peer);
     } else if (!sameAdvertisement(existing, peer)) {
       // The same node saying something new — a version bump, a re-announced manifest. The list
       // changes; nobody came up.
       this._peers.set(envelope.src, peer);
-      this.publishPeers();
+      this._publishPeers();
     }
 
     // A heartbeat that repeats what the peer already said stores nothing: the record already on
@@ -337,19 +336,20 @@ export class Discovery {
     // of objects rather than two equal ones.
   }
 
-  private publishPeers(): void {
+  private _publishPeers(): void {
     this._peerList.set(Array.from(this._peers.values()));
   }
 
-  private publishIncompatible(): void {
+  private _publishIncompatible(): void {
     this._incompatibleList.set(Array.from(this._incompatible.values()));
   }
 
-  private recordIncompatible(id: string, data: AnnounceData): void {
+  private _recordIncompatible(id: string, data: AnnounceData): void {
     const entry: IncompatiblePeer = {
       id,
       pmin: typeof data.pmin === 'number' ? data.pmin : PROTOCOL_MIN,
       pmax: typeof data.pmax === 'number' ? data.pmax : PROTOCOL_MIN,
+      ...(data.meta === undefined ? {} : { meta: data.meta }),
     };
 
     this._lastSeen.set(id, system.currentTick);
@@ -359,15 +359,15 @@ export class Discovery {
     this._incompatible.set(id, entry);
 
     if (existing === undefined) {
-      this.publishIncompatible();
+      this._publishIncompatible();
 
-      for (const listener of this._onIncompatible) { listener(entry); }
-    } else if (existing.pmin !== entry.pmin || existing.pmax !== entry.pmax) {
-      this.publishIncompatible();
+      this._onIncompatible.emit(entry);
+    } else if (existing.pmin !== entry.pmin || existing.pmax !== entry.pmax || !sameMeta(existing.meta, entry.meta)) {
+      this._publishIncompatible();
     }
   }
 
-  private handleWhois(envelope: Envelope): void {
+  private _handleWhois(envelope: Envelope): void {
     // Reply directly to the asker so the rest of the world isn't spammed. Unlike the broadcast
     // announce this one is not pinned: it is addressed, so the bus already knows what the asker
     // reads — and before its own announce lands, an unknown destination falls back to the oldest
@@ -375,7 +375,7 @@ export class Discovery {
     this._bus.send({ dst: envelope.src, type: MessageType.Announce, data: this._self });
   }
 
-  private sweep(): void {
+  private _sweep(): void {
     const cutoff = system.currentTick - this._peerTtlTicks;
     const dropped: PeerInfo[] = [];
 
@@ -391,10 +391,10 @@ export class Discovery {
     // The list is republished once, before any listener runs, so a handler reading `peers` during
     // a multi-peer eviction never sees a half-swept world.
     if (dropped.length > 0) {
-      this.publishPeers();
+      this._publishPeers();
 
       for (const peer of dropped) {
-        for (const listener of this._onDown) { listener(peer); }
+        this._onDown.emit(peer);
       }
     }
 
@@ -408,10 +408,10 @@ export class Discovery {
       }
     }
 
-    if (evicted) { this.publishIncompatible(); }
+    if (evicted) { this._publishIncompatible(); }
   }
 
-  private parseAnnounce(data: unknown): AnnounceData | undefined {
+  private _parseAnnounce(data: unknown): AnnounceData | undefined {
     if (typeof data !== 'object' || data === null) { return undefined; }
 
     const candidate = data as Partial<AnnounceData>;

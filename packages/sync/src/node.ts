@@ -12,6 +12,7 @@ import { Discovery } from './discovery';
 import { Events } from './events';
 import { Rpc } from './rpc';
 import { State } from './state';
+import { MessageType } from './constants';
 
 /** What `new SyncNode()` and `createSync()` take. */
 export interface SyncNodeOptions {
@@ -44,7 +45,11 @@ export class SyncNode {
 
   constructor(options: SyncNodeOptions) {
     this.id = options.id;
-    this.bus = new Bus(options.id, { maxMessage: options.maxMessage, instanceId: options.instanceId });
+    this.bus = new Bus(options.id, {
+      maxMessage: options.maxMessage, instanceId: options.instanceId,
+      accept: (envelope): boolean => envelope.type === MessageType.Announce || envelope.type === MessageType.Whois
+        || (envelope.src === this.id ? envelope.iid === this.bus.instanceId : this.discovery.getPeer(envelope.src)?.instanceId === envelope.iid),
+    });
     this.discovery = new Discovery(this.bus, {
       version: options.version,
       schemaVersion: options.schemaVersion,
@@ -53,6 +58,14 @@ export class SyncNode {
     this.rpc = new Rpc(this.bus);
     this.state = new State(this.bus, options.id);
     this.events = new Events(this.bus, options.id);
+    this.discovery.peers.subscribe((next, previous) => {
+      for (const peer of previous) {
+        if (next.some(current => current.id === peer.id && current.instanceId === peer.instanceId)) { continue; }
+
+        this.state.forget(peer.id);
+        this.rpc.forgetPeer(peer.id, peer.instanceId);
+      }
+    });
   }
 
   /** Start every subsystem. Idempotent. Order matters — see inline notes. */

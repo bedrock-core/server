@@ -1,3 +1,4 @@
+import { batch, observable, signal, type Observable, type ReadonlyObservable } from '@bedrock-core/observable';
 /**
  * Replicated key/value state — the shared channel.
  *
@@ -13,6 +14,7 @@
  * older write can't resurrect a removed key.
  */
 import { MessageType } from './constants';
+import { cloneData } from './data';
 import type { Bus } from './bus';
 import type { Envelope } from './envelope';
 import type { Unsubscribe } from './bus';
@@ -32,10 +34,15 @@ export function stateKey<T>(key: string): StateKey<T> {
 }
 
 interface Entry {
-  value?: unknown;
-  ver: number;
+  readonly value: Observable<unknown>;
+  ver?: number;
   src: string;
   del?: boolean;
+}
+
+interface Namespace {
+  readonly entries: Map<string, Entry>;
+  present: boolean;
 }
 
 /** A serializable snapshot of one entry. */
@@ -102,12 +109,12 @@ export interface StateChange {
 /** Told every change to the mirror, local or from the wire. */
 export type StateChangeListener = (change: StateChange) => void;
 
-/** The replicated key/value mirror: local reads, broadcast deltas, owner-only apply, snapshots for late joiners. */
+/** Observable values with owner-written replication, versioned deletions and snapshots for late joiners. */
 export class State {
   private readonly _bus: Bus;
   private readonly _selfId: string;
-  private readonly _store = new Map<string, Map<string, Entry>>();
-  private readonly _changeListeners = new Set<StateChangeListener>();
+  private readonly _store = new Map<string, Namespace>();
+  private readonly _changes = signal<StateChange>();
   private readonly _disposers: Unsubscribe[] = [];
   private _clock = 0;
   private _droppedForeign = 0;
@@ -120,9 +127,9 @@ export class State {
   /** Register handlers and pull existing state from peers (late-join sync). */
   start(): void {
     this._disposers.push(
-      this._bus.on(MessageType.StateDelta, env => this.handleDelta(env)),
-      this._bus.on(MessageType.StateRequest, env => this.handleStateRequest(env)),
-      this._bus.on(MessageType.StateSnapshot, env => this.handleSnapshot(env)),
+      this._bus.on(MessageType.StateDelta, env => this._handleDelta(env)),
+      this._bus.on(MessageType.StateRequest, env => this._handleStateRequest(env)),
+      this._bus.on(MessageType.StateSnapshot, env => this._handleSnapshot(env)),
     );
 
     this.requestSync();
@@ -136,20 +143,18 @@ export class State {
   /** Read a key from the local mirror. Returns `undefined` if absent or deleted. */
   get<T = unknown>(ns: string, key: StateKey<T>): NoInfer<T> | undefined;
   get(ns: string, key: string): unknown | undefined {
-    const entry = this._store.get(ns)?.get(key);
-
-    return entry && !entry.del ? entry.value : undefined;
+    return this._store.get(ns)?.entries.get(key)?.value.get();
   }
 
   /** Read every live key in a namespace as a plain object. */
   getNamespace(ns: string): Record<string, unknown> {
     const result: Record<string, unknown> = {};
-    const map = this._store.get(ns);
+    const map = this._store.get(ns)?.entries;
 
     if (!map) { return result; }
 
     for (const [key, entry] of map) {
-      if (!entry.del) { result[key] = entry.value; }
+      if (entry.ver !== undefined && !entry.del) { result[key] = entry.value.get(); }
     }
 
     return result;
@@ -157,7 +162,7 @@ export class State {
 
   /** Namespaces currently present in the mirror. */
   namespaces(): string[] {
-    return Array.from(this._store.keys());
+    return [...this._store].flatMap(([ns, namespace]) => namespace.present ? [ns] : []);
   }
 
   /** How many writes from a node other than the namespace's owner this mirror has refused. */
@@ -173,17 +178,18 @@ export class State {
    */
   set<T = unknown>(ns: string, key: StateKey<T>, value: NoInfer<T>): void;
   set(ns: string, key: string, value: unknown): void {
-    const entry: Entry = { value, ver: ++this._clock, src: this._selfId };
+    const snapshot = cloneData(value);
+    const entry = { v: snapshot, ver: ++this._clock, src: this._selfId };
 
-    this.applyEntry(ns, key, entry, ns === this._selfId);
-    this._bus.send({ type: MessageType.StateDelta, data: { ns, key, value, ver: entry.ver } });
+    this._applyEntry(ns, key, entry, ns === this._selfId);
+    this._bus.send({ type: MessageType.StateDelta, data: { ns, key, value: snapshot, ver: entry.ver } });
   }
 
   /** Delete a key (tombstone). Broadcasts a delta. Owner-only, like {@link State.set}. */
   delete(ns: string, key: string): void {
-    const entry: Entry = { ver: ++this._clock, src: this._selfId, del: true };
+    const entry = { ver: ++this._clock, src: this._selfId, del: true };
 
-    this.applyEntry(ns, key, entry, ns === this._selfId);
+    this._applyEntry(ns, key, entry, ns === this._selfId);
     this._bus.send({ type: MessageType.StateDelta, data: { ns, key, ver: entry.ver, del: true } });
   }
 
@@ -192,28 +198,59 @@ export class State {
     this._bus.send({ type: MessageType.StateRequest, data: ns ? { ns } : {} });
   }
 
+  /** Invalidate one departed running instance while retaining stable observable handles. */
+  forget(ns: string): void {
+    const namespace = this._store.get(ns);
+
+    if (namespace === undefined) { return; }
+
+    namespace.present = false;
+
+    batch(() => {
+      const removed: string[] = [];
+
+      for (const [key, entry] of namespace.entries) {
+        if (entry.ver === undefined) { continue; }
+
+        entry.ver = undefined;
+        entry.del = undefined;
+        entry.value.set(undefined);
+        removed.push(key);
+      }
+
+      for (const key of removed) { this._emitChange({ ns, key, value: undefined, deleted: true }); }
+    });
+  }
+
   /** Notified on every applied change (local or remote). Returns an unsubscribe function. */
   subscribe(listener: StateChangeListener): Unsubscribe {
-    this._changeListeners.add(listener);
+    return this._changes.subscribe(listener);
+  }
 
-    return (): void => {
-      this._changeListeners.delete(listener);
-    };
+  /** A current mirror value using the shared observable contract. Only this key notifies it. */
+  observe<T = unknown>(ns: string, key: StateKey<T>): ReadonlyObservable<NoInfer<T> | undefined>;
+  observe(ns: string, key: string): ReadonlyObservable<unknown> {
+    const current = this._entry(ns, key).value;
+
+    return Object.freeze({
+      get: (): unknown => current.get(),
+      subscribe: (listener: (next: unknown, previous: unknown) => void): Unsubscribe => current.subscribe(listener),
+    });
   }
 
   /** Serialize a namespace (includes tombstones) — used to answer snapshot requests. */
   snapshot(ns: string): SnapshotEntry[] {
-    const map = this._store.get(ns);
+    const map = this._store.get(ns)?.entries;
 
     if (!map) { return []; }
 
-    return Array.from(map, ([k, entry]) => ({
-      k,
-      v: entry.value,
-      ver: entry.ver,
-      src: entry.src,
-      del: entry.del,
-    }));
+    const snapshot: SnapshotEntry[] = [];
+
+    for (const [k, entry] of map) {
+      if (entry.ver !== undefined) { snapshot.push({ k, v: entry.value.get(), ver: entry.ver, src: entry.src, del: entry.del }); }
+    }
+
+    return snapshot;
   }
 
   /** Broadcast a full snapshot of this node's own namespace (used at startup). */
@@ -226,16 +263,16 @@ export class State {
     }
   }
 
-  private handleDelta(envelope: Envelope): void {
+  private _handleDelta(envelope: Envelope): void {
     if (!isDeltaData(envelope.data)) { return; }
 
     const { ns, key, ver, value, del } = envelope.data;
 
     this._clock = Math.max(this._clock, ver);
-    this.applyEntry(ns, key, { value, ver, src: envelope.src, del }, envelope.src === ns);
+    this._applyEntry(ns, key, { v: value, ver, src: envelope.src, del }, envelope.src === ns);
   }
 
-  private handleStateRequest(envelope: Envelope): void {
+  private _handleStateRequest(envelope: Envelope): void {
     const requested = requestedNamespace(envelope.data);
     const ns = this._selfId;
 
@@ -248,15 +285,34 @@ export class State {
     }
   }
 
-  private handleSnapshot(envelope: Envelope): void {
+  private _handleSnapshot(envelope: Envelope): void {
     if (!isSnapshotData(envelope.data)) { return; }
 
     const { ns, entries } = envelope.data;
 
     for (const entry of entries) {
       this._clock = Math.max(this._clock, entry.ver);
-      this.applyEntry(ns, entry.k, { value: entry.v, ver: entry.ver, src: entry.src, del: entry.del }, entry.src === ns);
+      this._applyEntry(ns, entry.k, entry, entry.src === ns);
     }
+  }
+
+  private _entry(ns: string, key: string): Entry {
+    let namespace = this._store.get(ns);
+
+    if (namespace === undefined) {
+      namespace = { entries: new Map(), present: false };
+      this._store.set(ns, namespace);
+    }
+
+    const entries = namespace.entries;
+    let entry = entries.get(key);
+
+    if (entry === undefined) {
+      entry = { value: observable<unknown>(undefined), src: ns };
+      entries.set(key, entry);
+    }
+
+    return entry;
   }
 
   /**
@@ -266,42 +322,53 @@ export class State {
    * underlying dynamic properties directly, and no message carries a sender identity worth
    * trusting. Returns whether the entry won.
    */
-  private applyEntry(ns: string, key: string, incoming: Entry, fromOwner: boolean): boolean {
-    let map = this._store.get(ns);
-
-    if (!map) {
-      map = new Map();
-      this._store.set(ns, map);
-    }
-
+  private _applyEntry(ns: string, key: string, incoming: Omit<SnapshotEntry, 'k'>, fromOwner: boolean): boolean {
     if (!fromOwner) {
       this._droppedForeign++;
 
       return false;
     }
 
-    const current = map.get(key);
+    const current = this._entry(ns, key);
 
-    if (current && !this.isNewer(incoming, current)) { return false; }
+    if (!this._isNewer(incoming, current)) { return false; }
 
-    map.set(key, incoming);
-    this.emitChange({
+    if (current.ver === undefined) {
+      const namespace = this._store.get(ns)!;
+
+      namespace.entries.delete(key);
+      namespace.entries.set(key, current);
+
+      if (!namespace.present) {
+        namespace.present = true;
+        this._store.delete(ns);
+        this._store.set(ns, namespace);
+      }
+    }
+
+    current.ver = incoming.ver;
+    current.src = incoming.src;
+    current.del = incoming.del;
+    current.value.set(() => incoming.del ? undefined : incoming.v);
+    this._emitChange({
       ns,
       key,
-      value: incoming.del ? undefined : incoming.value,
+      value: incoming.del ? undefined : incoming.v,
       deleted: incoming.del === true,
     });
 
     return true;
   }
 
-  private isNewer(incoming: Entry, current: Entry): boolean {
+  private _isNewer(incoming: Pick<SnapshotEntry, 'ver' | 'src'>, current: Entry): boolean {
+    if (current.ver === undefined) { return true; }
+
     if (incoming.ver !== current.ver) { return incoming.ver > current.ver; }
 
     return incoming.src > current.src;
   }
 
-  private emitChange(change: StateChange): void {
-    for (const listener of this._changeListeners) { listener(change); }
+  private _emitChange(change: StateChange): void {
+    this._changes.emit(change);
   }
 }

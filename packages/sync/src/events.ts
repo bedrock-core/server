@@ -16,6 +16,7 @@
  * missed for good.
  */
 import { MessageType } from './constants';
+import { cloneData } from './data';
 import type { Bus, Unsubscribe } from './bus';
 import type { Envelope } from './envelope';
 
@@ -59,7 +60,9 @@ export class Events {
    * it fire, this one's first and synchronously.
    */
   emit(name: string, payload?: unknown): void {
-    this._dispatch(this._selfId, name, payload);
+    const local = cloneData(payload);
+
+    this._dispatch(this._selfId, name, local);
     this._bus.send({ type: MessageType.Event, data: { n: name, p: payload } });
   }
 

@@ -83,7 +83,7 @@ export class OutboundQueue {
   start(): void {
     if (this._handle !== undefined) { return; }
 
-    this._handle = system.runInterval(() => this.flushPending(), this._flushIntervalTicks);
+    this._handle = system.runInterval(() => this._flushPending(), this._flushIntervalTicks);
   }
 
   /** Stop flushing. Any still-pending messages are retained. */
@@ -108,7 +108,7 @@ export class OutboundQueue {
    * Take the next message off the queue, packing as many leading envelopes into it as fit.
    * Returns `undefined` once the queue is empty.
    */
-  private takeNext(): string | undefined {
+  private _takeNext(): string | undefined {
     const head = this._pending[0];
 
     if (head === undefined) { return undefined; }
@@ -145,9 +145,9 @@ export class OutboundQueue {
     return encodeBatch(parts);
   }
 
-  private flushPending(): void {
+  private _flushPending(): void {
     for (let sent = 0; sent < this._maxFlushPerTick; sent++) {
-      const message = this.takeNext();
+      const message = this._takeNext();
 
       if (message === undefined) { return; }
 
