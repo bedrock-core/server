@@ -16,15 +16,8 @@
  * listener notified from there would be handed that window.
  */
 import { ObservableImpl, type ObservableOptions, type ReadonlyObservable, type Unsubscribe } from './observable';
-
-/**
- * A source of events, in either shape: `subscribe` returns a release function, or it returns the
- * callback and `unsubscribe(callback)` releases it.
- */
-export interface Signal<E, O = never> {
-  subscribe(callback: (event: E) => void, options?: O): unknown;
-  unsubscribe?(callback: (event: E) => void): void;
-}
+import type { Signal } from './signal';
+import { toSignal, type NativeSignal } from './native';
 
 /** What `last()` returns: the most recent payload, `undefined` before the first, and a way to stop. */
 export interface Last<E> extends ReadonlyObservable<E | undefined> {
@@ -37,29 +30,19 @@ export interface Last<E> extends ReadonlyObservable<E | undefined> {
  * the subscription is taken now — and released with `dispose()`. `options.on` is handed to
  * `subscribe` as its second argument, for a signal that filters.
  */
-export function last<E, O = never>(signal: Signal<E, O>, options?: ObservableOptions<E | undefined> & { on?: O }): Last<E> {
+export function last<E, O = never>(signal: Signal<E> | NativeSignal<E, O>, options?: ObservableOptions<E | undefined> & { on?: O }): Last<E> {
   const inner = new ObservableImpl<E | undefined>(undefined, options);
 
   const callback = (event: E): void => { inner.set(event); };
 
-  const returned = signal.subscribe(callback, options?.on);
-
+  const release = ('unsubscribe' in signal ? toSignal(signal, options?.on) : signal).subscribe(callback);
   let disposed = false;
 
   const dispose: Unsubscribe = (): void => {
     if (disposed) { return; }
 
     disposed = true;
-
-    // The engine hands the callback itself back; the framework hands back a release function. Both
-    // are functions, so identity is what tells them apart.
-    if (returned === callback) {
-      signal.unsubscribe?.(callback);
-    } else if (typeof returned === 'function') {
-      (returned as Unsubscribe)(); // eslint-disable-line @typescript-eslint/no-unsafe-type-assertion
-    } else {
-      signal.unsubscribe?.(callback);
-    }
+    release();
   };
 
   return {

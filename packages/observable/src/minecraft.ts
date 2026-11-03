@@ -18,8 +18,8 @@ import type { DebounceScheduler } from './debounce';
 import { bindNative, type NativeBinding, type NativeObservable, type NativeScalar, type ToNativeOptions } from './native';
 import type { ReadonlyObservable } from './observable';
 
-export { bindNative } from './native';
-export type { NativeBinding, NativeObservable, NativeScalar, ToNativeOptions } from './native';
+export { bindNative, toSignal } from './native';
+export type { NativeBinding, NativeObservable, NativeScalar, NativeSignal, ToNativeOptions } from './native';
 
 /**
  * A reusable scheduler for `debounce(source, afterTicks(ticks))`. Each call schedules its own

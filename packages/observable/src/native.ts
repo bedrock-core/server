@@ -9,6 +9,7 @@
  *   `unsubscribe(cb)`, the engine's only release (its `subscribe` returns the callback, not a handle).
  */
 import type { Observable, ReadonlyObservable, Unsubscribe } from './observable';
+import type { Signal } from './signal';
 
 /** What a native observable can hold. Objects go through `computed` into one of these. */
 export type NativeScalar = number | string | boolean;
@@ -72,5 +73,31 @@ export function bindNative<T extends NativeScalar>(
     if (pull) {
       native.unsubscribe(pull);
     }
+  };
+}
+
+/** Native event convention: remove the registered callback through unsubscribe. */
+export interface NativeSignal<T, Options = never> {
+  subscribe(callback: (event: T) => void, options?: Options): ((event: T) => void) | void;
+  unsubscribe(callback: (event: T) => void): void;
+}
+
+/** Adapt native events to cleanup-return subscriptions. Conversion is lazy and does not replay events. */
+export function toSignal<T, Options = never>(source: NativeSignal<T, Options>, options?: Options): Signal<T> {
+  return {
+    subscribe(callback): Unsubscribe {
+      // Each subscription owns its callback, even when callers reuse the same listener.
+      const listener = (event: T): void => { callback(event); };
+
+      const registered = source.subscribe(listener, options);
+      let active = true;
+
+      return (): void => {
+        if (!active) { return; }
+
+        source.unsubscribe(registered ?? listener);
+        active = false;
+      };
+    },
   };
 }

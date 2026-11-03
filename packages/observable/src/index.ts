@@ -17,4 +17,10 @@ export type { Debounced, DebounceScheduler } from './debounce';
 export { batch } from './batch';
 
 export { last } from './last';
-export type { Last, Signal } from './last';
+export type { Last } from './last';
+
+export { signal } from './signal';
+export type { Signal } from './signal';
+
+export { toSignal } from './native';
+export type { NativeSignal } from './native';
