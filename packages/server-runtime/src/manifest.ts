@@ -1,226 +1,230 @@
-/**
- * The declaration an addon makes when it registers with the runtime. This is the "base
- * data" that flows into the cross-addon registry, analogous to a pack manifest.
- *
- * ## Identity is one namespace, declared in two halves
- *
- * Minecraft's rule for add-ons is that every item in a pack shares a single namespace, that no
- * two packs may share one, and that it should read as creator-then-pack — `bt_gc_graves` for
- * Bedrock Tweaks' graves addon. That namespace is this addon's identity everywhere: its sync
- * transport id, its replicated state, its custom commands, and its command enums.
- *
- * It is declared as **`creator` + `pack`** rather than as one string so the halves stay
- * machine-readable — the registry groups by creator, and a UI can show them apart — and
- * {@link addonNamespace} joins them. Two addons collide only if both halves match.
- *
- * `packName` and `creatorName` are purely human-readable display labels.
- */
-import { RUNTIME_VERSION } from './runtime-version';
+import runtimePackage from '../package.json' with { type: 'json' };
 
-/** Who an addon is: identity, display labels, version and dependencies. */
+/** The installed runtime package version advertised during discovery and host election. */
+export const RUNTIME_VERSION = runtimePackage.version;
+
+/** Authored v3 Minecraft manifest with pack-owned Core identity and integration rules. */
 export interface AddonManifest {
-
-  /** Creator/vendor id, lowercase alphanumeric + underscores (e.g. `bt` for Bedrock Tweaks). */
-  creator: string;
-
-  /**
-   * Creator display name. Assumed to be a Minecraft translation key (e.g.
-   * `bt.gc_graves.creator`) shipped in this addon's RP .lang — registry UIs render
-   * it per player language. Plain text also works: Bedrock falls back to the literal
-   * string when no .lang entry matches. Optional.
-   */
-  creatorName?: string;
-
-  /**
-   * Abbreviated pack id, lowercase alphanumeric + underscores (e.g. `gc_graves` — gameplay
-   * changes, graves). Joined to `creator` as `creator_pack` to form this addon's namespace.
-   */
-  pack: string;
-
-  /**
-   * Pack display name. Assumed to be a translation key (see `creatorName` for the contract,
-   * e.g. `bt.gc_graves.name`); plain text falls back to the literal. Not part of identity.
-   */
-  packName: string;
-
-  /** Addon version (free-form, e.g. semver). */
-  version: string;
-
-  /** Assumed to be a translation key (see `creatorName` for the contract). */
-  description?: string;
-
-  /** Namespaces (`creator_pack`, e.g. `bt_gc_economy`) this addon needs present (soft — warns, never blocks). */
-  dependencies?: string[];
-
-  /** Namespaces that unlock optional, togglable features when present. */
-  optionalDependencies?: string[];
-
-  /** Resource-pack texture path for the registry UI icon (e.g. `textures/ui/my_addon_logo`). */
-  icon?: string;
-
-  /** Resource-pack texture path for the registry UI thumbnail banner, 16:9 (e.g. `textures/ui/my_addon_thumbnail`). */
-  thumbnail?: string;
+  readonly format_version: number;
+  readonly namespace: string;
+  readonly header: {
+    readonly name?: string;
+    readonly description?: string;
+    readonly uuid?: string;
+    readonly version?: string;
+    readonly min_engine_version?: string;
+    readonly base_game_version?: string;
+    readonly pack_optimization_version?: string;
+    readonly pack_scope?: string;
+    readonly allow_random_seed?: boolean;
+    readonly lock_template_options?: boolean;
+    readonly platform_locked?: boolean;
+  };
+  readonly modules: readonly {
+    readonly type: string;
+    readonly uuid?: string;
+    readonly version?: string;
+    readonly description?: string;
+    readonly language?: string;
+    readonly entry?: string;
+  }[];
+  readonly dependencies?: readonly {
+    /** Namespace reference; Builder resolves local pack identities and Core requirements. */
+    readonly namespace?: string;
+    readonly uuid?: string;
+    readonly version?: string;
+    /** Minecraft scripting API or installed addon package; Builder resolves its native requirement. */
+    readonly module_name?: string;
+  }[];
+  readonly optionalDependencies?: AddonManifest['dependencies'];
+  readonly metadata?: {
+    readonly authors?: readonly string[];
+    readonly license?: string;
+    readonly url?: string;
+    readonly product_type?: string;
+    readonly generated_with?: Readonly<Record<string, readonly string[]>>;
+  };
+  readonly capabilities?: readonly string[];
+  readonly subpacks?: readonly {
+    readonly folder_name: string;
+    readonly name: string;
+    readonly memory_performance_tier: number;
+  }[];
+  readonly settings?: readonly {
+    readonly type: string;
+    readonly text: string;
+    readonly name?: string;
+    readonly default?: boolean | number | string;
+    readonly options?: readonly { readonly name: string; readonly text: string }[];
+    readonly min?: number;
+    readonly max?: number;
+    readonly step?: number;
+  }[];
+  readonly has_education_metadata?: boolean;
+  readonly thumbnail?: string;
+  readonly extends?: string;
+  readonly $schema?: string;
 }
 
-/**
- * The manifest fields carried in the discovery `meta` blob — everything but `version`,
- * which discovery carries on its own. The node id is the addon's namespace; `creator` and
- * `pack` ride along so peers can recover the halves without splitting a string that has no
- * unambiguous split point. The index signature makes the blob assignable to the transport's
- * opaque meta type.
- *
- * `runtimeVersion` is added by the runtime rather than declared by the addon: it is the
- * version of `@bedrock-core/server-runtime` the addon was built against, and the host
- * election compares it across realms.
- */
-export type ManifestMeta = Omit<AddonManifest, 'version'> & {
-  runtimeVersion: string;
-  [key: string]: unknown;
-};
-
-// Lowercase alphanumeric + underscores, at least one character.
 const ID_PATTERN = /^[a-z0-9_]+$/;
-
-/**
- * Validate and normalize a manifest. Throws a descriptive error on invalid input so a
- * misconfigured addon fails loudly at registration rather than silently misbehaving.
- */
-export function validateManifest(input: AddonManifest): AddonManifest {
-  if (typeof input !== 'object' || input === null) {
-    throw new TypeError('addon manifest must be an object');
-  }
-
-  const creator = requireString(input.creator, 'creator');
-
-  if (!ID_PATTERN.test(creator)) {
-    throw new Error(`invalid creator '${creator}': must be lowercase alphanumeric and underscores only (a-z0-9_)`);
-  }
-
-  const pack = requireString(input.pack, 'pack');
-
-  if (!ID_PATTERN.test(pack)) {
-    throw new Error(`invalid pack '${pack}': must be lowercase alphanumeric and underscores only (a-z0-9_)`);
-  }
-
-  const manifest: AddonManifest = {
-    creator,
-    pack,
-    packName: requireString(input.packName, 'packName'),
-    version: requireString(input.version, 'version'),
-  };
-
-  if (input.creatorName !== undefined) { manifest.creatorName = String(input.creatorName); }
-
-  if (input.description !== undefined) { manifest.description = String(input.description); }
-
-  if (input.dependencies !== undefined) { manifest.dependencies = stringArray(input.dependencies, 'dependencies'); }
-
-  if (input.optionalDependencies !== undefined) {
-    manifest.optionalDependencies = stringArray(input.optionalDependencies, 'optionalDependencies');
-  }
-
-  if (input.icon !== undefined) { manifest.icon = String(input.icon); }
-
-  if (input.thumbnail !== undefined) { manifest.thumbnail = String(input.thumbnail); }
-
-  return manifest;
-}
-
-/**
- * This addon's namespace: `${creator}_${pack}`, e.g. `bt_gc_graves`.
- *
- * The one identifier the addon is known by — sync transport id, replicated state namespace,
- * custom command namespace, command enum namespace. Minecraft requires a pack to use exactly
- * one and no two packs to share it, which is the same uniqueness the registry already enforces
- * on `creator` + `pack`, so there is nothing else to reconcile.
- */
-export function addonNamespace(manifest: AddonManifest): string {
-  return `${manifest.creator}_${manifest.pack}`;
-}
-
-/** Extract the discovery `meta` blob from a manifest, stamping the runtime version peers elect on. */
-export function manifestToMeta(manifest: AddonManifest): ManifestMeta {
-  const meta: ManifestMeta = {
-    creator: manifest.creator,
-    pack: manifest.pack,
-    packName: manifest.packName,
-    runtimeVersion: RUNTIME_VERSION,
-  };
-
-  if (manifest.creatorName !== undefined) { meta.creatorName = manifest.creatorName; }
-
-  if (manifest.description !== undefined) { meta.description = manifest.description; }
-
-  if (manifest.dependencies !== undefined) { meta.dependencies = manifest.dependencies; }
-
-  if (manifest.optionalDependencies !== undefined) { meta.optionalDependencies = manifest.optionalDependencies; }
-
-  if (manifest.icon !== undefined) { meta.icon = manifest.icon; }
-
-  if (manifest.thumbnail !== undefined) { meta.thumbnail = manifest.thumbnail; }
-
-  return meta;
-}
-
-/**
- * Reconstruct a manifest from a peer's namespace + discovery fields + `meta` blob.
- *
- * The halves come from `meta` rather than from splitting `namespace`: `bt_gc_graves` has no
- * unambiguous split point, so a peer that published no meta keeps its whole namespace as `pack`
- * and an empty `creator` instead of being guessed at.
- */
-export function manifestFromPeer(
-  namespace: string,
-  version: string,
-  meta: Record<string, unknown> | undefined,
-): AddonManifest {
-  const pack = typeof meta?.pack === 'string' ? meta.pack : namespace;
-  const manifest: AddonManifest = {
-    creator: typeof meta?.creator === 'string' ? meta.creator : '',
-    pack,
-    packName: typeof meta?.packName === 'string' ? meta.packName : pack,
-    version,
-  };
-
-  if (typeof meta?.creatorName === 'string') { manifest.creatorName = meta.creatorName; }
-
-  if (typeof meta?.description === 'string') { manifest.description = meta.description; }
-
-  if (typeof meta?.icon === 'string') { manifest.icon = meta.icon; }
-
-  if (typeof meta?.thumbnail === 'string') { manifest.thumbnail = meta.thumbnail; }
-
-  if (Array.isArray(meta?.dependencies)) {
-    manifest.dependencies = meta.dependencies.filter((d): d is string => typeof d === 'string');
-  }
-
-  if (Array.isArray(meta?.optionalDependencies)) {
-    manifest.optionalDependencies = meta.optionalDependencies.filter((d): d is string => typeof d === 'string');
-  }
-
-  return manifest;
-}
-
-/**
- * The runtime version a peer announced. Defaults to `0.0.0` when the field is missing or
- * malformed, which makes that peer lose the host election rather than corrupt it.
- */
-export function runtimeVersionFromPeer(meta: Record<string, unknown> | undefined): string {
-  return typeof meta?.runtimeVersion === 'string' ? meta.runtimeVersion : '0.0.0';
-}
+const record = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
 
 function requireString(value: unknown, field: string): string {
-  if (typeof value !== 'string' || value.length === 0) {
+  if (typeof value !== 'string' || !value.trim()) {
     throw new Error(`addon manifest '${field}' is required and must be a non-empty string`);
   }
 
   return value;
 }
 
-function stringArray(value: unknown, field: string): string[] {
-  if (!Array.isArray(value) || !value.every(v => typeof v === 'string')) {
-    throw new Error(`addon manifest '${field}' must be an array of strings`);
+function namespaceOf(value: unknown, field: string): string {
+  const namespace = requireString(value, field);
+
+  if (!ID_PATTERN.test(namespace) || namespace === 'minecraft') {
+    throw new Error(`invalid ${field} '${namespace}': use lowercase alphanumeric and underscores; minecraft is reserved`);
   }
 
-  return value;
+  return namespace;
+}
+
+function strings(value: unknown, field: string): string[] {
+  if (!Array.isArray(value) || !value.every(item => typeof item === 'string' && !!item.trim())) {
+    throw new Error(`addon manifest '${field}' must be an array of non-empty strings`);
+  }
+
+  return [...value];
+}
+
+function dependencies(value: unknown, field: string): AddonManifest['dependencies'] {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (!Array.isArray(value)) {
+    throw new Error(`${field} must contain native dependency objects`);
+  }
+
+  return Object.freeze(value.map((dependency: unknown) => {
+    if (!record(dependency)) {
+      throw new Error(`${field} must contain native dependency objects`);
+    }
+
+    if ('pack' in dependency) {
+      throw new Error('dependency.pack is not supported; select a local pack by namespace');
+    }
+
+    if ('module' in dependency) {
+      throw new Error('dependency.module is not supported; use module_name');
+    }
+
+    const namespace = dependency.namespace === undefined ? undefined : namespaceOf(dependency.namespace, 'dependency namespace');
+    const uuid = dependency.uuid === undefined ? undefined : requireString(dependency.uuid, 'dependency uuid');
+    const moduleName = dependency.module_name === undefined ? undefined : requireString(dependency.module_name, 'dependency module_name');
+
+    if ((uuid === undefined) === (moduleName === undefined)) {
+      throw new Error(`${field} must resolve to a native uuid or module_name`);
+    }
+
+    if (namespace !== undefined && uuid === undefined) {
+      throw new Error('addon dependency namespaces require a native pack uuid/version');
+    }
+
+    return Object.freeze({
+      ...dependency,
+      ...(namespace === undefined ? {} : { namespace }),
+      ...(uuid === undefined ? {} : { uuid }),
+      ...(moduleName === undefined ? {} : { module_name: moduleName }),
+      version: requireString(dependency.version, `${field} version`),
+    });
+  }));
+}
+
+/** Validate a resolved authored manifest and preserve its native field structure. */
+export function validateManifest(input: unknown): AddonManifest {
+  if (!record(input)) {
+    throw new TypeError('addon manifest must be an object');
+  }
+
+  const namespace = namespaceOf(input.namespace, 'namespace');
+
+  if (!record(input.header)) {
+    throw new Error('addon manifest header is required');
+  }
+
+  if (input.format_version !== 3) {
+    throw new Error('addon manifests require format_version 3');
+  }
+
+  if (!Array.isArray(input.modules)) {
+    throw new Error('addon manifest needs native modules');
+  }
+
+  const header = input.header;
+  const name = requireString(header.name, 'header.name');
+  const version = requireString(header.version, 'header.version');
+
+  for (const field of ['min_engine_version', 'base_game_version', 'pack_optimization_version']) {
+    if (header[field] !== undefined) {
+      requireString(header[field], `header.${field}`);
+    }
+  }
+
+  const description = header.description;
+
+  if (description !== undefined && typeof description !== 'string') {
+    throw new Error('addon manifest header.description must be a string');
+  }
+
+  if (input.metadata !== undefined && !record(input.metadata)) {
+    throw new Error('addon manifest metadata must be an object');
+  }
+
+  const metadata = record(input.metadata) ? input.metadata : undefined;
+  const authors = metadata?.authors === undefined ? undefined : strings(metadata.authors, 'metadata.authors');
+  const required = dependencies(input.dependencies, 'dependencies');
+  const optional = dependencies(input.optionalDependencies, 'optionalDependencies');
+  const requiredIds = required?.flatMap(dependency => dependency.namespace === undefined ? [] : [dependency.namespace]) ?? [];
+  const optionalIds = optional?.flatMap(dependency => dependency.namespace === undefined ? [] : [dependency.namespace]) ?? [];
+
+  if (requiredIds.includes(namespace) || optionalIds.includes(namespace)) {
+    throw new Error('an addon cannot depend on its own namespace');
+  }
+
+  if (requiredIds.some(id => optionalIds.includes(id))) {
+    throw new Error('an addon dependency cannot be both required and optional');
+  }
+
+  const modules = input.modules.map((module: unknown) => {
+    if (!record(module)) {
+      throw new Error('addon manifest modules must contain native module objects');
+    }
+
+    return Object.freeze({
+      ...module,
+      type: requireString(module.type, 'module type'),
+      ...(module.version === undefined ? {} : { version: requireString(module.version, 'module version') }),
+    });
+  });
+
+  Object.freeze(modules);
+
+  const manifest: AddonManifest = {
+    ...input,
+    format_version: input.format_version,
+    namespace,
+    header: Object.freeze({ ...header, name, version, ...(description === undefined ? {} : { description }) }),
+    modules,
+    ...(metadata === undefined ? {} : { metadata: Object.freeze({ ...metadata, ...(authors === undefined ? {} : { authors: Object.freeze(authors) }) }) }),
+    ...(required === undefined ? {} : { dependencies: required }),
+    ...(optional === undefined ? {} : { optionalDependencies: optional }),
+    ...(input.thumbnail === undefined ? {} : { thumbnail: requireString(input.thumbnail, 'thumbnail') }),
+  };
+
+  return Object.freeze(manifest);
+}
+
+/** Runtime registration version advertised by a peer. */
+export function runtimeVersionFromPeer(meta: Record<string, unknown> | undefined): string | undefined {
+  return typeof meta?.runtimeVersion === 'string' && meta.runtimeVersion.trim() ? meta.runtimeVersion : undefined;
 }

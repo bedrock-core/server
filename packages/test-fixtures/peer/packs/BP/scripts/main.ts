@@ -4,7 +4,8 @@
  * large enough to have crossed the wire in pieces.
  */
 import { core } from '@bedrock-core/server-runtime';
-import { manifest } from './addon';
+import { PEER_ECHO_MODULE, peerEchoShape } from './contract';
+import manifest from '../manifest.json';
 
 core.register({ manifest });
 
@@ -18,4 +19,6 @@ function checksum(value: unknown): number {
   return sum;
 }
 
-core.rpc.onRequest('echo', params => ({ chars: JSON.stringify(params).length, sum: checksum(params) }));
+core.api.provideModule(PEER_ECHO_MODULE, peerEchoShape, {
+  echo: async (value: unknown): Promise<{ chars: number; sum: number }> => ({ chars: JSON.stringify(value).length, sum: checksum(value) }),
+});

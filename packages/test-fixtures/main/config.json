@@ -1,7 +1,6 @@
 {
   "$schema": "../../../node_modules/@bedrock-core/builder/schemas/config.schema.json",
   "targetVersion": "1.26.50",
-  "namespace": "core_fixture",
   "name": "core-server-fixture",
   "description": "GameTest fixture for the Bedrock Core server runtime",
   "authors": [

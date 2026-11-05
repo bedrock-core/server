@@ -26,10 +26,6 @@
 			"types": "./src/index.ts",
 			"import": "./src/index.ts"
 		},
-		"./sync": {
-			"types": "./src/sync.ts",
-			"import": "./src/sync.ts"
-		},
 		"./db": {
 			"types": "./src/db.ts",
 			"import": "./src/db.ts"
@@ -87,13 +83,13 @@
 		"lint": "eslint .",
 		"test": "yarn workspaces foreach -ptA run test",
 		"bench": "yarn workspace @bedrock-core/sync run bench",
-		"test:mc": "yarn workspace @bedrock-core/server-test-fixtures build:test && bc-bds run --packs packages/test-fixtures/main/build/test --packs packages/test-fixtures/peer/build/test --tag core --expect-registered 18",
+		"test:mc": "yarn workspace @bedrock-core/server-test-fixtures build:test && bc-bds run --packs packages/test-fixtures/main/build/test --packs packages/test-fixtures/peer/build/test --tag core --expect-registered 20",
 		"test:mc:bench": "yarn workspace @bedrock-core/server-test-fixtures build:test && bc-bds run --packs packages/test-fixtures/main/build/test --packs packages/test-fixtures/peer/build/test --tag bench --expect-registered 9 --idle 120 && node scripts/bench-report.mjs",
 		"bench:report": "node scripts/bench-report.mjs",
 		"bds:fetch": "bc-bds fetch",
 		"bds:where": "bc-bds where",
 		"changeset": "changeset",
-		"version-packages": "changeset version && node scripts/sync-meta-version.mjs && node scripts/sync-runtime-version.mjs",
+		"version-packages": "changeset version && node scripts/sync-meta-version.mjs",
 		"release": "yarn lint:libs && yarn build:libs && node scripts/publish-tarballs.mjs && node scripts/tag-packages.mjs",
 		"clean": "node scripts/clean.mjs"
 	},

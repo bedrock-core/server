@@ -6,7 +6,7 @@
 import { system } from '@minecraft/server';
 import { blockCleanup } from '@bedrock-core/db/minecraft';
 import { core } from '@bedrock-core/server-runtime';
-import { manifest } from './addon';
+import manifest from '../manifest.json';
 
 core.register({ manifest });
 

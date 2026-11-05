@@ -3,6 +3,13 @@
 	"version": "1.0.1",
 	"private": true,
 	"description": "GameTest fixtures for the Bedrock Core server runtime: the test pack and the peer it discovers",
+	"exports": {
+		"./bench": "./bench.ts",
+		"./peer-contract": {
+			"types": "./peer/packs/BP/scripts/contract.ts",
+			"import": "./peer/packs/BP/scripts/contract.ts"
+		}
+	},
 	"scripts": {
 		"build": "bc-builder build main/config.json build && bc-builder build peer/config.json build",
 		"build:test": "bc-builder build main/config.json build-test && bc-builder build peer/config.json build-test",
@@ -16,6 +23,8 @@
 	},
 	"dependencies": {
 		"@bedrock-core/db": "workspace:^",
+		"@bedrock-core/i18n": "workspace:^",
+		"@bedrock-core/observable": "workspace:^",
 		"@bedrock-core/server-runtime": "workspace:^",
 		"@bedrock-core/sync": "workspace:^",
 		"@minecraft/server": "*",

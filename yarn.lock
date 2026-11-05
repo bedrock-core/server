@@ -266,6 +266,8 @@ __metadata:
   dependencies:
     "@bedrock-core/builder": "npm:0.1.0"
     "@bedrock-core/db": "workspace:^"
+    "@bedrock-core/i18n": "workspace:^"
+    "@bedrock-core/observable": "workspace:^"
     "@bedrock-core/server-runtime": "workspace:^"
     "@bedrock-core/sync": "workspace:^"
     "@eslint/js": "npm:*"

@@ -14,6 +14,7 @@
 import { system } from '@minecraft/server';
 import { type Test, register } from '@minecraft/server-gametest';
 import { Bus, MAX_MESSAGE } from '@bedrock-core/sync';
+import { encodeEnvelope, decodeEnvelope } from '@bedrock-core/server-test-fixtures/bench';
 
 const STRUCTURE = 'core:empty';
 
@@ -77,12 +78,12 @@ benchmark('serialize', (test) => {
     const encodeStart = Date.now();
     let encoded = '';
 
-    for (let i = 0; i < runs; i++) { encoded = JSON.stringify(envelope); }
+    for (let i = 0; i < runs; i++) { encoded = encodeEnvelope(envelope); }
 
     const encodeMs = Date.now() - encodeStart;
     const decodeStart = Date.now();
 
-    for (let i = 0; i < runs; i++) { JSON.parse(encoded); }
+    for (let i = 0; i < runs; i++) { decodeEnvelope(encoded); }
 
     report('serialize', {
       payload: label,

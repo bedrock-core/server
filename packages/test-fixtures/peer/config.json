@@ -1,7 +1,6 @@
 {
   "$schema": "../../../node_modules/@bedrock-core/builder/schemas/config.schema.json",
   "targetVersion": "1.26.50",
-  "namespace": "core_fixture_peer",
   "name": "core-server-fixture-peer",
   "description": "Second pack for the cross-pack discovery test",
   "authors": [

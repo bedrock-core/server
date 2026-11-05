@@ -6,7 +6,7 @@
  * *declares* rides in that one call: identity in `manifest`, and beside it any number of
  * {@link Declaration} fields, each installing a subsystem and handing back its typed accessor
  * (see {@link RegisterOptions}). The runtime wraps a single sync `SyncNode` and exposes the
- * cross-addon {@link Registry}, the {@link FeatureManager} and the messaging passthroughs.
+ * cross-addon {@link Registry} and public addon APIs.
  *
  * The default export is the `core` singleton — `import { core } from '@bedrock-core/server-runtime'`.
  * The `Runtime` class stands alone, so tests (and GameTests) can create several runtimes in one
@@ -15,21 +15,65 @@
 import type { Db } from '@bedrock-core/db';
 import { createEngineDb } from '@bedrock-core/db/minecraft';
 import { currentI18n } from '@bedrock-core/i18n';
-import type { Rpc } from '@bedrock-core/sync';
 import { SyncNode } from '@bedrock-core/sync';
 import { system } from '@minecraft/server';
 import { type Declaration, isDeclaration } from './declaration';
-import { EventsRegistry } from './events/events-registry';
-import { FeatureManager } from './features';
 import { HostElection } from './host';
-import { type AddonManifest, addonNamespace, manifestToMeta, validateManifest } from './manifest';
+import { type AddonManifest, RUNTIME_VERSION, validateManifest } from './manifest';
 import { Registry } from './registry';
-import { SharedRegistry } from './shared/shared-registry';
+import { createBindings, createModule, defaultBindings, memberKey, provideModule, type ApiDefinition, type Bindings } from './api/bindings';
+import { cloneData } from '@bedrock-core/sync/data';
+import { isRecord } from './guards';
+import type { ApiModule, ApiModuleShape, ApiShape } from './api/types';
+import { decodeArguments, transformData, type ApiDataContext } from './api/codec';
+import { nativeReferences } from './api/references';
+import { nativeValues } from './api/native-values';
+import { createObjectReferences } from './api/objects';
+import { createApiCalls } from './api/calls';
+import { createApiView } from './api/declaration';
+import type { ReadonlyObservable, Signal } from '@bedrock-core/observable';
 import { TranslationsRegistry } from './translations';
+
+function isStateSource(value: unknown): value is ReadonlyObservable<unknown> {
+  return isRecord(value) && typeof value.get === 'function' && typeof value.subscribe === 'function';
+}
+
+function isEventSource(value: unknown): value is Signal<unknown> {
+  return isRecord(value) && typeof value.subscribe === 'function';
+}
+
+function sourceAt(root: unknown, path: readonly string[], instance = false): { value: unknown; receiver: unknown } {
+  let value = root;
+  let receiver: unknown;
+
+  for (const key of path) {
+    receiver = value;
+
+    if (!isRecord(value) || !(instance ? key in value : Object.hasOwn(value, key))) { throw new Error(`[addon API] missing export '${path.join('.')}'`); }
+
+    const prototype: unknown = Object.getPrototypeOf(value);
+
+    if (!instance && prototype !== Object.prototype && prototype !== null) { throw new Error('[addon API] nested export objects must be plain objects'); }
+
+    value = value[key];
+  }
+
+  return { value, receiver };
+}
+
+function eachLeaf(shape: ApiShape, visit: (shape: Exclude<ApiShape, ApiModuleShape>, path: readonly string[]) => void, path: readonly string[] = []): void {
+  if (shape.kind !== 'object') {
+    visit(shape, path);
+
+    return;
+  }
+
+  for (const [name, member] of Object.entries(shape.members)) { eachLeaf(member, visit, [...path, name]); }
+}
 
 /**
  * Everything an addon declares when it registers: the identity `manifest`, plus one field per
- * declaration — `config: registerConfig(definition)`, `shared: registerShared(keys)`, `events: registerEvents(tree)`.
+ * declaration — for example, `config: registerConfig(definition)`.
  * One bag — "tell core what you are" — then run your own code.
  *
  * A field holding a {@link Declaration} is installed and its accessor comes back under that same
@@ -38,7 +82,7 @@ import { TranslationsRegistry } from './translations';
  */
 export interface RegisterOptions {
 
-  /** Who this addon is: creator, pack, display names, version, dependencies. */
+  /** The owning authored Minecraft manifest, resolved by Builder before bundling. */
   manifest: AddonManifest;
 }
 
@@ -73,17 +117,40 @@ export interface RuntimeSlots {}
 
 /** An addon's handle to the framework; `core` is the one a pack uses. */
 export class Runtime {
+  private readonly _bindings: Bindings;
   private _node: SyncNode | undefined;
   private _registry: Registry | undefined;
-  private _features: FeatureManager | undefined;
   private _manifest: AddonManifest | undefined;
   private _db: Db | undefined;
   private _translations: TranslationsRegistry | undefined;
   private _host: HostElection | undefined;
-  private _shared: SharedRegistry | undefined;
-  private _events: EventsRegistry | undefined;
   private _slots = new Map<string, unknown>();
   private readonly _declarations: Declaration<unknown>[] = [];
+  private _translationTask: number | undefined;
+  private _calls: ReturnType<typeof createApiCalls> | undefined;
+  private _objects: ReturnType<typeof createObjectReferences> | undefined;
+  private readonly _apiData: ApiDataContext = { values: nativeValues, references: {
+    encode: (value, shape): unknown => shape.reference === 'api'
+      ? this._require(this._objects, 'API objects').encode(value, shape)
+      : nativeReferences.encode(value, shape.reference, shape.nativeType),
+    decode: (value, shape): unknown => shape.reference === 'api'
+      ? this._require(this._objects, 'API objects').decode(value, shape)
+      : nativeReferences.decode(value, shape.reference, shape.nativeType),
+  } };
+
+  /** Public exports and generated imports use the existing runtime channels. */
+  readonly api;
+
+  constructor(bindings: Bindings = createBindings()) {
+    this._bindings = bindings;
+    this.api = Object.freeze({
+      of: <T extends object>(namespace: string, implementation: T): ApiModule<T> => createApiView(bindings, namespace, implementation),
+      createModule: <T>(namespace: string, module: string, shape: ApiModuleShape): ApiModule<T> => createModule<T>(bindings, namespace, module, shape),
+      provideModule: (module: string, shape: ApiModuleShape, exports: unknown): (() => void) => provideModule(bindings, module, shape, exports),
+      /** Release an instance owned by this Runtime. Safe to repeat; foreign references cannot be released. */
+      release: (value: object): boolean => this._objects?.release(value) ?? false,
+    });
+  }
 
   /** Whether the addon has been registered (and is therefore live). */
   get registered(): boolean {
@@ -91,13 +158,13 @@ export class Runtime {
   }
 
   /**
-   * This addon's namespace: `creator_pack` (e.g. `bt_gc_economy`).
+   * This addon's explicitly declared namespace (e.g. `bt_gc_economy`).
    *
    * The one identifier it is known by — RPC targeting, mirror keys, dependency declarations,
    * and the namespace of any custom command or command enum it registers.
    */
   get id(): string {
-    return addonNamespace(this.requireManifest());
+    return this._requireManifest().namespace;
   }
 
   /** Alias of {@link id}, for code that reads better naming the namespace than the id. */
@@ -107,51 +174,22 @@ export class Runtime {
 
   /** This addon's manifest. */
   get manifest(): AddonManifest {
-    return this.requireManifest();
+    return this._requireManifest();
   }
 
   /** The cross-addon registry. */
   get registry(): Registry {
-    return this.require(this._registry, 'registry');
-  }
-
-  /** The feature manager — use `core.features.add()` to declare features, `core.features.of()` for cross-addon reads. */
-  get features(): FeatureManager {
-    return this.require(this._features, 'features');
+    return this._require(this._registry, 'registry');
   }
 
   /** Cross-addon i18n bundles — publish via `core.translations.provide()`; `forPlayer(player)` for the chained resolver, `of(addonId)` for a peer's verbs. */
   get translations(): TranslationsRegistry {
-    return this.require(this._translations, 'translations');
+    return this._require(this._translations, 'translations');
   }
 
   /** Host election — `core.host.isHost` tells you whether this realm should do the work only one realm may do, and `core.host.id` is that realm as an observable. Nothing in the stack elects anything today; see `host.ts`. */
   get host(): HostElection {
-    return this.require(this._host, 'host');
-  }
-
-  /**
-   * The shared mirror as typed trees: this addon's own comes back from its `shared: registerShared(keys)`
-   * declaration, a peer's from `core.shared.of<Def>(ns)` — which an addon that declares nothing of
-   * its own may read too. Every node has `get` / `subscribe`; own nodes and opened peer leaves also
-   * `set`.
-   */
-  get shared(): SharedRegistry {
-    this._shared ??= new SharedRegistry({ state: this.requireNode().state, namespace: this.namespace });
-
-    return this._shared;
-  }
-
-  /**
-   * Events as typed trees: this addon's own comes back from its `events: registerEvents(tree)` declaration,
-   * another addon's from `core.events.of<Def>(ns)` — open to an addon that announces nothing itself.
-   * An owner's node has `emit` and `subscribe`, a peer's `subscribe` alone, and a listener may be
-   * attached before the announcing addon exists.
-   */
-  get events(): EventsRegistry {
-    this._events ??= new EventsRegistry({ events: this.requireNode().events, namespace: this.namespace });
-
-    return this._events;
+    return this._require(this._host, 'host');
   }
 
   /**
@@ -161,17 +199,7 @@ export class Runtime {
    * reachable from another realm unless this addon serves it.
    */
   get db(): Db {
-    return this.require(this._db, 'db');
-  }
-
-  /** RPC messaging (passthrough to the underlying sync node). */
-  get rpc(): Rpc {
-    return this.requireNode().rpc;
-  }
-
-  /** The underlying sync node, for advanced access (bus, discovery). */
-  get node(): SyncNode {
-    return this.requireNode();
+    return this._require(this._db, 'db');
   }
 
   /**
@@ -184,55 +212,97 @@ export class Runtime {
    */
   register<O extends RegisterOptions>(options: O): Declared<O>;
   register(options: RegisterOptions): Record<string, unknown> {
+    if (this._bindings.stopping) { throw new Error('runtime is stopping'); }
+
     if (this._manifest) { throw new Error('runtime is already registered'); }
 
     const validated = validateManifest(options.manifest);
 
     this._manifest = validated;
 
-    // One namespace for everything this addon owns — transport id, mirror, config, guides.
-    const namespace = addonNamespace(validated);
+    try {
+      const namespace = validated.namespace;
+      const node = new SyncNode({
+        id: namespace,
+        version: validated.header.version!,
+        meta: { manifest: validated, runtimeVersion: RUNTIME_VERSION },
+      });
 
-    const node = new SyncNode({
-      id: namespace,
-      version: validated.version,
-      meta: manifestToMeta(validated),
-    });
-    const registry = new Registry(node.discovery, validated);
-    const features = new FeatureManager(registry, node.state, namespace);
-    // Local persistence, live before any declaration: a declaration stores through it.
-    const db = createEngineDb(namespace, message => console.warn(message));
-    const translations = new TranslationsRegistry(node.state, namespace);
-    const host = new HostElection(registry, namespace);
+      this._node = node;
+      const registry = new Registry(node.discovery, validated, node.bus.instanceId);
 
-    this._node = node;
-    this._registry = registry;
-    this._features = features;
-    this._db = db;
-    this._translations = translations;
-    this._host = host;
+      this._registry = registry;
+      this._db = createEngineDb(namespace, message => console.warn(message));
+      const translations = new TranslationsRegistry(node.state, namespace);
 
-    node.start();
-    registry.start();
-    features.start();
-    translations.start();
+      this._translations = translations;
+      this._host = new HostElection(registry, namespace);
+      this._calls = createApiCalls(node, registry, this._bindings, this._apiData, () => this._node === node);
+      this._objects = createObjectReferences(node, registry, this._bindings, (module, definition) => this._bindApi(module, definition));
 
-    const declared: Record<string, unknown> = {};
+      for (const [module, definition] of this._bindings.modules) { this._bindApi(module, definition); }
 
-    for (const [key, value] of Object.entries(options)) {
-      if (key === 'manifest' || !isDeclaration(value)) { continue; }
+      node.start();
+      registry.start();
+      translations.start();
+      this._bindings.connection.set({
+        node, registry, data: this._apiData,
+        call: this._calls.call,
+        bind: (module: string, definition: ApiDefinition): void => this._bindApi(module, definition),
+      });
 
-      this._declarations.push(value);
-      declared[key] = value.install(this);
+      const declared: Record<string, unknown> = {};
+
+      for (const [key, value] of Object.entries(options)) {
+        if (key === 'manifest' || !isDeclaration(value)) { continue; }
+
+        declared[key] = this.install(value);
+      }
+
+      this._translationTask = system.run(() => {
+        this._translationTask = undefined;
+
+        if (this._manifest === validated) { this._publishOwnTranslations(); }
+      });
+
+      return declared;
+    } catch (error) {
+      try { this.stop(); } catch (cleanupError) {
+        throw new AggregateError([error, cleanupError], 'runtime registration and cleanup failed', { cause: cleanupError });
+      }
+
+      throw error;
     }
+  }
 
-    // This addon's own strings, on the first tick. `createI18n(bundle)` runs in a module the
-    // entry imports, so the instance exists by now; publishing it from the floor is what lets an
-    // addon that draws nothing still have the translation keys in its manifest — `packName`,
-    // `creatorName`, `description` — resolved by whatever realm lists it.
-    system.run(() => { this.publishOwnTranslations(); });
+  /** Install a subsystem on a registered runtime. Its stop hook runs with the runtime in reverse install order. */
+  install<T>(declaration: Declaration<T>): T {
+    this._requireManifest();
 
-    return declared;
+    if (this._bindings.stopping) { throw new Error('runtime is stopping'); }
+
+    const first = this._declarations.length;
+    const slots = new Set(this._slots.keys());
+
+    this._declarations.push(declaration);
+
+    try {
+      return declaration.install(this);
+    } catch (error) {
+      const failures: unknown[] = [error];
+
+      for (const installed of this._declarations.splice(first).reverse()) {
+        try { installed.stop?.(); } catch (cleanupError) { failures.push(cleanupError); }
+      }
+
+      for (const key of this._slots.keys()) {
+        if (!slots.has(key)) { this._slots.delete(key); }
+      }
+
+      if (failures.length > 1) { throw new AggregateError(failures, 'service installation and cleanup failed', { cause: error }); }
+
+      throw error;
+    }
   }
 
   /**
@@ -257,28 +327,187 @@ export class Runtime {
     this._slots.set(key, value);
   }
 
-  /** Take the addon offline. Safe to call before registering (no-op). */
+  /** Take the addon offline and clear queued API bindings. Safe to call before registering. */
   stop(): void {
-    // Reverse install order: a declaration comes down before what it was built on.
-    for (const declaration of this._declarations.splice(0).reverse()) {
-      declaration.stop?.();
+    if (this._bindings.stopping) { return; }
+
+    this._bindings.stopping = true;
+    const failures: unknown[] = [];
+
+    const stop = (release: () => void): void => {
+      try { release(); } catch (error) { failures.push(error); }
+    };
+
+    if (this._translationTask !== undefined) {
+      const task = this._translationTask;
+
+      this._translationTask = undefined;
+      stop(() => system.clearRun(task));
     }
 
-    this._host?.stop();
-    this._translations?.stop();
-    this._features?.stop();
-    this._registry?.stop();
-    this._node?.stop();
+    stop(() => this._bindings.connection.set(undefined));
+
+    for (const release of [...this._bindings.subscriptions]) { stop(release); }
+
+    stop(() => this._objects?.stop());
+    this._objects = undefined;
+
+    for (const declaration of this._declarations.splice(0).reverse()) {
+      stop(() => declaration.stop?.());
+    }
+
+    stop(() => this._host?.stop());
+    stop(() => this._translations?.stop());
+    stop(() => this._registry?.stop());
+    stop(() => this._db?.stop());
+    stop(() => this._node?.stop());
+    this._bindings.modules.clear();
+    this._bindings.subscriptions.clear();
     this._slots.clear();
-    this._events = undefined;
-    this._shared = undefined;
     this._host = undefined;
     this._translations = undefined;
-    this._features = undefined;
     this._registry = undefined;
     this._db = undefined;
     this._node = undefined;
+    this._calls = undefined;
     this._manifest = undefined;
+    this._bindings.stopping = false;
+
+    if (failures.length > 0) { throw new AggregateError(failures, 'runtime cleanup failed'); }
+  }
+
+  private _refreshApis(): void {
+    if (this._bindings.stopping || this._node === undefined || this._registry === undefined || this._manifest === undefined) { return; }
+
+    const apis = [...this._bindings.modules].filter(([, definition]) => definition.release !== undefined).map(([module]) => module);
+
+    if (this._registry.setApis(apis)) {
+      this._node.discovery.updateMeta({ manifest: this._manifest, runtimeVersion: RUNTIME_VERSION, apis });
+    }
+  }
+
+  private _bindApi(module: string, definition: ApiDefinition): void {
+    const node = this._require(this._node, 'addon API');
+    const releases: (() => void)[] = [];
+    const declaration: Declaration<void> = {
+      install: (): void => {
+        const initial = new Map<string, unknown>();
+
+        eachLeaf(definition.shape, (shape, path) => {
+          if (shape.kind === 'value' || shape.kind === 'local') { return; }
+
+          const { value } = sourceAt(definition.exports, path, definition.reference !== undefined);
+
+          if (shape.kind === 'function' && typeof value === 'function') { return; }
+
+          if (shape.kind === 'event' && isEventSource(value)) { return; }
+
+          if (shape.kind === 'state' && isStateSource(value)) {
+            const snapshot: unknown = value.get();
+
+            initial.set(memberKey(module, path), cloneData(transformData(snapshot, shape.data, 'encode', this._apiData)));
+
+            return;
+          }
+
+          throw new Error(`export '${module}/${path.join('.')}' does not match its ${shape.kind} shape`);
+        });
+        eachLeaf(definition.shape, (shape, path) => {
+          if (shape.kind === 'value' || shape.kind === 'local') { return; }
+
+          const { value } = sourceAt(definition.exports, path, definition.reference !== undefined);
+          const key = memberKey(module, path);
+
+          if (shape.kind === 'function' && typeof value === 'function') {
+            releases.push(node.rpc.onRequest(key, (params, from) => {
+              const active = (): boolean => this._node === node && (definition.reference === undefined ? this._bindings.modules.get(module) === definition : definition.release !== undefined);
+              const callbacks = shape.parameters === undefined
+                ? undefined
+                : this._require(this._calls, 'addon API').callbacks(from,
+                    from === node.id ? node.bus.instanceId : node.discovery.getPeer(from)?.instanceId, active);
+              const data = callbacks === undefined ? this._apiData : { ...this._apiData, callbacks };
+
+              try {
+                const { value: fn, receiver } = sourceAt(definition.exports, path, definition.reference !== undefined);
+
+                if (!active() || typeof fn !== 'function') { throw new Error('addon API function is unavailable'); }
+
+                const result: unknown = Reflect.apply(fn, receiver, decodeArguments(params, shape.parameters, data));
+
+                if (!(result instanceof Promise)) { throw new Error('public functions must return a Promise'); }
+
+                const pending = result.then((next: unknown): unknown => {
+                  if (this._node !== node || (definition.reference === undefined && !active())) { throw new Error('provider stopped'); }
+
+                  return transformData(next, shape.result, 'encode', this._apiData);
+                });
+
+                return callbacks === undefined
+                  ? pending
+                  : pending.then(
+                      (next) => {
+                        callbacks.close();
+
+                        return next;
+                      },
+                      (error: unknown) => { callbacks.close(); throw error; },
+                    );
+              } catch (error) {
+                callbacks?.close();
+
+                throw error;
+              }
+            }));
+          } else if (shape.kind === 'state' && isStateSource(value)) {
+            releases.push(() => node.state.delete(node.id, key));
+            node.state.set(node.id, key, initial.get(key));
+
+            const publish = (next: unknown): void => {
+              try { node.state.set(node.id, key, transformData(next, shape.data, 'encode', this._apiData)); } catch (error) {
+                node.state.delete(node.id, key);
+
+                throw error;
+              }
+            };
+
+            const release: unknown = value.subscribe(publish);
+
+            if (typeof release !== 'function') { throw new Error('observable subscribe must return an unsubscribe function'); }
+
+            releases.push(() => { release(); });
+          } else if (shape.kind === 'event' && isEventSource(value)) {
+            const release: unknown = value.subscribe((payload: unknown): void => node.events.emit(key, transformData(payload, shape.data, 'encode', this._apiData)));
+
+            if (typeof release !== 'function') { throw new Error('signal subscribe must return an unsubscribe function'); }
+
+            releases.push(() => { release(); });
+          }
+        });
+      },
+      stop: (): void => {
+        const index = this._declarations.indexOf(declaration);
+
+        if (index >= 0) { this._declarations.splice(index, 1); }
+
+        const failures: unknown[] = [];
+
+        for (const release of releases.splice(0).reverse()) {
+          try { release(); } catch (error) { failures.push(error); }
+        }
+
+        definition.release = undefined;
+
+        try { definition.onRelease?.(); } catch (error) { failures.push(error); }
+
+        this._refreshApis();
+
+        if (failures.length) { throw new AggregateError(failures, 'API cleanup failed'); }
+      },
+    };
+
+    this.install(declaration);
+    definition.release = declaration.stop;
+    this._refreshApis();
   }
 
   /**
@@ -288,7 +517,7 @@ export class Runtime {
    * stopped before the tick arrived. A package above the floor may publish a different bundle
    * afterwards; the last one announced is what peers read.
    */
-  private publishOwnTranslations(): void {
+  private _publishOwnTranslations(): void {
     const bundle = currentI18n()?.bundle;
 
     if (bundle === undefined || this._translations === undefined) { return; }
@@ -296,15 +525,11 @@ export class Runtime {
     this._translations.provide(bundle);
   }
 
-  private requireManifest(): AddonManifest {
-    return this.require(this._manifest, 'manifest');
+  private _requireManifest(): AddonManifest {
+    return this._require(this._manifest, 'manifest');
   }
 
-  private requireNode(): SyncNode {
-    return this.require(this._node, 'node');
-  }
-
-  private require<T>(value: T | undefined, what: string): T {
+  private _require<T>(value: T | undefined, what: string): T {
     if (value === undefined) {
       throw new Error(`runtime.${what} is unavailable: call register() first`);
     }
@@ -314,4 +539,4 @@ export class Runtime {
 }
 
 /** The default runtime singleton. */
-export const core = new Runtime();
+export const core = new Runtime(defaultBindings);

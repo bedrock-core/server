@@ -1,3 +1,4 @@
+import { createResourceBundle } from '@bedrock-core/i18n';
 /**
  * GameTests for the bedrock-core stack. Most run several runtimes inside this one script
  * realm (they talk over the real `system` bus); the last asserts the separate peer pack
@@ -8,7 +9,10 @@
  * Run in-game: `/gametest runset core` (or `/gametest run core:<name>`). The `bench` tag in
  * `./bench` is registered alongside them but runs only when asked for by name.
  */
-import { Runtime, authorize, core, event, registerEvents, registerShared, schema } from '@bedrock-core/server-runtime';
+import { testManifest } from './manifest';
+import { computed, effect, observable, signal, type ReadonlyObservable } from '@bedrock-core/observable';
+import { Runtime, authorize, core, schema, worldTarget } from '@bedrock-core/server-runtime';
+import { SyncNode } from '@bedrock-core/sync';
 import { world } from '@minecraft/server';
 import { type Test, register } from '@minecraft/server-gametest';
 import './bench';
@@ -22,106 +26,144 @@ function gametest(name: string, fn: (test: Test) => void): void {
   register('core', name, fn).structureName(STRUCTURE).tag('core').maxTicks(220);
 }
 
-// Two runtimes discover each other and complete an RPC round-trip. register() auto-starts.
+// Core dependencies require a Runtime advertisement and a compatible public module.
 gametest('discovery_and_rpc', (test) => {
   const a = new Runtime();
-
-  a.register({ manifest: { creator: 'test', pack: 'demo_a', packName: 'A', version: '1.0.0' } });
   const b = new Runtime();
+  const aManifest = testManifest('test_demo_a', 'A');
+  const bManifest = testManifest('test_demo_b', 'B');
+  const raw = new SyncNode({ id: bManifest.namespace, version: '1.0.0' });
+  const shape = { kind: 'object', members: { ping: { kind: 'function' } } } as const;
 
-  b.register({ manifest: { creator: 'test', pack: 'demo_b', packName: 'B', version: '1.0.0' } });
-  b.rpc.onRequest('ping', () => 'pong');
+  a.register({
+    manifest: {
+      ...aManifest,
+      dependencies: [...aManifest.dependencies ?? [], { namespace: bManifest.namespace, uuid: bManifest.header.uuid, version: bManifest.header.version }],
+    },
+  });
+  raw.start();
 
+  let registrations = 0;
+  let unregistrations = 0;
+  let satisfied = 0;
   let reply: unknown;
+  const stopRegistration = a.registry.onRegister((addon) => { if (addon.id === bManifest.namespace) { registrations++; } });
+  const stopUnregistration = a.registry.onUnregister((addon) => { if (addon.id === bManifest.namespace) { unregistrations++; } });
+  const stopSatisfied = a.registry.onDependenciesSatisfied(() => { satisfied++; });
+  const client = a.api.createModule<{ ping(): Promise<string> }>(bManifest.namespace, '@fixture/ping', shape);
 
   test.startSequence()
     .thenIdle(20)
-    .thenExecute(() => void a.rpc.request(b.id, 'ping').then((r) => { reply = r; }))
+    .thenExecute(() => {
+      if (!raw.discovery.getPeer(a.id)) { test.fail('raw SyncNode did not discover the Runtime'); }
+
+      if (a.registry.has(bManifest.namespace)) { test.fail('raw SyncNode was counted as a Core registration'); }
+
+      if (!a.registry.missingDependencies().includes(bManifest.namespace)) { test.fail('raw SyncNode satisfied a Core dependency'); }
+
+      if (registrations !== 0 || satisfied !== 0) { test.fail('raw SyncNode fired Core registration callbacks'); }
+
+      raw.stop();
+      b.api.provideModule('@fixture/ping', shape, { ping: async (): Promise<string> => 'pong' });
+      b.register({ manifest: bManifest });
+    })
+    .thenIdle(20)
+    .thenExecute(() => { void client.ping().then((value) => { reply = value; }, (error) => { reply = String(error); }); })
     .thenIdle(20)
     .thenExecute(() => {
       if (!a.registry.has(b.id)) { test.fail('A did not discover B'); }
 
-      if (reply !== 'pong') { test.fail(`expected 'pong', got ${String(reply)}`); }
+      if (reply !== 'pong') { test.fail('peer call did not return pong: ' + String(reply)); }
 
-      a.stop();
+      if (a.registry.missingDependencies().includes(b.id)) { test.fail('registered Runtime did not satisfy its Core dependency'); }
+
+      if (registrations !== 1 || satisfied !== 1) { test.fail('Runtime registration did not fire Core callbacks exactly once'); }
+
       b.stop();
+      raw.start();
+    })
+    .thenIdle(20)
+    .thenExecute(() => {
+      if (a.registry.has(bManifest.namespace)) { test.fail('raw transport advertisement retained a Core registration'); }
+
+      if (unregistrations !== 1) { test.fail('Core unregistration was not observed when Runtime metadata disappeared'); }
+
+      stopRegistration();
+      stopUnregistration();
+      stopSatisfied();
+      raw.stop();
+      a.stop();
     })
     .thenSucceed();
 });
 
-// A runtime can RPC itself. Self-addressed messages loop back locally (the bus can't
-// hear its own echoes over the wire); the config UI relies on this to read the config of
-// the very addon hosting it.
+// A public module call can target its own registered runtime.
 gametest('rpc_to_self', (test) => {
-  const a = new Runtime();
+  const owner = new Runtime();
+  const shape = { kind: 'object', members: { echo: { kind: 'function' } } } as const;
 
-  a.register({ manifest: { creator: 'test', pack: 'self_rpc', packName: 'A', version: '1.0.0' } });
-  a.rpc.onRequest('echo', params => params);
+  owner.api.provideModule('@fixture/self', shape, { echo: async (value: number): Promise<number> => value });
+  owner.register({ manifest: testManifest('test_self_peer', 'A') });
 
+  const client = owner.api.createModule<{ echo(value: number): Promise<number> }>(owner.id, '@fixture/self', shape);
   let reply: unknown;
 
   test.startSequence()
     .thenIdle(10)
-    .thenExecute(() => void a.rpc.request(a.id, 'echo', 42).then((r) => { reply = r; }))
+    .thenExecute(() => { void client.echo(42).then((value) => { reply = value; }, (error) => { reply = String(error); }); })
     .thenIdle(20)
     .thenExecute(() => {
-      if (reply !== 42) { test.fail(`self-RPC failed: expected 42, got ${String(reply)}`); }
+      if (reply !== 42) { test.fail('self peer call failed: ' + String(reply)); }
 
-      a.stop();
+      owner.stop();
     })
     .thenSucceed();
 });
 
-// A shared tree replicates between runtimes: the owner writes, a peer reads it typed and hears
-// the change, and nothing a peer writes into the owner's namespace is applied anywhere.
+// Provider observables become readonly snapshots for peer module consumers.
 gametest('shared_replication', (test) => {
-  const a = new Runtime();
-  const { shared: own } = a.register({
-    manifest: { creator: 'test', pack: 'shared_a', packName: 'A', version: '1.0.0' },
-    shared: registerShared({ volume: 5, event: { name: 'none', active: false } }),
-  });
-  const b = new Runtime();
+  const owner = new Runtime();
+  const own = { volume: observable(5), status: observable({ name: 'none', active: false }) };
+  const shape = {
+    kind: 'object',
+    members: { volume: { kind: 'state' }, status: { kind: 'state' } },
+  } as const;
 
-  b.register({ manifest: { creator: 'test', pack: 'shared_b', packName: 'B', version: '1.0.0' } });
+  owner.api.provideModule('@fixture/state', shape, own);
+  owner.register({ manifest: testManifest('test_state_a', 'A') });
 
+  const consumer = new Runtime();
+
+  consumer.register({ manifest: testManifest('test_state_b', 'B') });
+
+  const mirror = consumer.api.createModule<typeof own>(owner.id, '@fixture/state', shape);
+  const volume: ReadonlyObservable<number | undefined> = mirror.volume;
   const seen: number[] = [];
 
   own.volume.set(7);
   test.startSequence()
     .thenIdle(20)
     .thenExecute(() => {
-      const mirror = b.shared.of<{ volume: number; event: { name: string; active: boolean } }>(a.namespace);
+      if (volume.get() !== 7) { test.fail('volume did not replicate to the consumer'); }
 
-      if (mirror === undefined) {
-        test.fail('B never saw the shape');
+      if (mirror.status.get()?.name !== 'none') { test.fail('the initial object snapshot did not arrive'); }
 
-        return;
-      }
+      if ('set' in volume) { test.fail('the consumer snapshot exposes a write operation'); }
 
-      if (mirror.volume.get() !== 7) { test.fail('volume did not replicate to B'); }
-
-      // An object key travels whole.
-      if (mirror.event.get()?.name !== 'none') { test.fail(`an object key did not replicate: ${JSON.stringify(mirror.event.get())}`); }
-
-      mirror.volume.subscribe((next) => { if (next !== undefined) { seen.push(next); } });
-
-      // A peer reaching past its read-only tree to the mirror itself changes nothing.
-      b.node.state.set(a.namespace, 'volume', 1);
-      own.event.set({ name: 'race', active: true });
+      volume.subscribe((next) => { if (next !== undefined) { seen.push(next); } });
+      own.status.set({ name: 'race', active: true });
       own.volume.set(9);
     })
     .thenIdle(20)
     .thenExecute(() => {
-      if (own.volume.get() !== 9) { test.fail(`a peer write reached the owner: ${String(own.volume.get())}`); }
+      if (own.volume.get() !== 9) { test.fail('the owner observable changed unexpectedly'); }
 
-      const mirror = b.shared.of<{ volume: number; event: { name: string; active: boolean } }>(a.namespace);
+      if (mirror.status.get()?.name !== 'race') { test.fail('the object snapshot did not update'); }
 
-      if (mirror?.event.get()?.name !== 'race') { test.fail('the owner write did not reach the peer'); }
+      if (seen.length !== 1 || seen[0] !== 9) { test.fail('unexpected snapshot changes: ' + JSON.stringify(seen)); }
 
-      if (seen.length !== 1 || seen[0] !== 9) { test.fail(`the peer's subscriber saw ${JSON.stringify(seen)}, expected [9]`); }
-
-      a.stop();
-      b.stop();
+      owner.stop();
+      consumer.stop();
     })
     .thenSucceed();
 });
@@ -130,20 +172,20 @@ gametest('shared_replication', (test) => {
 gametest('distinct_vs_collision', (test) => {
   const x = new Runtime();
 
-  x.register({ manifest: { creator: 'test', pack: 'dup_a', packName: 'X', version: '1.0.0' } });
+  x.register({ manifest: testManifest('test_dup_a', 'X') });
   const y = new Runtime();
 
-  y.register({ manifest: { creator: 'test', pack: 'dup_b', packName: 'Y', version: '1.0.0' } });
+  y.register({ manifest: testManifest('test_dup_b', 'Y') });
 
   const c1 = new Runtime();
 
-  c1.register({ manifest: { creator: 'test', pack: 'clash_same', packName: 'First', version: '1.0.0' } });
+  c1.register({ manifest: testManifest('test_clash_same', 'First') });
   let collided = false;
 
   c1.registry.onNamespaceCollision(() => { collided = true; });
   const c2 = new Runtime();
 
-  c2.register({ manifest: { creator: 'test', pack: 'clash_same', packName: 'Second', version: '1.0.0' } });
+  c2.register({ manifest: testManifest('test_clash_same', 'Second') });
 
   test.startSequence()
     .thenIdle(30)
@@ -159,30 +201,85 @@ gametest('distinct_vs_collision', (test) => {
     .thenSucceed();
 });
 
-// A feature enables only once its required namespace is present.
+// Optional behavior follows local configuration and peer snapshots, with owned teardown.
 gametest('feature_toggle', (test) => {
   const consumer = new Runtime();
-
-  consumer.register({ manifest: { creator: 'test', pack: 'game_main', packName: 'Game', version: '1.0.0', optionalDependencies: ['test_lb_main'] } });
-
-  let enabled = 0;
-
-  consumer.features.add('lb-sync', { condition: r => r.registry.has('test_lb_main'), onEnable: () => enabled++, onDisable: () => { /* noop */ } });
-
   const provider = new Runtime();
+  const configured = observable(true);
+  const accepting = observable<boolean | undefined>(true);
+  const events = signal<number>();
+  const shape = { kind: 'object', members: { accepting: { kind: 'state' } } } as const;
+  const peer = consumer.api.createModule<{ accepting: ReadonlyObservable<boolean | undefined> }>('test_lb_main', '@fixture/optional', shape);
+  let active = false;
+  let handled = 0;
+
+  let release = (): void => {};
+
+  let withdraw = (): void => {};
+
+  consumer.register({
+    manifest: testManifest('test_game_main', 'Game'),
+    integration: {
+      install(): void {
+        const enabled = computed(() => configured.get() && peer.accepting.get() === true, [configured, peer.accepting]);
+
+        let disconnect = (): void => {};
+
+        const stopEffect = effect(() => {
+          disconnect();
+          active = enabled.get();
+
+          disconnect = active ? events.subscribe((value) => { handled += value; }) : (): void => {};
+        }, [enabled]);
+
+        release = (): void => { stopEffect(); disconnect(); enabled.dispose(); active = false; };
+      },
+      stop(): void { release(); },
+    },
+  });
 
   test.startSequence()
-    .thenIdle(20)
+    .thenIdle(10)
     .thenExecute(() => {
-      if (enabled !== 0) { test.fail('feature enabled before its provider was present'); }
+      if (active) { test.fail('integration enabled before its peer snapshot arrived'); }
 
-      provider.register({ manifest: { creator: 'test', pack: 'lb_main', packName: 'Leaderboard', version: '1.0.0' } });
+      withdraw = provider.api.provideModule('@fixture/optional', shape, { accepting });
+      provider.register({ manifest: testManifest('test_lb_main', 'Leaderboard') });
     })
     .thenIdle(20)
     .thenExecute(() => {
-      if (enabled !== 1) { test.fail('feature did not enable when provider appeared'); }
+      if (!active) { test.fail('integration did not enable after its peer appeared'); }
+
+      configured.set(false);
+
+      if (active) { test.fail('local configuration did not disable the integration immediately'); }
+
+      events.emit(10);
+      configured.set(true);
+      events.emit(1);
+
+      if (handled !== 1) { test.fail('integration retained a disabled or duplicate listener'); }
+
+      withdraw();
+    })
+    .thenIdle(20)
+    .thenExecute(() => {
+      if (active) { test.fail('integration stayed active after its peer module was withdrawn'); }
+
+      provider.api.provideModule('@fixture/optional', shape, { accepting });
+    })
+    .thenIdle(20)
+    .thenExecute(() => {
+      if (!active) { test.fail('integration did not reconnect when its peer returned'); }
 
       consumer.stop();
+      consumer.stop();
+      configured.set(false);
+      configured.set(true);
+      events.emit(10);
+
+      if (active || handled !== 1) { test.fail('stopped integration kept a listener or effect'); }
+
       provider.stop();
     })
     .thenSucceed();
@@ -194,24 +291,31 @@ gametest('cross_pack_peer_present', (test) => {
   test.startSequence()
     .thenIdle(40)
     .thenExecute(() => {
-      if (!core.registry.has('core_fixture_peer')) {
+      const peer = core.registry.get('core_fixture_peer');
+
+      if (peer === undefined) {
         test.fail('peer pack not present — is test-fixture-peer installed and enabled?');
+
+        return;
       }
+
+      test.assert(peer.manifest.namespace === peer.id, 'The remote manifest keeps its owning namespace');
+      test.assert(peer.manifest.header.uuid === '6b83adc1-ffae-4081-bc77-d0c7663cad33', 'The remote manifest retains its native pack UUID');
+      test.assert(peer.manifest.header.name === 'Bedrock Core fixture peer' && peer.manifest.header.version === '1.0.0', 'Native header fields survive discovery');
+      test.assert(peer.manifest.metadata?.authors?.includes('DrAv0011') === true, 'Native author metadata survives discovery');
+      test.assert(peer.manifest.modules.some(module => module.type === 'script' && module.entry === 'scripts/main.js'), 'Native script modules survive discovery');
+      test.assert(peer.manifest.dependencies?.some(dependency => dependency.module_name === '@minecraft/server' && dependency.version === '2.10.0') === true, 'Native dependency objects survive discovery');
     })
     .thenSucceed();
 });
 
-// db is local: a peer asking for a collection over rpc gets nothing, because nothing serves it.
-// What crosses is what the owner registered itself — an rpc method over its own documents, with
-// the player rule in front of it and its own event behind.
+// Only explicitly exported functions expose the owner's private database.
 gametest('rpc_over_local_db', (test) => {
   const owner = new Runtime();
-
-  owner.register({ manifest: { creator: 'test', pack: 'rpc_a', packName: 'A', version: '1.0.0' } });
-
   const peer = new Runtime();
 
-  peer.register({ manifest: { creator: 'test', pack: 'rpc_b', packName: 'B', version: '1.0.0' } });
+  owner.register({ manifest: testManifest('test_notes_a', 'A') });
+  peer.register({ manifest: testManifest('test_notes_b', 'B') });
 
   const notes = owner.db.collection('notes', {
     schema: schema<{ text: string; seen: number }>({ defaults: { text: '', seen: 0 } }),
@@ -220,29 +324,36 @@ gametest('rpc_over_local_db', (test) => {
 
   notes.for(dimension).set({ text: 'hello', seen: 1 });
 
-  interface NotesApi {
-    note(params: { dimId: string; actorId?: string }): { text: string; seen: number } | undefined;
-    markSeen(params: { dimId: string; actorId?: string }): { text: string; seen: number } | undefined;
-  }
-
-  owner.rpc.serve<NotesApi>({
-    note: ({ dimId, actorId }) => {
+  const exports = {
+    async note(dimId: string, actorId?: string): Promise<{ text: string; seen: number } | undefined> {
       authorize({ dimension: dimId }, actorId, 'read');
 
       return notes.for(world.getDimension(dimId)).get();
     },
-    markSeen: ({ dimId, actorId }) => {
+    async markSeen(dimId: string, actorId?: string): Promise<{ text: string; seen: number } | undefined> {
       authorize({ dimension: dimId }, actorId, 'write');
 
-      const doc = notes.for(world.getDimension(dimId));
+      const document = notes.for(world.getDimension(dimId));
 
-      doc.patch({ seen: (doc.get()?.seen ?? 0) + 1 });
+      document.patch({ seen: (document.get()?.seen ?? 0) + 1 });
 
-      return doc.get();
+      return document.get();
     },
-  });
+  };
+  const shape = {
+    kind: 'object',
+    members: {
+      note: { kind: 'function' },
+      markSeen: { kind: 'function' },
+    },
+  } as const;
 
-  const client = peer.rpc.typed<NotesApi>(owner.id);
+  owner.api.provideModule('@fixture/notes', shape, exports);
+
+  const client = peer.api.createModule<typeof exports>(owner.id, '@fixture/notes', shape);
+  const privateDb = peer.api.createModule<{ read(): Promise<unknown> }>(owner.id, '@bedrock-core/db', {
+    kind: 'object', members: { read: { kind: 'function' } },
+  });
   let read: unknown;
   let written: unknown;
   let unserved: string | undefined;
@@ -250,28 +361,78 @@ gametest('rpc_over_local_db', (test) => {
   test.startSequence()
     .thenIdle(20)
     .thenExecute(() => {
-      void client.note({ dimId: dimension.id }).then((r) => { read = r; });
-      void client.markSeen({ dimId: dimension.id }).then((r) => { written = r; });
-      // The collection itself is not on the wire: db serves nobody.
-      void peer.rpc.request(owner.id, 'core:db.get', { collection: 'notes' })
-        .catch((error: unknown) => { unserved = String(error); });
+      void client.note(dimension.id).then((value) => { read = value; }, (error) => { read = String(error); });
+      void client.markSeen(dimension.id).then((value) => { written = value; }, (error) => { written = String(error); });
+      void privateDb.read().catch((error: unknown) => { unserved = String(error); });
     })
-    .thenIdle(30)
+    .thenIdle(130)
     .thenExecute(() => {
-      if (JSON.stringify(read) !== JSON.stringify({ text: 'hello', seen: 1 })) {
-        test.fail(`peer read ${JSON.stringify(read)}`);
-      }
+      try {
+        if (JSON.stringify(read) !== JSON.stringify({ text: 'hello', seen: 1 })) {
+          test.fail('peer read ' + JSON.stringify(read));
 
-      // The reply carries the document after the write, so no second round trip is needed.
-      if (JSON.stringify(written) !== JSON.stringify({ text: 'hello', seen: 2 })) {
-        test.fail(`write replied ${JSON.stringify(written)}`);
-      }
+          return;
+        }
 
-      if (notes.for(dimension).get()?.seen !== 2) { test.fail('the owner document did not change'); }
+        if (JSON.stringify(written) !== JSON.stringify({ text: 'hello', seen: 2 })) {
+          test.fail('write replied ' + JSON.stringify(written));
 
-      if (unserved === undefined || !unserved.includes('unknown method')) {
-        test.fail(`db answered a peer directly: ${String(unserved)}`);
+          return;
+        }
+
+        if (notes.for(dimension).get()?.seen !== 2) {
+          test.fail('the owner document did not change');
+
+          return;
+        }
+
+        if (unserved === undefined || !unserved.includes('unavailable')) {
+          test.fail('private database was exposed: ' + String(unserved));
+
+          return;
+        }
+      } finally {
+        owner.stop();
+        peer.stop();
       }
+    })
+    .thenSucceed();
+});
+
+// Standard signals deliver owner events once and never replay them to late subscribers.
+gametest('events_broadcast', (test) => {
+  const owner = new Runtime();
+  const peer = new Runtime();
+  const purchase = signal<{ item: string }>();
+  const shape = { kind: 'object', members: { purchase: { kind: 'event' } } } as const;
+  const heard: string[] = [];
+  const late: string[] = [];
+
+  peer.register({ manifest: testManifest('test_events_b', 'B') });
+
+  const client = peer.api.createModule<{ purchase: typeof purchase }>('test_events_a', '@fixture/events', shape);
+
+  client.purchase.subscribe(({ item }) => { heard.push('peer:' + item); });
+  owner.api.provideModule('@fixture/events', shape, { purchase });
+  owner.register({ manifest: testManifest('test_events_a', 'A') });
+  purchase.subscribe(({ item }) => { heard.push('self:' + item); });
+
+  test.startSequence()
+    .thenIdle(20)
+    .thenExecute(() => { purchase.emit({ item: 'sword' }); })
+    .thenIdle(10)
+    .thenExecute(() => {
+      client.purchase.subscribe(({ item }) => { late.push(item); });
+
+      if (heard.length !== 2 || !heard.includes('self:sword') || !heard.includes('peer:sword')) { test.fail('unexpected event delivery: ' + JSON.stringify(heard)); }
+
+      if (late.length !== 0) { test.fail('an event was replayed to a late listener'); }
+
+      purchase.emit({ item: 'shield' });
+    })
+    .thenIdle(10)
+    .thenExecute(() => {
+      if (late.length !== 1 || late[0] !== 'shield') { test.fail('unexpected late events: ' + JSON.stringify(late)); }
 
       owner.stop();
       peer.stop();
@@ -279,52 +440,69 @@ gametest('rpc_over_local_db', (test) => {
     .thenSucceed();
 });
 
-// Events cross realms and are kept by nobody: the owner hears its own, a peer that subscribed
-// before the owner existed hears it too, and a listener attached afterwards has missed it.
-gametest('events_broadcast', (test) => {
-  const a = new Runtime();
-  const b = new Runtime();
-  const heard: string[] = [];
-  const late: string[] = [];
+gametest('runtime_cleanup_lifetime', (test) => {
+  const owner = new Runtime();
+  const identity = testManifest('test_cleanup_lifetime', 'Cleanup');
+  let cleaned = false;
 
-  b.register({ manifest: { creator: 'test', pack: 'events_b', packName: 'B', version: '1.0.0' } });
+  test.startSequence().thenExecute(() => {
+    owner.register({
+      manifest: identity,
+      earlier: { install(): void {}, stop(): void { cleaned = true; } },
+      broken: { install(): void {}, stop(): void { throw new Error('cleanup failure'); } },
+    });
+    const pending = owner.db.collection('pending', {
+      schema: schema<{ value: number }>(),
+      accept: worldTarget(),
+      coalesce: true,
+    }).for(world);
 
-  // Before A has registered at all: an event missed is missed for good, so this must attach now.
-  b.events.of<{ purchase: ReturnType<typeof event<{ item: string }>> }>('test_events_a')
-    .purchase.subscribe(({ item }, from) => { heard.push(`${from}:${item}`); });
+    pending.set({ value: 7 });
+    let reported = false;
 
-  const { events: own } = a.register({
-    manifest: { creator: 'test', pack: 'events_a', packName: 'A', version: '1.0.0' },
-    events: registerEvents({ purchase: event<{ item: string }>() }),
-  });
+    try { owner.stop(); } catch (error) { reported = error instanceof AggregateError; }
 
-  own.purchase.subscribe(({ item }) => { heard.push(`self:${item}`); });
+    if (!reported || !cleaned || owner.registered) { test.fail('runtime cleanup did not finish and report the failing declaration'); }
+
+    const reader = new Runtime();
+
+    reader.register({ manifest: identity });
+    const saved = reader.db.collection('pending', { schema: schema<{ value: number }>(), accept: worldTarget() }).for(world).get();
+
+    if (saved?.value !== 7) { test.fail('stopping the runtime did not flush its pending database write'); }
+
+    reader.stop();
+    owner.stop();
+  }).thenSucceed();
+});
+
+gametest('translations_live_updates', (test) => {
+  const owner = new Runtime();
+  const reader = new Runtime();
+
+  owner.register({ manifest: testManifest('test_translation_owner', 'Translation owner') });
+  reader.register({ manifest: testManifest('test_translation_reader', 'Translation reader') });
+  const resolve = reader.translations.forLocale('en_US');
 
   test.startSequence()
-    .thenIdle(20)
-    .thenExecute(() => { own.purchase.emit({ item: 'sword' }); })
     .thenIdle(10)
     .thenExecute(() => {
-      // A listener attached now has missed the one already announced.
-      b.events.of<{ purchase: ReturnType<typeof event<{ item: string }>> }>('test_events_a')
-        .purchase.subscribe(({ item }) => { late.push(item); });
-
-      if (heard.length !== 2) { test.fail(`heard ${JSON.stringify(heard)}, expected the owner and the peer`); }
-
-      if (!heard.includes('self:sword')) { test.fail('the owner did not hear its own event'); }
-
-      if (!heard.includes('test_events_a:sword')) { test.fail(`the peer did not hear it, or named the wrong sender: ${JSON.stringify(heard)}`); }
-
-      if (late.length !== 0) { test.fail('an event was replayed to a late listener'); }
-
-      own.purchase.emit({ item: 'shield' });
+      owner.translations.provide(createResourceBundle('test_translation_owner', { en_US: { text: 'first' } }));
     })
-    .thenIdle(10)
+    .thenIdle(20)
     .thenExecute(() => {
-      if (late.length !== 1 || late[0] !== 'shield') { test.fail(`the late listener saw ${JSON.stringify(late)}`); }
+      if (resolve('test_translation_owner.text') !== 'first') { test.fail('the retained resolver did not receive the first peer bundle'); }
 
-      a.stop();
-      b.stop();
+      owner.translations.provide(createResourceBundle('test_translation_owner', { en_US: { text: 'second' } }));
+    })
+    .thenIdle(20)
+    .thenExecute(() => {
+      if (resolve('test_translation_owner.text') !== 'second') { test.fail('the retained resolver kept the replaced peer bundle'); }
+
+      if (reader.translations.bundles.get()['test_translation_owner'] === undefined) { test.fail('the observable bundle state is missing the peer'); }
+
+      owner.stop();
+      reader.stop();
     })
     .thenSucceed();
 });

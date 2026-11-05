@@ -5,13 +5,6 @@
  * running the NEWEST `@bedrock-core/server-runtime` ({@link RUNTIME_VERSION}), so a world with
  * an addon built last year and one built today gets today's behaviour for whatever is elected.
  *
- * ```ts
- * if (core.host.isHost) { doTheWork(player); }
- * else { core.rpc.request(core.host.id.get(), 'core:do-the-work', { playerId: player.id }); }
- *
- * core.host.id.subscribe(hostId => console.warn('the host is now', hostId));
- * ```
- *
  * The winner is a pure function of the registry, so it is expressed as one: {@link HostElection.id}
  * is `computed` over `registry.addons` and re-derives itself whenever an addon appears or
  * disappears. Nothing is exchanged to reach it — every realm sees the same registry and applies the

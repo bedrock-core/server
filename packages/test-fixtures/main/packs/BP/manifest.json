@@ -1,5 +1,6 @@
 {
 	"format_version": 3,
+	"namespace": "core_fixture",
 	"header": {
 		"name": "Bedrock Core fixture",
 		"description": "GameTest fixture for the Bedrock Core server runtime",

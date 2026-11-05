@@ -2,18 +2,16 @@ export { core, Runtime } from './runtime';
 export type { Declared, RegisterOptions, RuntimeSlots } from './runtime';
 
 export type { Declaration } from './declaration';
+export type { Codec } from './api/types';
+export { registerApi, type ApiDeclaration } from './api/declaration';
 
-export { RUNTIME_VERSION } from './runtime-version';
+export { RUNTIME_VERSION } from './manifest';
 
-export { Announcement, isRecord } from './announcement';
-export type { AnnouncementListener } from './announcement';
+export { isRecord } from './guards';
 
 export type { HostElection, HostListener } from './host';
 
-export type { IncompatibleListener, IncompatiblePeer } from '@bedrock-core/sync';
 export type { AddonListener, CollisionListener, RegisteredAddon, Registry } from './registry';
-
-export type { FeatureConditionContext, FeatureFlags, FeatureManager, FeatureSpec, TypedFeatureAccessor } from './features';
 
 // What an addon needs to declare a collection on `core.db`; the package itself is the source for the rest.
 export {
@@ -33,31 +31,7 @@ export {
 } from '@bedrock-core/db';
 export type { Collection, Db, Document, IndexedDocument, Schema } from '@bedrock-core/db';
 
-export { event, registerEvents } from './events';
-export type {
-  EventListener,
-  EventMarker,
-  EventsDef,
-  EventsRegistry,
-  EventsTree,
-  OwnEvent,
-  PayloadOf,
-  PeerEvent,
-  PeerEventsTree,
-} from './events';
-
-export { registerShared } from './shared';
-export type {
-  PeerSharedTree,
-  PeerValue,
-  Shape,
-  SharedDef, SharedRegistry, SharedTree,
-  SharedValue,
-} from './shared';
-
-export type { AddonManifest, ManifestMeta } from './manifest';
-
-export type { RPCHandlerMap, TypedClient } from '@bedrock-core/sync';
+export type { AddonManifest } from './manifest';
 
 export { isUsable, type EngineHandle } from './handle';
 

@@ -13,8 +13,9 @@
  */
 import { system } from '@minecraft/server';
 import { type Test, register } from '@minecraft/server-gametest';
-import { Bus, MAX_MESSAGE } from '@bedrock-core/sync';
-import { Runtime, core, registerShared } from '@bedrock-core/server-runtime';
+import { Bus, MAX_MESSAGE, SyncNode } from '@bedrock-core/sync';
+import { core } from '@bedrock-core/server-runtime';
+import { PEER_ECHO_MODULE, peerEchoShape, type PeerEcho } from '@bedrock-core/server-test-fixtures/peer-contract';
 
 const STRUCTURE = 'core:empty';
 
@@ -136,31 +137,31 @@ gametest('sync_unicode_roundtrip', (test) => {
 /**
  * A burst of small messages is packed into fewer script events than it has envelopes. Packing is
  * negotiated — a sender only packs for readers that announced they can unpack — so this runs
- * between two runtimes rather than two bare buses, which would never have met.
+ * between two sync nodes rather than two bare buses, which would never have met.
  */
 gametest('sync_batch_packing', (test) => {
-  const a = new Runtime();
-  const b = new Runtime();
+  const a = new SyncNode({ id: 'test_pack_burst_a' });
+  const b = new SyncNode({ id: 'test_pack_burst_b' });
 
-  a.register({ manifest: { creator: 'test', pack: 'pack_burst_a', packName: 'A', version: '1.0.0' } });
-  b.register({ manifest: { creator: 'test', pack: 'pack_burst_b', packName: 'B', version: '1.0.0' } });
+  a.start();
+  b.start();
   const BURST = 40;
   let delivered = 0;
   let messages = 0;
 
   let stopProbe = (): void => {};
 
-  b.node.bus.on('fixture-packed', () => { delivered++; });
+  b.bus.on('fixture-packed', () => { delivered++; });
 
   test.startSequence()
     .thenIdle(30)
     .thenExecute(() => {
-      if (!a.registry.has(b.id)) { test.fail('the two runtimes never met, so nothing could be negotiated'); }
+      if (a.discovery.getPeer(b.id) === undefined) { test.fail('the two nodes never met, so nothing could be negotiated'); }
 
       // Counted from here, so the announces that did the negotiating are not in the total.
-      stopProbe = wireProbe(a.node.bus.instanceId, () => { messages++; });
+      stopProbe = wireProbe(a.bus.instanceId, () => { messages++; });
 
-      for (let i = 0; i < BURST; i++) { a.node.bus.send({ type: 'fixture-packed', data: { key: `price:${i}`, value: 16 + i } }); }
+      for (let i = 0; i < BURST; i++) { a.bus.send({ type: 'fixture-packed', data: { key: `price:${i}`, value: 16 + i } }); }
     })
     .thenIdle(40)
     .thenExecute(() => {
@@ -180,33 +181,44 @@ gametest('sync_batch_packing', (test) => {
  * from deltas it never heard. This is the path every addon takes that is enabled mid-world.
  */
 gametest('sync_late_joiner_snapshot', (test) => {
-  const owner = new Runtime();
-  const { shared: own } = owner.register({
-    manifest: { creator: 'test', pack: 'late_owner', packName: 'Owner', version: '1.0.0' },
-    shared: registerShared({ volume: 1, motd: 'quiet' }),
-  });
-  let late: Runtime | undefined;
+  const owner = new SyncNode({ id: 'test_late_owner' });
+  let late: SyncNode | undefined;
+  const volumes: (number | undefined)[] = [];
+  let releaseVolume: (() => void) | undefined;
 
-  own.volume.set(11);
-  own.motd.set('loud');
+  owner.start();
+  owner.state.observe(owner.id, 'unpublished');
+  owner.state.set(owner.id, 'volume', 11);
+  owner.state.set(owner.id, 'motd', 'loud');
+  owner.state.set(owner.id, 'removed', true);
+  owner.state.delete(owner.id, 'removed');
 
   test.startSequence()
     .thenIdle(30)
     .thenExecute(() => {
       // Every delta is long gone by the time this node exists.
-      late = new Runtime();
-      late.register({ manifest: { creator: 'test', pack: 'late_joiner', packName: 'Joiner', version: '1.0.0' } });
+      late = new SyncNode({ id: 'test_late_joiner' });
+      releaseVolume = late.state.observe<number>(owner.id, 'volume').subscribe(value => volumes.push(value));
+      late.start();
     })
     .thenIdle(40)
     .thenExecute(() => {
-      const mirror = late?.shared.of<{ volume: number; motd: string }>(owner.namespace);
+      const volume = late?.state.get(owner.id, 'volume');
+      const motd = late?.state.get(owner.id, 'motd');
 
-      if (mirror === undefined) {
-        test.fail('the late node never saw the shape');
-      } else if (mirror.volume.get() !== 11 || mirror.motd.get() !== 'loud') {
-        test.fail(`the snapshot rebuilt ${JSON.stringify({ volume: mirror.volume.get(), motd: mirror.motd.get() })}`);
+      if (volume !== 11 || motd !== 'loud') {
+        test.fail(`the snapshot rebuilt ${JSON.stringify({ volume, motd })}`);
       }
 
+      if (volumes.length !== 1 || volumes[0] !== 11) { test.fail('the observable did not receive the snapshot value exactly once'); }
+
+      const entries = late?.state.snapshot(owner.id) ?? [];
+
+      if (entries.length !== 3 || !entries.some(entry => entry.k === 'removed' && entry.del === true)) {
+        test.fail('the snapshot must retain the deletion and omit the unpublished observed key');
+      }
+
+      releaseVolume?.();
       owner.stop();
       late?.stop();
     })
@@ -223,6 +235,7 @@ gametest('cross_pack_rpc_chunked', (test) => {
   const expected = { chars: JSON.stringify(value).length, sum: checksum(value) };
   let reply: unknown;
   let failure: string | undefined;
+  const peer = core.api.createModule<PeerEcho>('core_fixture_peer', PEER_ECHO_MODULE, peerEchoShape);
 
   test.startSequence()
     .thenIdle(40)
@@ -233,7 +246,7 @@ gametest('cross_pack_rpc_chunked', (test) => {
         return;
       }
 
-      void core.rpc.request('core_fixture_peer', 'echo', value)
+      void peer.echo(value)
         .then((r) => { reply = r; })
         .catch((error: unknown) => { failure = String(error); });
     })
