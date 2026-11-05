@@ -1,5 +1,5 @@
 ---
-'@bedrock-core/observable': major
+'@bedrock-core/observable': minor
 ---
 
 Add `signal<T>()` for transient events with independent, idempotent cleanup and isolated listener failures. `Signal<T>` subscriptions return an unsubscribe function and expose no retained value or native filter options.

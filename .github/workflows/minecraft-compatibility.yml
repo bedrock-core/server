@@ -1,0 +1,23 @@
+name: Minecraft API compatibility
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  repository_dispatch:
+    types: [minecraft-compatibility]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: minecraft-compatibility-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    uses: bedrock-core/bds-runner/.github/workflows/minecraft-compatibility.yml@main
+    with:
+      project: server
+      builder-ref: ${{ vars.COMPATIBILITY_BUILDER_REF || '' }}

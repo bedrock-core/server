@@ -65,3 +65,4 @@ packages/*/build/
 # report parser is developed against real engine output, not hand-written samples.
 !packages/bds-runner/src/**/fixtures/
 !packages/bds-runner/src/**/fixtures/*.log
+/.bedrock-core

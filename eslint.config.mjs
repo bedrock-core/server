@@ -14,6 +14,8 @@ export default defineConfig([
       ".yarn/**",
       // The Bedrock Dedicated Server tree the GameTest runner downloads and runs from.
       ".bds/**",
+      ".bedrock-core/**",
+      ".cache/**",
       "dist/**",
       "node_modules/**",
       // Generated builder declarations and cache in the test fixtures.
@@ -137,5 +139,16 @@ export default defineConfig([
     },
   },
 
+  {
+    files: ['packages/*/src/**/*.ts'],
+    rules: {
+      '@typescript-eslint/naming-convention': ['error', {
+        selector: 'memberLike',
+        modifiers: ['private'],
+        format: ['camelCase'],
+        leadingUnderscore: 'require',
+      }],
+    },
+  },
 ]);
 
