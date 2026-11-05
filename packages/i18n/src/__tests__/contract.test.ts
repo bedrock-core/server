@@ -1,11 +1,9 @@
 /**
- * The interpolation contract with the i18n Regolith filter. The filter
+ * The interpolation contract with the Builder i18n stage. The stage
  * converts {{var}} templates to positional %N$s when writing .lang files; the
  * runtime performs the identical conversion lazily in `resolve()` — one
- * template per lookup, no tables materialized anywhere. Both test suites pin
- * the SAME table — regolith-filters/i18n/test/contract.test.js carries the
- * counterpart — so a drift on either side fails a build instead of landing
- * arguments in wrong placeholders.
+ * template per lookup, no tables materialized anywhere. Contract vectors pin
+ * argument order, repeated variables and literal percent signs.
  */
 import { describe, expect, it } from 'vitest';
 

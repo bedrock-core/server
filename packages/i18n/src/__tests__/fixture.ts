@@ -1,5 +1,5 @@
 /**
- * A bundle mirroring what the i18n Regolith filter generates for the e2e
+ * A bundle mirroring what the Builder i18n stage generates for the e2e
  * fixture addon: own keys, a `core` library branch (with an en_US-only
  * override — "Mods"), a referenced vanilla key, and a Czech partial with a
  * `few` plural. `resources` is typed the way the generated declaration types

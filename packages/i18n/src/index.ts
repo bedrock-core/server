@@ -9,6 +9,7 @@ export type {
   BoundI18n,
   CreateI18nOptions,
   I18n,
+  I18nResourceExtensions,
   TranslateFn,
   TranslationResolver,
 } from './createI18n';
@@ -20,7 +21,7 @@ export { overlay } from './overlay';
 export { pluralCategory } from './plural';
 export type { PluralCategory } from './plural';
 export { createResourceBundle } from './resources';
-export type { ResourceBundleOptions, ResourceTree } from './resources';
+export type { ResourceBundleOptions, ResourceLocales, ResourceTree } from './resources';
 export type {
   AnyLeaf,
   ArgsOf,

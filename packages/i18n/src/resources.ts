@@ -1,14 +1,14 @@
 /**
  * Build an {@link I18nBundle} from nested resource modules at runtime — no
- * Regolith filter involved. Two audiences:
+ * Builder stage involved. Two audiences:
  *
  * - **Libraries** (config, future bedrock-core packages): their resources ship
- *   inside the package and the consuming addon's filter folds them into the
+ *   inside the package and the consuming addon's i18n stage folds them into the
  *   `.lang`; the library itself still wants typed verbs over its own strings
  *   for breadcrumbs, native modal headings, and any place a key must become a
  *   string. `createResourceBundle('core', { en_US })` gives it exactly the
- *   bundle shape `createI18n` expects, namespaced the way the filter emits it.
- * - **Addons without the filter**: everything works minus what only the build
+ *   bundle shape `createI18n` expects, namespaced the way the stage emits it.
+ * - **Addons without the stage**: everything works minus what only the build
  *   can do (`.lang` emission, vanilla branch, cross-locale checks).
  */
 import type { I18nBundle } from './bundle';
@@ -18,6 +18,9 @@ import { templateVars } from './interpolate';
 export interface ResourceTree {
   readonly [key: string]: string | ResourceTree;
 }
+
+/** Authored locale codes mapped to nested resource trees. */
+export type ResourceLocales = Readonly<Record<string, ResourceTree>>;
 
 function flatten(tree: ResourceTree, prefix: string, into: Record<string, string>): void {
   for (const [segment, value] of Object.entries(tree)) {
@@ -45,12 +48,28 @@ export interface ResourceBundleOptions {
  * @param locales   one nested resource object per locale; the default locale
  *                  defines the type and the recorded argument order
  */
-export function createResourceBundle<T extends ResourceTree>(
+export function createResourceBundle<const L extends ResourceLocales & { readonly en_US: ResourceTree }>(
   namespace: string,
-  locales: Readonly<Record<string, ResourceTree>> & { readonly en_US: T },
+  locales: L,
+  options?: ResourceBundleOptions & { readonly defaultLocale?: 'en_US' },
+): I18nBundle & { readonly resources?: L['en_US'] };
+export function createResourceBundle<const L extends ResourceLocales, const D extends keyof L & string>(
+  namespace: string,
+  locales: L,
+  options: ResourceBundleOptions & { readonly defaultLocale: D },
+): I18nBundle & { readonly resources?: L[D] };
+
+export function createResourceBundle(
+  namespace: string,
+  locales: ResourceLocales,
   options: ResourceBundleOptions = {},
-): I18nBundle & { readonly resources?: T } {
+): I18nBundle {
   const { defaultLocale = 'en_US', extra } = options;
+
+  if (!Object.prototype.hasOwnProperty.call(locales, defaultLocale)) {
+    throw new Error(`The default locale '${defaultLocale}' is not present in the resource objects`);
+  }
+
   const tables: Record<string, Record<string, string>> = {};
 
   for (const [locale, tree] of Object.entries(locales)) {

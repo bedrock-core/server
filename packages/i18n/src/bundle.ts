@@ -1,6 +1,5 @@
 /**
- * The runtime bundle the i18n Regolith filter generates
- * (`@bedrock-core/generated/i18n`, inlined by the bundler).
+ * Internal translation data shared by the compiler and runtime engine.
  *
  * `resources` is a type-only phantom: the generated declaration narrows it to
  * the authored resource tree (own keys at the root, library and vanilla

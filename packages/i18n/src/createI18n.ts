@@ -14,6 +14,7 @@ import { resolveDisplay, type DisplayText } from './display';
 import { interpolate, isNamedArgs, toPositional } from './interpolate';
 import { pickLocale } from './locale';
 import { pluralCategory } from './plural';
+import { createResourceBundle, type ResourceBundleOptions, type ResourceLocales, type ResourceTree } from './resources';
 import type { AnyLeaf, ArgsOf, Interp, PathsOf, ResolvePath, SelectorTree } from './types';
 
 /** Dynamic property a per-player language override persists under. */
@@ -77,6 +78,12 @@ export interface I18n<R> extends BoundI18n<R> {
 }
 
 export interface CreateI18nOptions {
+  /** Owning addon or library namespace. Builder supplies the owning manifest's namespace. */
+  readonly namespace?: string;
+  /** Locale defining the typed resource tree and interpolation order. Defaults to en_US. */
+  readonly defaultLocale?: string;
+  /** Native language entries available to server-side display resolution. */
+  readonly extra?: ResourceBundleOptions['extra'];
   /**
    * Register this instance as the addon's default translation source, which is
    * what lets `@bedrock-core/ui` resolve localized-text measurement with no
@@ -86,6 +93,25 @@ export interface CreateI18nOptions {
    */
   readonly asDefault?: boolean;
 }
+
+/** Installed library and vanilla branches contributed by Builder's internal declarations. */
+
+export interface I18nResourceExtensions {}
+
+/** Compose shared selector branches with authored siblings and canonical library leaf contracts. */
+type MergeResources<Own, Library> = {
+  readonly [K in keyof Own | keyof Library]: K extends keyof Library
+    ? K extends keyof Own
+      ? Own[K] extends object
+        ? Library[K] extends object
+          ? Library[K] extends string ? Library[K] : MergeResources<Own[K], Library[K]>
+          : Library[K]
+        : Library[K]
+      : Library[K]
+    : K extends keyof Own ? Own[K] : never;
+};
+
+type AuthoredResources<R> = MergeResources<R, I18nResourceExtensions>;
 
 // Module scope is per-bundle in Bedrock (each addon bundles its own copy), so
 // this is an addon-local default, not a cross-addon global.
@@ -158,7 +184,52 @@ function toWith(values: readonly (Interp | RawMessage)[]): string[] | RawMessage
   return values.map(String);
 }
 
-export function createI18n<B extends I18nBundle>(bundle: B, options: CreateI18nOptions = {}): I18n<ResourcesOf<B>> {
+/** Create typed translation verbs directly from authored locale objects. */
+export function createI18n<const L extends ResourceLocales & { readonly en_US: ResourceTree }>(
+  locales: L,
+  options?: CreateI18nOptions & { readonly defaultLocale?: 'en_US' },
+): I18n<AuthoredResources<L['en_US']>>;
+export function createI18n<const L extends ResourceLocales, const D extends keyof L & string>(
+  locales: L,
+  options: CreateI18nOptions & { readonly defaultLocale: D },
+): I18n<AuthoredResources<L[D]>>;
+/** Consume a compiler-produced or library-owned bundle. */
+export function createI18n<B extends I18nBundle>(bundle: B, options?: CreateI18nOptions): I18n<ResourcesOf<B>>;
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- overloads preserve the resource tree while the shared implementation accepts both input forms
+export function createI18n(input: I18nBundle | ResourceLocales, options: CreateI18nOptions = {}): I18n<any> {
+  if (isBundle(input)) {
+    return fromBundle(input, options);
+  }
+
+  if (typeof options.namespace !== 'string' || !options.namespace.trim()) {
+    throw new Error('createI18n locale objects need a namespace option outside Builder');
+  }
+
+  const bundle = createResourceBundle(options.namespace, input, {
+    defaultLocale: options.defaultLocale ?? 'en_US',
+    ...(options.extra === undefined ? {} : { extra: options.extra }),
+  });
+
+  return fromBundle(bundle, options);
+}
+
+function isBundle(input: I18nBundle | ResourceLocales): input is I18nBundle {
+  return typeof input.namespace === 'string' && typeof input.defaultLocale === 'string';
+}
+
+function fromBundle<B extends I18nBundle>(input: B, options: CreateI18nOptions): I18n<ResourcesOf<B>> {
+  const bundle = options.extra === undefined
+    ? input
+    : {
+        ...input,
+        extra: {
+          ...input.extra,
+          ...Object.fromEntries(Object.entries(options.extra).map(([locale, entries]) => [locale, {
+            ...input.extra?.[locale], ...entries,
+          }])),
+        },
+      };
   const root = makeProxy('');
   const defaultTable = bundle.locales[bundle.defaultLocale] ?? {};
   const localeList = [...new Set([...Object.keys(bundle.locales), ...Object.keys(bundle.extra ?? {})])];

@@ -5,7 +5,7 @@
  * published for other addons to measure.
  *
  * `toPositional` is the runtime half of a build-time contract: the i18n
- * Regolith filter performs the identical conversion when writing `.lang`
+ * Builder stage performs the identical conversion when writing `.lang`
  * files, and both sides are pinned against the same table in their contract
  * tests.
  */

@@ -1,7 +1,8 @@
 /**
  * The compile-time half of the engine: selector trees, dot-path unions and
- * interpolation-variable inference, all derived from the bundle's phantom
- * `resources` type. Conventions are i18next's ({{var}}, plural suffixes, the
+ * interpolation-variable inference, derived from authored resource literals
+ * or a compiled bundle's phantom `resources` type. Conventions are i18next's
+ * ({{var}}, plural suffixes, the
  * selector call shape); the machinery is this package's own, sized for
  * Bedrock's constraints.
  */
