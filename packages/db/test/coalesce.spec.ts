@@ -34,10 +34,18 @@ function harness(parkFor?: number): {
   const lifecycle = {
     schedule: vi.fn((flush: () => void) => {
       scheduled.push(flush);
+
+      return (): void => {
+        const index = scheduled.indexOf(flush);
+
+        if (index >= 0) { scheduled.splice(index, 1); }
+      };
     }),
     tick: (): number => now,
     attach: vi.fn((hooks: { loaded(target: unknown): void; leaving(target: unknown): void }) => {
       attachedHooks = hooks;
+
+      return (): void => { attachedHooks = undefined; };
     }),
   };
   const log = vi.fn<(message: string) => void>();

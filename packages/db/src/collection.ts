@@ -160,7 +160,7 @@ export function parseBlockIdentity(identity: string): { dimensionId: string; x: 
  */
 export interface Lifecycle {
   /** Run `flush` once, later in this tick or next — `system.run` in the engine. */
-  schedule(flush: () => void): void;
+  schedule(flush: () => void): Unsubscribe;
   /**
    * The current tick. A handle re-resolves its target at most once per tick: within one tick the
    * script is the only thing running, so a target it has not itself removed is still there.
@@ -168,7 +168,7 @@ export interface Lifecycle {
    */
   tick?(): number;
   /** Called once; `loaded` must be called with every entity that loads, `leaving` with every player about to leave. */
-  attach(hooks: { loaded(target: unknown): void; leaving(target: unknown): void }): void;
+  attach(hooks: { loaded(target: unknown): void; leaving(target: unknown): void }): Unsubscribe;
 }
 
 /** What `createDb()` takes. */
@@ -188,6 +188,8 @@ export interface DbOptions {
 
 /** A set of collections over one namespace, sharing a resolver and the world. */
 export interface Db {
+  /** Flush pending writes and release hooks, scheduled work and subscriptions. Idempotent. */
+  stop(): void;
   /**
    * A collection of documents. The document type rides the schema, the target type rides the
    * acceptor — any storable target when there is none — and `require` is checked against what that
@@ -272,6 +274,8 @@ interface Parked<T> {
 
 /** What every collection shares from its db. */
 interface Shared {
+  readonly subscriptions: Set<Unsubscribe>;
+  assertActive(): void;
   readonly namespace: string;
   readonly resolver: Resolver;
   readonly locate: Locator;
@@ -392,6 +396,8 @@ class Handle<T extends object> implements Document<T> {
   }
 
   subscribe(listener: (doc: T | undefined, prev: T | undefined) => void): Unsubscribe {
+    this._c.shared.assertActive();
+
     if (!this._first.ok) {
       return NO_LISTENER;
     }
@@ -406,22 +412,28 @@ class Handle<T extends object> implements Document<T> {
 
     entry.listeners++;
 
-    return (): void => {
+    const stop = (): void => {
       if (released) {
         return;
       }
 
       released = true;
       release();
+      c.shared.subscriptions.delete(stop);
       entry.listeners--;
 
       if (entry.listeners === 0 && key !== undefined && c.streams.get(key) === entry) {
         c.streams.delete(key);
       }
     };
+
+    c.shared.subscriptions.add(stop);
+
+    return stop;
   }
 
   private _current(): State {
+    this._c.shared.assertActive();
     const tick = this._c.shared.tick;
 
     if (tick === undefined) {
@@ -587,16 +599,22 @@ class CollectionImpl<T extends object> implements Collection<T, unknown> {
   }
 
   get size(): number {
+    this.shared.assertActive();
+
     return this.index.size;
   }
 
   for(target: unknown): Document<T> {
+    this.shared.assertActive();
+
     const first = this.admit(this.shared.resolver.resolve(target));
 
     return new Handle(this, first, first.ok ? this.shared.locate.bind(target, first.resolution) : NOTHING);
   }
 
   where(target: unknown): Where {
+    this.shared.assertActive();
+
     const admitted = this.admit(this.shared.resolver.resolve(target));
 
     return admitted.ok
@@ -605,6 +623,8 @@ class CollectionImpl<T extends object> implements Collection<T, unknown> {
   }
 
   forget(target: unknown): void {
+    this.shared.assertActive();
+
     const resolution = this.shared.resolver.resolve(target);
     const key = resolution.ok ? identityKey(resolution.kind, resolution.identity) : undefined;
 
@@ -617,6 +637,8 @@ class CollectionImpl<T extends object> implements Collection<T, unknown> {
   }
 
   * all(): IterableIterator<IndexedDocument<T>> {
+    this.shared.assertActive();
+
     for (const entry of [...this.index.entries()]) {
       const at = entry.indexOf(':');
       const kind = entry.slice(0, at);
@@ -636,6 +658,8 @@ class CollectionImpl<T extends object> implements Collection<T, unknown> {
   }
 
   at(kind: TargetKind, identity: string): IndexedDocument<T> | undefined {
+    this.shared.assertActive();
+
     return this._handleForEntry(kind, identity);
   }
 
@@ -837,6 +861,36 @@ export function createDb(options: DbOptions): Db {
   const lifecycle = options.lifecycle;
   let attached = false;
   let flushScheduled = false;
+  let stopped = false;
+  let releaseHooks: Unsubscribe | undefined;
+  const pending = new Set<Unsubscribe>();
+  const subscriptions = new Set<Unsubscribe>();
+
+  const assertActive = (): void => {
+    if (stopped) { throw new Error('[db] database is stopped'); }
+  };
+
+  const schedule = (flush: () => void): void => {
+    if (stopped) { return; }
+
+    if (lifecycle === undefined) {
+      flush();
+
+      return;
+    }
+
+    const task: { cancel?: Unsubscribe; finished: boolean } = { finished: false };
+
+    task.cancel = lifecycle.schedule(() => {
+      task.finished = true;
+
+      if (task.cancel !== undefined) { pending.delete(task.cancel); }
+
+      if (!stopped) { flush(); }
+    });
+
+    if (!task.finished) { pending.add(task.cancel); }
+  };
 
   const keyOf = (target: unknown): string | undefined => {
     const resolution = resolver.resolve(target);
@@ -853,12 +907,14 @@ export function createDb(options: DbOptions): Db {
   };
 
   const shared: Shared = {
+    subscriptions,
+    assertActive,
     namespace,
     resolver,
     locate: options.locate ?? structuralLocator,
     worldHost: directHost(world, { readableWhenUnloaded: true }),
     tick: lifecycle?.tick?.bind(lifecycle),
-    scheduleIndex: lifecycle === undefined ? undefined : lifecycle.schedule.bind(lifecycle),
+    scheduleIndex: lifecycle === undefined ? undefined : schedule,
     parkFor: options.parkFor ?? PARK_FOR,
 
     log: options.log ?? ((message: string): void => {
@@ -871,17 +927,22 @@ export function createDb(options: DbOptions): Db {
         return;
       }
 
-      attached = true;
-      lifecycle?.attach({
+      assertActive();
+      releaseHooks = lifecycle?.attach({
         loaded: (target): void => {
+          if (stopped) { return; }
+
           for (const collection of collections) {
             collection.loaded(target);
           }
         },
         leaving: (target): void => {
+          if (stopped) { return; }
+
           flushAll(keyOf(target));
         },
       });
+      attached = true;
     },
 
     scheduleFlush: (): void => {
@@ -894,7 +955,7 @@ export function createDb(options: DbOptions): Db {
       if (lifecycle === undefined) {
         flushAll();
       } else {
-        lifecycle.schedule(() => flushAll());
+        schedule(() => flushAll());
       }
     },
   };
@@ -902,7 +963,35 @@ export function createDb(options: DbOptions): Db {
   return {
     resolver,
 
+    stop(): void {
+      if (stopped) { return; }
+
+      stopped = true;
+      const failures: unknown[] = [];
+
+      const release = (callback: () => void): void => {
+        try { callback(); } catch (error) { failures.push(error); }
+      };
+
+      if (releaseHooks !== undefined) { release(releaseHooks); }
+
+      releaseHooks = undefined;
+
+      for (const cancel of pending) { release(cancel); }
+
+      pending.clear();
+
+      for (const unsubscribe of [...subscriptions]) { release(unsubscribe); }
+
+      subscriptions.clear();
+
+      for (const collection of collections) { release(() => collection.flush()); }
+
+      if (failures.length > 0) { throw new AggregateError(failures, 'database cleanup failed'); }
+    },
+
     collection<T extends object, Target, R extends Requirements>(name: string, collectionOptions: CollectionOptions<T, Target, R>): Collection<T, Target> {
+      assertActive();
       // The acceptor's brand is compile-time only; at runtime every collection handles `unknown`.
       const impl = new CollectionImpl<T>(shared, name, collectionOptions as CollectionOptions<T, unknown, Requirements>); // eslint-disable-line @typescript-eslint/no-unsafe-type-assertion
 
@@ -912,12 +1001,19 @@ export function createDb(options: DbOptions): Db {
     },
 
     flush: (target): void => {
+      assertActive();
       flushAll(target === undefined ? undefined : keyOf(target));
     },
 
-    find: (name): Collection<object, unknown> | undefined => collections.find(collection => collection.name === name),
+    find: (name): Collection<object, unknown> | undefined => {
+      assertActive();
+
+      return collections.find(collection => collection.name === name);
+    },
 
     blockRemoved: (dimensionId, location, typeId): void => {
+      if (stopped) { return; }
+
       const identity = `${dimensionId}:${location.x},${location.y},${location.z}:${typeId}`;
 
       for (const collection of collections) {

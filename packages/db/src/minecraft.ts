@@ -6,6 +6,7 @@
  * by dimension and location — so a stale handle is never dereferenced; `createEngineResolver` and
  * `createEngineDb` bind both to the real world.
  */
+import type { Unsubscribe } from '@bedrock-core/observable';
 import { Block, ContainerSlot, Dimension, Entity, ItemStack, World, system, world, type BlockCustomComponent } from '@minecraft/server';
 import { createDb, parseBlockIdentity, type Db, type Lifecycle, type Locator } from './collection';
 import { createResolver, structuralClassifier, type Classifier, type Resolver, type TargetKind } from './resolve';
@@ -111,26 +112,55 @@ export function createEngineResolver(namespace: string): Resolver {
 
 /**
  * What coalescing collections need from the engine: one flush per tick through `system.run`, an
- * entity's return through `entityLoad`, and a player's pending documents written in
- * `beforeEvents.playerLeave` — where a dynamic-property write is still allowed (measured). Nothing
+ * entity's return through `entityLoad`, a ready player through `playerSpawn`, and pending player
+ * writes in `beforeEvents.playerLeave` — where a dynamic-property write is still allowed (measured). Nothing
  * here subscribes until the first coalescing collection asks.
  */
 export const engineLifecycle: Lifecycle = {
-  schedule(flush): void {
-    system.run(flush);
+  schedule(flush): Unsubscribe {
+    const task = system.run(flush);
+
+    return (): void => { system.clearRun(task); };
   },
 
   tick: (): number => system.currentTick,
 
-  attach({ loaded, leaving }): void {
-    // `entityLoad` is an afterEvent, so the entity can already be gone by the time this runs; a
-    // handle whose `isValid` is false would throw on the first property read downstream.
-    world.afterEvents.entityLoad.subscribe(({ entity }) => {
-      if (entity.isValid) { loaded(entity); }
-    });
-    world.beforeEvents.playerLeave.subscribe(({ player }) => {
-      leaving(player);
-    });
+  attach({ loaded, leaving }): Unsubscribe {
+    const releases: Unsubscribe[] = [];
+
+    const detach = (): void => {
+      const errors: unknown[] = [];
+
+      for (const release of releases.splice(0).reverse()) {
+        try { release(); } catch (error) { errors.push(error); }
+      }
+
+      if (errors.length > 0) { throw new AggregateError(errors, 'database engine cleanup failed'); }
+    };
+
+    try {
+      const onLoad = world.afterEvents.entityLoad.subscribe(({ entity }) => {
+        if (entity.isValid) { loaded(entity); }
+      });
+
+      releases.push(() => { world.afterEvents.entityLoad.unsubscribe(onLoad); });
+      const onSpawn = world.afterEvents.playerSpawn.subscribe(({ player }) => {
+        if (player.isValid) { loaded(player); }
+      });
+
+      releases.push(() => { world.afterEvents.playerSpawn.unsubscribe(onSpawn); });
+      const onLeave = world.beforeEvents.playerLeave.subscribe(({ player }) => { leaving(player); });
+
+      releases.push(() => { world.beforeEvents.playerLeave.unsubscribe(onLeave); });
+
+      return detach;
+    } catch (error) {
+      try { detach(); } catch (cleanupError) {
+        throw new AggregateError([error, cleanupError], 'database engine setup and cleanup failed', { cause: cleanupError });
+      }
+
+      throw error;
+    }
   },
 };
 
