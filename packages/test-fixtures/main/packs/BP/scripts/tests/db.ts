@@ -9,14 +9,16 @@
  * `S8`; here they are assertions, so a Bedrock release that moves one of them turns this suite
  * red instead of silently breaking the library.
  *
- * Everything runs on `core.db` rather than a fresh runtime: the block cleanup component in
+ * Everything runs on the shared fixture database: the block cleanup component in
  * `../main` is registered against that db, and only the db it heals can prove the healing. Each
  * test therefore uses its own collection name and deletes what it wrote.
  */
 import { BlockPermutation, ItemStack, world } from '@minecraft/server';
 import { type Test, register } from '@minecraft/server-gametest';
 import { COMPONENT_BUDGET, DIRECT_BUDGET, type Capabilities, type Where } from '@bedrock-core/db';
-import { DbBudgetError, blockTypes, core, entityTypes, schema, slots } from '@bedrock-core/server-runtime';
+import { DbBudgetError, blockTypes, entityTypes, schema, slots } from '@bedrock-core/db';
+import { database } from '../database';
+import manifest from '../../manifest.json';
 
 const STRUCTURE = 'core:empty';
 
@@ -53,7 +55,7 @@ function refusalOf(test: Test, where: Where, label: string): string | undefined 
 // claim per kind — own, enumerable, batch, the budget, and whether a write survives the handle it
 // was made through — asked of the engine.
 gametest('db_direct_abi', (test) => {
-  const notes = core.db.collection('t_abi', { schema: schema<{ text: string }>({ defaults: { text: '' } }) });
+  const notes = database.collection('t_abi', { schema: schema<{ text: string }>({ defaults: { text: '' } }) });
   const stand = test.spawn('minecraft:armor_stand', { x: 1, y: 1, z: 1 });
   const dimension = test.getDimension();
 
@@ -116,7 +118,7 @@ gametest('db_direct_abi', (test) => {
 // document past the cap is split across properties rather than refused, and its delete takes
 // every piece with it.
 gametest('db_direct_budget', (test) => {
-  const blobs = core.db.collection('t_budget', {
+  const blobs = database.collection('t_budget', {
     schema: schema<{ blob: string }>({ defaults: { blob: '' } }),
     accept: entityTypes('minecraft:armor_stand'),
   });
@@ -163,13 +165,13 @@ gametest('db_direct_budget', (test) => {
 // removal path — `blockCleanup` in `../main` drops the index entry, and the block entity takes
 // the document itself. Re-placing the type gives a fresh document, never the old one.
 gametest('db_block_entity', (test) => {
-  const probes = core.db.collection('t_blocks', {
+  const probes = database.collection('t_blocks', {
     schema: schema<{ hits: number; note: string }>({ defaults: { hits: 0, note: '' } }),
     accept: blockTypes(PROBE_BLOCK),
     require: { own: true },
   });
   // Offered on a block and refused: the document could die with the block before the flush.
-  const counters = core.db.collection('t_block_coalesce', {
+  const counters = database.collection('t_block_coalesce', {
     schema: schema<{ n: number }>({ defaults: { n: 0 } }),
     accept: blockTypes(PROBE_BLOCK),
     coalesce: true,
@@ -291,7 +293,7 @@ gametest('db_block_entity', (test) => {
 // Why `ItemStack` is refused and a slot is offered instead: the stack a script holds is a copy,
 // a stackable item throws on write, and only the live slot of a non-stackable item keeps bytes.
 gametest('db_slots_and_stacks', (test) => {
-  const marks = core.db.collection('t_slots', {
+  const marks = database.collection('t_slots', {
     schema: schema<{ owner: string }>({ defaults: { owner: '' } }),
     accept: slots(),
   });
@@ -313,7 +315,7 @@ gametest('db_slots_and_stacks', (test) => {
       container.setItem(1, new ItemStack('minecraft:stone', 4));
 
       // The resolver refuses an ItemStack by name, whatever its methods say.
-      const stack = core.db.resolver.resolve(new ItemStack('minecraft:stone', 1));
+      const stack = database.resolver.resolve(new ItemStack('minecraft:stone', 1));
 
       if (stack.ok || !stack.reason.includes('detached copy')) { test.fail(`an ItemStack resolved to ${JSON.stringify(stack)}`); }
 
@@ -365,14 +367,14 @@ gametest('db_slots_and_stacks', (test) => {
 // Write-behind: a coalesced document is in memory the moment it is patched and on the target
 // after one flush, written once however many times it changed.
 gametest('db_coalesce_flush', (test) => {
-  const counters = core.db.collection('t_coalesce', {
+  const counters = database.collection('t_coalesce', {
     schema: schema<{ n: number }>({ defaults: { n: 0 } }),
     accept: entityTypes('minecraft:armor_stand'),
     coalesce: true,
   });
   const stand = test.spawn('minecraft:armor_stand', { x: 1, y: 1, z: 1 });
   // What the collection writes under, once it writes: `resolve.ts` builds this key.
-  const key = `core-db:${core.namespace}:entity::t_coalesce:doc`;
+  const key = `core-db:${manifest.namespace}:entity::t_coalesce:doc`;
 
   test.startSequence()
     .thenIdle(5)
@@ -401,7 +403,7 @@ gametest('db_coalesce_flush', (test) => {
       if (JSON.stringify(stored) !== JSON.stringify({ n: 50 })) { test.fail(`the flush stored ${JSON.stringify(stored)}`); }
 
       counters.for(stand).delete();
-      core.db.flush();
+      database.flush();
     })
     .thenIdle(5)
     .thenExecute(() => {

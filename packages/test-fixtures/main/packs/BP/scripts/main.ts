@@ -7,12 +7,13 @@ import { system } from '@minecraft/server';
 import { blockCleanup } from '@bedrock-core/db/minecraft';
 import { core } from '@bedrock-core/server-runtime';
 import manifest from '../manifest.json';
+import { database } from './database';
 
 core.register({ manifest });
 
 // `blocks/db_probe.json` names this component, and the engine removes a block type whose custom
 // component nobody registered — so this ships with the pack rather than with the tests. It keeps
-// `core.db`'s block indexes honest: every removal drops the block's index entry.
+// the fixture database's block indexes honest: every removal drops the block's index entry.
 system.beforeEvents.startup.subscribe(({ blockComponentRegistry }) => {
-  blockComponentRegistry.registerCustomComponent('core_fixture:db_cleanup', blockCleanup(core.db));
+  blockComponentRegistry.registerCustomComponent('core_fixture:db_cleanup', blockCleanup(database));
 });

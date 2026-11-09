@@ -1,3 +1,4 @@
+import { translations, registerTranslations, publishTranslations } from '@bedrock-core/server-runtime/i18n';
 import { createResourceBundle } from '@bedrock-core/i18n';
 /**
  * GameTests for the bedrock-core stack. Most run several runtimes inside this one script
@@ -11,7 +12,11 @@ import { createResourceBundle } from '@bedrock-core/i18n';
  */
 import { testManifest } from './manifest';
 import { computed, effect, observable, signal, type ReadonlyObservable } from '@bedrock-core/observable';
-import { Runtime, authorize, core, schema, worldTarget } from '@bedrock-core/server-runtime';
+import { Runtime, authorize, core, registerModule } from '@bedrock-core/server-runtime';
+import { defineApiModule } from '@bedrock-core/server-runtime/api';
+import { schema, worldTarget } from '@bedrock-core/db';
+import { createEngineDb } from '@bedrock-core/db/minecraft';
+import { registerRegistry, registryReference, isRegistryReference, type Declaration, type Installation, type RegistryDefinition, type RegistryReference } from '@bedrock-core/server-runtime/library';
 import { SyncNode } from '@bedrock-core/sync';
 import { world } from '@minecraft/server';
 import { type Test, register } from '@minecraft/server-gametest';
@@ -22,9 +27,128 @@ import './sync';
 
 const STRUCTURE = 'core:empty';
 
+gametest('builtin_publishing_without_reader', (test) => {
+  const reader = new Runtime();
+
+  test.assert(core.service('core:translations') === undefined, 'Core does not install the optional translation reader');
+  const installed = reader.register({ manifest: testManifest('test_builtin_reader', 'Built-in reader'), translations: registerTranslations() });
+  const resolve = installed.translations.forLocale('en_US');
+
+  test.startSequence().thenIdle(35).thenExecute(() => {
+    try {
+      test.assert(resolve('core_fixture_peer.builtin') === 'published without a translation reader', 'late reader registration acquires the peer built-in publication');
+      const peer = reader.registry.get('core_fixture_peer');
+
+      test.assert(peer?.registries.some(value => value.id === 'core:translations') === true, 'the publisher advertises its built-in data independently of readers');
+    } finally { reader.stop(); }
+  }).thenSucceed();
+});
+
+gametest('api_structured_snapshots', (test) => {
+  const owner = new Runtime();
+  const reader = new Runtime();
+  const source = new Map([['items', new Set([1])]]);
+  const current = observable(source);
+  const changed = signal<Map<string, Set<number>>>();
+  const shape = { kind: 'object', members: { current: { kind: 'state' }, changed: { kind: 'event' } } } as const;
+  const API = { current, changed };
+  let events = 0;
+
+  let stop = (): void => {};
+
+  owner.api.provideModule('@fixture/structured-state', shape, API);
+  owner.register({ manifest: testManifest('test_structured_owner', 'Structured owner') });
+  reader.register({ manifest: testManifest('test_structured_reader', 'Structured reader') });
+  const peer = reader.api.createModule<typeof API>(owner.id, '@fixture/structured-state', shape);
+
+  test.startSequence()
+    .thenIdle(20)
+    .thenExecute(() => {
+      test.assert(peer.current.get()?.get('items')?.has(1) === true, 'initial collection snapshots reach the consumer');
+      stop = peer.changed.subscribe((value) => { if (value.get('items')?.has(2)) { events++; } });
+      current.set(new Map([['items', new Set([2])]]));
+      changed.emit(new Map([['items', new Set([2])]]));
+    })
+    .thenIdle(20)
+    .thenExecute(() => {
+      try {
+        const snapshot = peer.current.get();
+        let guarded = false;
+
+        try { Reflect.apply(Map.prototype.set, snapshot, ['other', new Set([3])]); } catch { guarded = true; }
+
+        test.assert(snapshot?.get('items')?.has(2) === true && events === 1, 'collection state updates and signals reach the consumer');
+        test.assert(guarded && peer.current.get() === snapshot, 'snapshots guard mutation and retain stable read identity');
+        test.assert(!Object.isFrozen(source), 'authored collections remain writable');
+      } finally { stop(); reader.stop(); owner.stop(); }
+    })
+    .thenSucceed();
+});
+
+declare module '@bedrock-core/server-runtime' {
+  interface RuntimeServices {
+    'core_fixture:installation': { count: number };
+  }
+}
+
 function gametest(name: string, fn: (test: Test) => void): void {
   register('core', name, fn).structureName(STRUCTURE).tag('core').maxTicks(220);
 }
+
+gametest('library_installation_lifetime', (test) => {
+  const owner = new Runtime();
+  const reader = new Runtime();
+  const API = { echo: async (value: number): Promise<number> => value + 1 };
+  const shape = { kind: 'object', members: { echo: { kind: 'function' } } } as const;
+  const module = registerModule(API);
+  let created = 0;
+  const stopped: number[] = [];
+  let result: number | undefined;
+  let failure: unknown;
+  const service: Declaration<{ count: number }> = { install(runtime): Installation<{ count: number }> {
+    const value = { count: ++created };
+
+    runtime.provideService('core_fixture:installation', value);
+
+    return { value, stop: (): void => { stopped.push(value.count); } };
+  } };
+
+  defineApiModule('@core_fixture/installation', shape, API);
+  test.startSequence()
+    .thenExecute(() => {
+      const registered = owner.register({ manifest: testManifest('test_installation_owner', 'Owner'), module, counter: service });
+
+      reader.register({ manifest: testManifest('test_installation_reader', 'Reader'), counter: service });
+
+      if (registered.module !== API || registered.counter.count !== 1 || reader.service('core_fixture:installation')?.count !== 2) {
+        test.fail('library accessors or local services are not owned by their Runtime');
+      }
+
+      void reader.api.createModule(owner.id, API).echo(4).then((value) => { result = value; }, (error) => { failure = error; });
+    })
+    .thenIdle(30)
+    .thenExecute(() => {
+      if (failure !== undefined || result !== 5) { test.fail('registered module call failed: ' + String(failure)); }
+
+      owner.uninstall(service);
+      owner.uninstall(module);
+
+      if (Reflect.has(owner, 'counter') || owner.service('core_fixture:installation') !== undefined
+        || stopped.join(',') !== '1' || reader.service('core_fixture:installation')?.count !== 2) {
+        test.fail('uninstall affected another Runtime or retained an owned accessor');
+      }
+    })
+    .thenIdle(12)
+    .thenExecute(() => {
+      if (reader.registry.get(owner.id)?.apis.includes('@core_fixture/installation')) { test.fail('withdrawn module remains advertised'); }
+
+      owner.stop();
+      reader.stop();
+
+      if (stopped.join(',') !== '1,2') { test.fail('library cleanup did not run once per installation'); }
+    })
+    .thenSucceed();
+});
 
 // Core dependencies require a Runtime advertisement and a compatible public module.
 gametest('discovery_and_rpc', (test) => {
@@ -220,7 +344,7 @@ gametest('feature_toggle', (test) => {
   consumer.register({
     manifest: testManifest('test_game_main', 'Game'),
     integration: {
-      install(): void {
+      install() {
         const enabled = computed(() => configured.get() && peer.accepting.get() === true, [configured, peer.accepting]);
 
         let disconnect = (): void => {};
@@ -233,8 +357,9 @@ gametest('feature_toggle', (test) => {
         }, [enabled]);
 
         release = (): void => { stopEffect(); disconnect(); enabled.dispose(); active = false; };
+
+        return { value: undefined, stop: release };
       },
-      stop(): void { release(); },
     },
   });
 
@@ -317,7 +442,10 @@ gametest('rpc_over_local_db', (test) => {
   owner.register({ manifest: testManifest('test_notes_a', 'A') });
   peer.register({ manifest: testManifest('test_notes_b', 'B') });
 
-  const notes = owner.db.collection('notes', {
+  const database = createEngineDb(owner.namespace);
+
+  test.runOnFinish(() => database.stop());
+  const notes = database.collection('notes', {
     schema: schema<{ text: string; seen: number }>({ defaults: { text: '', seen: 0 } }),
   });
   const dimension = test.getDimension();
@@ -446,12 +574,15 @@ gametest('runtime_cleanup_lifetime', (test) => {
   let cleaned = false;
 
   test.startSequence().thenExecute(() => {
+    const database = createEngineDb(identity.namespace);
+
     owner.register({
       manifest: identity,
-      earlier: { install(): void {}, stop(): void { cleaned = true; } },
-      broken: { install(): void {}, stop(): void { throw new Error('cleanup failure'); } },
+      storage: { install() { return { value: undefined, stop(): void { database.stop(); } }; } },
+      earlier: { install() { return { value: undefined, stop(): void { cleaned = true; } }; } },
+      broken: { install() { return { value: undefined, stop(): void { throw new Error('cleanup failure'); } }; } },
     });
-    const pending = owner.db.collection('pending', {
+    const pending = database.collection('pending', {
       schema: schema<{ value: number }>(),
       accept: worldTarget(),
       coalesce: true,
@@ -464,45 +595,165 @@ gametest('runtime_cleanup_lifetime', (test) => {
 
     if (!reported || !cleaned || owner.registered) { test.fail('runtime cleanup did not finish and report the failing declaration'); }
 
-    const reader = new Runtime();
+    const reader = createEngineDb(identity.namespace);
+    const saved = reader.collection('pending', { schema: schema<{ value: number }>(), accept: worldTarget() }).for(world).get();
 
-    reader.register({ manifest: identity });
-    const saved = reader.db.collection('pending', { schema: schema<{ value: number }>(), accept: worldTarget() }).for(world).get();
-
-    if (saved?.value !== 7) { test.fail('stopping the runtime did not flush its pending database write'); }
+    if (saved?.value !== 7) { test.fail('the storage declaration did not flush its pending write'); }
 
     reader.stop();
     owner.stop();
   }).thenSucceed();
 });
 
+gametest('registry_publication_lifetime', (test) => {
+  const owner = new Runtime();
+  const reader = new Runtime();
+  const records: RegistryDefinition<{ texture: string }> = {
+    id: 'core_fixture:models', contract: 1,
+    accepts: (value): value is { texture: string } => typeof value === 'object' && value !== null
+      && 'texture' in value && typeof value.texture === 'string',
+  };
+  const registered = owner.register({
+    manifest: testManifest('test_registry_owner', 'Registry owner'),
+    models: registerRegistry(records, { revision: 7, coverage: { min: [1, 26, 50] },
+      entries: { 'minecraft:stone': { texture: 'textures/blocks/stone' } } }),
+  });
+
+  const { models } = registered;
+
+  test.assert(registered === owner, 'register returns its Runtime identity');
+  test.assert(Reflect.get(owner, 'models') === models, 'the Runtime owns its registry accessor');
+  test.assert(owner.registry.self?.manifest === owner.manifest, 'local identity owns the manifest');
+  reader.register({ manifest: testManifest('test_registry_reader', 'Registry reader') });
+  test.runOnFinish(() => { owner.stop(); reader.stop(); });
+
+  let releaseApi = (): void => {};
+
+  test.startSequence().thenIdle(16).thenExecute(() => {
+    const provider = reader.registry.get(owner.id);
+    const descriptor = provider?.registries[0];
+
+    test.assert(descriptor?.id === records.id && descriptor.contract === 1 && descriptor.revision === 7, 'provider descriptors arrive through discovery');
+    test.assert(descriptor?.minecraft?.min[2] === 50, 'Minecraft coverage is independent of addon version');
+    test.assert(descriptor !== undefined && !('entries' in descriptor), 'descriptors contain no records');
+    test.assert(provider !== undefined && !('registries' in provider.manifest), 'the native manifest stays separate');
+    test.assert(models.get('minecraft:stone')?.texture === 'textures/blocks/stone', 'library publication retains its local data');
+    releaseApi = owner.api.provideModule('@core_fixture/registry_api', { kind: 'object', members: {} }, {});
+  }).thenIdle(8).thenExecute(() => {
+    const provider = reader.registry.get(owner.id);
+
+    test.assert(provider?.apis.includes('@core_fixture/registry_api') === true && provider.registries[0]?.id === records.id, 'API readiness retains registry advertisements');
+    releaseApi();
+    models.stop();
+    test.assert(Object.keys(models.snapshot.get().entries).length === 0, 'withdrawal clears retained snapshots');
+  }).thenIdle(8).thenExecute(() => {
+    const provider = reader.registry.get(owner.id);
+
+    test.assert(provider !== undefined && provider.registries.length === 0 && provider.apis.length === 0, 'withdrawal keeps the addon registered and clears its advertisements');
+  }).thenSucceed();
+});
+
 gametest('translations_live_updates', (test) => {
   const owner = new Runtime();
   const reader = new Runtime();
+  const ownerReader = registerTranslations();
 
-  owner.register({ manifest: testManifest('test_translation_owner', 'Translation owner') });
-  reader.register({ manifest: testManifest('test_translation_reader', 'Translation reader') });
-  const resolve = reader.translations.forLocale('en_US');
+  owner.register({ manifest: testManifest('test_translation_owner', 'Translation owner'), translations: ownerReader });
+  reader.register({ manifest: testManifest('test_translation_reader', 'Translation reader'), translations: registerTranslations() });
+  const resolve = translations(reader).forLocale('en_US');
 
   test.startSequence()
     .thenIdle(10)
     .thenExecute(() => {
-      owner.translations.provide(createResourceBundle('test_translation_owner', { en_US: { text: 'first' } }));
+      translations(owner).provide(createResourceBundle('test_translation_owner', { en_US: { text: 'first' } }));
     })
     .thenIdle(20)
     .thenExecute(() => {
       if (resolve('test_translation_owner.text') !== 'first') { test.fail('the retained resolver did not receive the first peer bundle'); }
 
-      owner.translations.provide(createResourceBundle('test_translation_owner', { en_US: { text: 'second' } }));
+      translations(owner).provide(createResourceBundle('test_translation_owner', { en_US: { text: 'second' } }));
     })
     .thenIdle(20)
     .thenExecute(() => {
       if (resolve('test_translation_owner.text') !== 'second') { test.fail('the retained resolver kept the replaced peer bundle'); }
 
-      if (reader.translations.bundles.get()['test_translation_owner'] === undefined) { test.fail('the observable bundle state is missing the peer'); }
+      if (translations(reader).bundles.get()['test_translation_owner'] === undefined) { test.fail('the observable bundle state is missing the peer'); }
 
+      owner.uninstall(ownerReader);
+      publishTranslations(owner, createResourceBundle('test_translation_owner', { en_US: { text: 'publisher-only' } }));
+    })
+    .thenIdle(20)
+    .thenExecute(() => {
+      test.assert(owner.service('core:translations') === undefined, 'the publisher no longer has a translation reader');
+      test.assert(resolve('test_translation_owner.text') === 'publisher-only', 'the built-in publisher survives reader removal');
       owner.stop();
       reader.stop();
     })
     .thenSucceed();
+});
+
+gametest('registry_selective_links', (test) => {
+  interface Texture { path: string }
+  interface Model { texture: RegistryReference<Texture> }
+  const textures: RegistryDefinition<Texture> = { id: 'core_fixture:linked_textures', contract: 1,
+    accepts: (value): value is Texture => typeof value === 'object' && value !== null && 'path' in value && typeof value.path === 'string' };
+  const models: RegistryDefinition<Model> = { id: 'core_fixture:linked_models', contract: 1,
+    accepts: (value): value is Model => typeof value === 'object' && value !== null && 'texture' in value && isRegistryReference(textures, value.texture) };
+  const owner = new Runtime();
+  const alternate = new Runtime();
+  const reader = new Runtime();
+  const pinned = registryReference(textures, 'minecraft:stone', { version: 0 });
+  const published = owner.register({ manifest: testManifest('test_link_owner', 'Link owner'),
+    models: registerRegistry(models, { revision: 7, entries: { 'minecraft:stone': { texture: pinned } } }),
+    textures: registerRegistry(textures, { revision: 7, coverage: { min: [1, 26, 50], max: [1, 26, 70] },
+      entries: { 'minecraft:stone': { path: 'linked' } } }),
+  });
+
+  alternate.register({ manifest: testManifest('test_link_alternate', 'Alternate'),
+    textures: registerRegistry(textures, { revision: 9, entries: { 'minecraft:stone': { path: 'alternate' } } }),
+  });
+  const views = reader.register({ manifest: testManifest('test_link_reader', 'Link reader'),
+    models: registerRegistry(models), textures: registerRegistry(textures, { minecraft: [1, 26, 60] }),
+  });
+
+  test.runOnFinish(() => { reader.stop(); alternate.stop(); owner.stop(); });
+  test.startSequence().thenIdle(20).thenExecute(() => {
+    const model = views.models.resolve(registryReference(models, 'minecraft:stone'));
+
+    test.assert(model.status === 'ready', 'the consumer acquires a provider-only registry');
+
+    if (model.status !== 'ready') { return; }
+
+    const linked = views.textures.resolve(model.entry.value.texture, model.entry);
+
+    test.assert(views.textures.get('minecraft:stone')?.path === 'alternate', 'dataset revision selects the newer provider independently of addon version');
+    test.assert(linked.status === 'ready' && linked.entry.value.path === 'linked', 'a related lookup keeps its owning provider and dataset revision');
+    published.textures.set('minecraft:stone', { path: 'updated' });
+  }).thenIdle(12).thenExecute(() => {
+    const model = views.models.resolve(registryReference(models, 'minecraft:stone'));
+
+    if (model.status !== 'ready') {
+      test.fail('model provider disappeared');
+
+      return;
+    }
+
+    test.assert(views.textures.resolve(pinned, model.entry).status === 'loading', 'a pinned link does not mix snapshot versions');
+    const updated = views.textures.resolve(registryReference(textures, 'minecraft:stone', { version: 1 }), model.entry);
+
+    test.assert(updated.status === 'ready' && updated.entry.value.path === 'updated', 'the updated pin resolves the new data');
+    published.textures.stop();
+  }).thenIdle(12).thenExecute(() => {
+    const model = views.models.resolve(registryReference(models, 'minecraft:stone'));
+
+    if (model.status !== 'ready') {
+      test.fail('model provider disappeared');
+
+      return;
+    }
+
+    test.assert(views.textures.resolve(pinned, model.entry).status === 'unavailable', 'withdrawal cannot redirect a related lookup to another provider');
+    views.textures.stop();
+    test.assert(views.textures.snapshot.get().status === 'stopped', 'consumer teardown clears its retained view');
+  }).thenSucceed();
 });

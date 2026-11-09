@@ -25,18 +25,6 @@
 		".": {
 			"types": "./src/index.ts",
 			"import": "./src/index.ts"
-		},
-		"./db": {
-			"types": "./src/db.ts",
-			"import": "./src/db.ts"
-		},
-		"./i18n": {
-			"types": "./src/i18n.ts",
-			"import": "./src/i18n.ts"
-		},
-		"./observable": {
-			"types": "./src/observable.ts",
-			"import": "./src/observable.ts"
 		}
 	},
 	"publishConfig": {
@@ -51,6 +39,7 @@
 	],
 	"packageManager": "yarn@4.9.3",
 	"workspaces": [
+		".",
 		"packages/db",
 		"packages/i18n",
 		"packages/observable",
@@ -75,39 +64,30 @@
 		"vitest": "^4.1.10"
 	},
 	"scripts": {
-		"build": "yarn workspaces foreach -ptA run build",
+		"build": "yarn workspaces foreach -ptA --exclude '@bedrock-core/server' run build",
 		"build:libs": "yarn workspaces foreach -A -pt --no-private --exclude '@bedrock-core/server' run build",
 		"lint:libs": "yarn workspaces foreach -A -pt --no-private --exclude '@bedrock-core/server' run lint",
 		"prepack": "yarn build:libs",
 		"watch": "yarn install && nodemon",
 		"lint": "eslint .",
-		"test": "yarn workspaces foreach -ptA run test",
+		"test": "yarn test:scripts && yarn workspaces foreach -ptA --exclude '@bedrock-core/server' run test",
+		"test:scripts": "node --test scripts/*.test.mjs",
 		"bench": "yarn workspace @bedrock-core/sync run bench",
-		"test:mc": "yarn workspace @bedrock-core/server-test-fixtures build:test && bc-bds run --packs packages/test-fixtures/main/build/test --packs packages/test-fixtures/peer/build/test --tag core --expect-registered 20",
+		"test:mc": "yarn workspace @bedrock-core/server-test-fixtures build:test && bc-bds run --packs packages/test-fixtures/main/build/test --packs packages/test-fixtures/peer/build/test --tag core --expect-registered 27",
 		"test:mc:bench": "yarn workspace @bedrock-core/server-test-fixtures build:test && bc-bds run --packs packages/test-fixtures/main/build/test --packs packages/test-fixtures/peer/build/test --tag bench --expect-registered 9 --idle 120 && node scripts/bench-report.mjs",
 		"bench:report": "node scripts/bench-report.mjs",
 		"bds:fetch": "bc-bds fetch",
 		"bds:where": "bc-bds where",
 		"changeset": "changeset",
-		"version-packages": "changeset version && node scripts/sync-meta-version.mjs",
-		"release": "yarn lint:libs && yarn build:libs && node scripts/publish-tarballs.mjs && node scripts/tag-packages.mjs",
+		"version-packages": "changeset version",
+		"release": "yarn lint:libs && yarn build:libs && node scripts/publish-tarballs.mjs && changeset git-tag",
 		"clean": "node scripts/clean.mjs"
 	},
 	"dependencies": {
-		"@bedrock-core/db": "workspace:*",
-		"@bedrock-core/i18n": "workspace:*",
-		"@bedrock-core/observable": "workspace:*",
-		"@bedrock-core/server-runtime": "workspace:*",
-		"@bedrock-core/sync": "workspace:*"
+		"@bedrock-core/server-runtime": "workspace:*"
 	},
 	"peerDependencies": {
-		"@minecraft/server": ">=2.9.0 || >=2.10.0-0",
-		"@minecraft/server-ui": ">=2.1.0"
-	},
-	"peerDependenciesMeta": {
-		"@minecraft/server-ui": {
-			"optional": true
-		}
+		"@minecraft/server": ">=2.9.0 || >=2.10.0-0"
 	},
 	"devDependencies": {
 		"@bedrock-core/bds-runner": "^0.1.0",

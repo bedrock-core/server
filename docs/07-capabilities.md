@@ -12,16 +12,15 @@ helper, the owner-namespace state — is the workspace root `PLAN.md` §2.4.
 
 ## The concern it names
 
-`core.slot()` answers *what can this runtime do* — the config registry, translations, guides. That
+`core.service()` answers *what can this runtime do* — Config, Navigation, Guides. That
 is per runtime, and most extensions stop there. A capability answers a different question: *who
 runs the world's energy grid*. It survives the addon that started it being removed, it must not
 run twice, and every addon that ships the library has to see the same state through its own copy
 of the code.
 
-The pieces already exist and are wired to one hard-coded job. `HostElection` picks a realm by a
-pure function of the registry — highest runtime version, ties broken by lowest namespace, no
-negotiation messages, re-run whenever a peer appears or disappears. It elects once, globally, for
-"who draws the UI". Generalising that election per capability is most of this page.
+A capability needs its own owner-selection policy and handover protocol. Addon
+discovery and registry compatibility provide identity and metadata; simulation
+ownership must be scoped to the capability.
 
 ## Local first, shared only where it must be
 
@@ -51,7 +50,7 @@ energy.flow(pos, 40);         // per-tick — never crosses one
 
 // @bedrock-core/energy
 export const registerEnergy = (options: { implementation: string }) => capability({
-  id: 'core:energy',                        // namespaced like feeds, slots and rpc methods
+  id: 'core:energy',                        // namespaced like feeds, services and rpc methods
   contract: 2,                              // MAJOR — a different major is a different capability
   implementation: options.implementation,   // MINOR — decides which compatible copy runs
   state: energyState,                       // the shared tree the owner writes, everyone mirrors
@@ -66,8 +65,8 @@ The call site is identical in every addon whether or not this realm won the elec
 
 1. **Major is identity.** `core:energy@1` and `core:energy@2` are different capabilities, elected
    separately. Incompatible majors coexist instead of corrupting one another.
-2. **Minor decides the winner.** Among compatible copies the newest implementation runs, by the
-   rule `HostElection` already applies.
+2. **Minor decides the winner.** Among compatible copies the newest implementation runs,
+   with a stable namespace tie-break.
 3. **Reads are local, writes are owned.** The owner writes the capability's shared tree; every
    realm mirrors it. A read is a mirror lookup and costs nothing.
 4. **Fast path never crosses a realm.** Energy *flow* runs every tick and is computed by the owner
@@ -98,20 +97,6 @@ namespace's writes only from the node whose id it is, so a deposed owner's late 
 nobody reads — the fence falls out of ownership, with no counter and no change to
 `ownedNamespaces`. `adopt` then means: copy the previous owner's last mirrored keys into your own
 namespace, and continue.
-
-## What changes in what is built
-
-| Today | After |
-| --- | --- |
-| `HostElection`, one global election, used only for the UI | `elect(capability)`, one election per capability id |
-| `core.host.isHost` / `hostId` in the config app | nothing elects — a screen is drawn by the addon whose pack holds it, and navigation moves the player there |
-| `ownedNamespaces: [namespace]`, fixed at register | unchanged under the owner-namespace proposal; otherwise a capability namespace whose owner changes on failover |
-| config reachable as a runtime property | a local plugin found through its slot, serving its own addon only |
-
-Phase D of the workspace plan removes election from the UI, and it is right to: a compiled screen's
-layout lives in its owner's resource pack, so drawing must happen where the pack is. That is a
-statement about screens, not about election. The mechanism stays, with no user — **dormant until
-the first capability needs it** — rather than being deleted and rebuilt from memory later.
 
 ## Startup churn
 

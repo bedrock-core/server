@@ -13,11 +13,97 @@
  */
 import { system } from '@minecraft/server';
 import { type Test, register } from '@minecraft/server-gametest';
-import { Bus, MAX_MESSAGE, SyncNode } from '@bedrock-core/sync';
+import { Bus, MAX_MESSAGE, SyncNode, type ReplicaSubscription } from '@bedrock-core/sync';
 import { core } from '@bedrock-core/server-runtime';
-import { PEER_ECHO_MODULE, peerEchoShape, type PeerEcho } from '@bedrock-core/server-test-fixtures/peer-contract';
+import { PEER_ECHO_MODULE, peerEchoShape, type PeerEcho, type StructuredPayload } from '@bedrock-core/server-test-fixtures/peer-contract';
 
 const STRUCTURE = 'core:empty';
+
+gametest('cross_pack_structured_values', (test) => {
+  const key = { id: 'player' };
+  const buffer = new ArrayBuffer(12);
+  const bytes = new Uint8Array(buffer, 4, 4);
+  const pattern = /items/gi;
+  const value: StructuredPayload = { key, map: new Map([[key, new Set([key])]]), missing: undefined, numbers: [NaN, Infinity, -Infinity, -0],
+    exact: BigInt('9007199254740993'), date: new Date('2026-11-09T00:00:00Z'), pattern, buffer, bytes, view: new DataView(buffer, 4, 4), text: 'structured'.repeat(1000) };
+
+  value.self = value;
+  bytes.set([1, 2, 3, 4]);
+  pattern.lastIndex = 3;
+  const peer = core.api.createModule<PeerEcho>('core_fixture_peer', PEER_ECHO_MODULE, peerEchoShape);
+  let reply: StructuredPayload | undefined;
+  let failure: unknown;
+
+  test.startSequence()
+    .thenExecute(() => { void peer.structured(value).then((result) => { reply = result; }, (error) => { failure = error; }); })
+    .thenIdle(70)
+    .thenExecute(() => {
+      test.assert(failure === undefined && reply !== undefined, 'the structured request returned: ' + String(failure));
+
+      if (!reply) { return; }
+
+      test.assert(reply.self === reply && reply.map.get(reply.key)?.has(reply.key) === true, 'cycles, collection keys and aliases survive both pack boundaries');
+      test.assert(Object.hasOwn(reply, 'missing') && reply.missing === undefined, 'undefined properties stay present');
+      test.assert(Number.isNaN(reply.numbers[0]) && reply.numbers[1] === Infinity && reply.numbers[2] === -Infinity && Object.is(reply.numbers[3], -0), 'special numbers stay exact');
+      test.assert(reply.exact === value.exact && reply.date.getTime() === value.date.getTime(), 'big integers and dates retain their values');
+      test.assert(reply.pattern.source === pattern.source && reply.pattern.flags === pattern.flags && reply.pattern.lastIndex === 3, 'regular expressions retain their state');
+      test.assert(reply.bytes.buffer === reply.buffer && reply.view.buffer === reply.buffer && reply.bytes.byteOffset === 4 && reply.view.getUint8(0) === 1, 'binary views retain their shared buffer and offsets');
+      test.assert(reply.text === value.text, 'the chunked text is complete');
+    })
+    .thenSucceed();
+});
+
+gametest('sync_replication_snapshots', (test) => {
+  const owner = new SyncNode({ id: 'sync_replica_owner' });
+  const reader = new SyncNode({ id: 'sync_replica_reader' });
+  const text = 'replication'.repeat(1000);
+  const exact = BigInt('9007199254740993');
+  const value = new Map<string, unknown>([['text', text], ['exact', exact], ['items', new Set(['stone'])]]);
+  let watch: ReplicaSubscription | undefined;
+
+  owner.start();
+  const publication = owner.replication.publish('fixture', value);
+
+  test.startSequence()
+    .thenIdle(12)
+    .thenExecute(() => { reader.start(); })
+    .thenIdle(12)
+    .thenExecute(() => { watch = reader.replication.watch(owner.id, owner.bus.instanceId, 'fixture'); })
+    .thenIdle(35)
+    .thenExecute(() => {
+      const snapshot = watch?.snapshot.get();
+      const received = snapshot?.value;
+
+      test.assert(snapshot?.status === 'ready' && received instanceof Map, 'the late watch receives the chunked structured publication');
+
+      if (received instanceof Map) {
+        const items: unknown = received.get('items');
+
+        test.assert(received.get('text') === text && received.get('exact') === exact && items instanceof Set && items.has('stone'), 'replicated collections and exact numbers retain their values');
+      }
+
+      publication.set('updated');
+    })
+    .thenIdle(12)
+    .thenExecute(() => {
+      test.assert(watch?.snapshot.get().value === 'updated', 'broadcast replacements update the retained snapshot');
+      publication.stop();
+    })
+    .thenIdle(12)
+    .thenExecute(() => {
+      test.assert(watch?.snapshot.get().status === 'missing', 'withdrawal clears the remote value');
+      owner.replication.publish('fixture', 'replacement');
+    })
+    .thenIdle(12)
+    .thenExecute(() => {
+      try {
+        test.assert(watch?.snapshot.get().value === 'replacement', 'a new publication generation replaces the withdrawn value');
+      } finally { reader.stop(); owner.stop(); }
+
+      test.assert(watch?.snapshot.get().status === 'stopped', 'SyncNode shutdown releases its watch handles');
+    })
+    .thenSucceed();
+});
 
 function gametest(name: string, fn: (test: Test) => void): void {
   register('core', name, fn).structureName(STRUCTURE).tag('core').maxTicks(400);

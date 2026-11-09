@@ -4,7 +4,7 @@
  * large enough to have crossed the wire in pieces.
  */
 import { core } from '@bedrock-core/server-runtime';
-import { PEER_ECHO_MODULE, peerEchoShape } from './contract';
+import { PEER_ECHO_MODULE, peerEchoShape, type StructuredPayload } from './contract';
 import manifest from '../manifest.json';
 
 core.register({ manifest });
@@ -21,4 +21,5 @@ function checksum(value: unknown): number {
 
 core.api.provideModule(PEER_ECHO_MODULE, peerEchoShape, {
   echo: async (value: unknown): Promise<{ chars: number; sum: number }> => ({ chars: JSON.stringify(value).length, sum: checksum(value) }),
+  structured: async (value: StructuredPayload): Promise<StructuredPayload> => value,
 });

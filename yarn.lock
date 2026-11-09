@@ -188,7 +188,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@bedrock-core/db@workspace:*, @bedrock-core/db@workspace:^, @bedrock-core/db@workspace:packages/db":
+"@bedrock-core/db@workspace:^, @bedrock-core/db@workspace:packages/db":
   version: 0.0.0-use.local
   resolution: "@bedrock-core/db@workspace:packages/db"
   dependencies:
@@ -204,7 +204,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@bedrock-core/i18n@workspace:*, @bedrock-core/i18n@workspace:^, @bedrock-core/i18n@workspace:packages/i18n":
+"@bedrock-core/i18n@workspace:^, @bedrock-core/i18n@workspace:packages/i18n":
   version: 0.0.0-use.local
   resolution: "@bedrock-core/i18n@workspace:packages/i18n"
   dependencies:
@@ -219,7 +219,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@bedrock-core/observable@workspace:*, @bedrock-core/observable@workspace:^, @bedrock-core/observable@workspace:packages/observable":
+"@bedrock-core/observable@workspace:^, @bedrock-core/observable@workspace:packages/observable":
   version: 0.0.0-use.local
   resolution: "@bedrock-core/observable@workspace:packages/observable"
   dependencies:
@@ -245,7 +245,6 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@bedrock-core/server-runtime@workspace:packages/server-runtime"
   dependencies:
-    "@bedrock-core/db": "workspace:^"
     "@bedrock-core/i18n": "workspace:^"
     "@bedrock-core/observable": "workspace:^"
     "@bedrock-core/sync": "workspace:^"
@@ -289,11 +288,7 @@ __metadata:
   resolution: "@bedrock-core/server@workspace:."
   dependencies:
     "@bedrock-core/bds-runner": "npm:^0.1.0"
-    "@bedrock-core/db": "workspace:*"
-    "@bedrock-core/i18n": "workspace:*"
-    "@bedrock-core/observable": "workspace:*"
     "@bedrock-core/server-runtime": "workspace:*"
-    "@bedrock-core/sync": "workspace:*"
     "@changesets/changelog-github": "npm:^0.7.0"
     "@changesets/cli": "npm:3.0.3"
     "@eslint/js": "npm:^10.0.1"
@@ -314,14 +309,10 @@ __metadata:
     vitest: "npm:^4.1.10"
   peerDependencies:
     "@minecraft/server": ">=2.9.0 || >=2.10.0-0"
-    "@minecraft/server-ui": ">=2.1.0"
-  peerDependenciesMeta:
-    "@minecraft/server-ui":
-      optional: true
   languageName: unknown
   linkType: soft
 
-"@bedrock-core/sync@workspace:*, @bedrock-core/sync@workspace:^, @bedrock-core/sync@workspace:packages/sync":
+"@bedrock-core/sync@workspace:^, @bedrock-core/sync@workspace:packages/sync":
   version: 0.0.0-use.local
   resolution: "@bedrock-core/sync@workspace:packages/sync"
   dependencies:
