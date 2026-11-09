@@ -6,14 +6,25 @@ coverage:
         flags: [sync]
         paths: [packages/sync/src/]
         informational: true
+      observable:
+        flags: [observable]
+        paths: [packages/observable/src/]
+        informational: true
     patch:
       default: false
       sync:
         flags: [sync]
         paths: [packages/sync/src/]
         informational: true
+      observable:
+        flags: [observable]
+        paths: [packages/observable/src/]
+        informational: true
 
 flags:
   sync:
     paths: [packages/sync/src/]
+    carryforward: false
+  observable:
+    paths: [packages/observable/src/]
     carryforward: false

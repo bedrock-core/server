@@ -219,4 +219,25 @@ describe('debounce', () => {
     expect(after).toHaveBeenCalledExactlyOnceWith(1, 0);
     expect(String(error.mock.calls[0]?.[0])).toContain('quiet');
   });
+
+  it('reports a scheduler failure without losing future source changes', () => {
+    const failure = new Error('scheduler unavailable');
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const source = observable(0, { label: 'input' });
+    const scheduler = vi.fn(schedule).mockImplementationOnce(() => { throw failure; });
+    const value = debounce(source, scheduler);
+    const changed = vi.fn();
+
+    value.subscribe(changed);
+    expect(() => source.set(1)).not.toThrow();
+    expect(error).toHaveBeenCalledExactlyOnceWith('[observable] input: listener threw', failure);
+    expect(vi.getTimerCount()).toBe(0);
+    expect(value.get()).toBe(0);
+    source.set(2);
+    expect(vi.getTimerCount()).toBe(1);
+    vi.advanceTimersByTime(100);
+    expect(changed).toHaveBeenCalledExactlyOnceWith(2, 0);
+    value.dispose();
+    expect(vi.getTimerCount()).toBe(0);
+  });
 });
