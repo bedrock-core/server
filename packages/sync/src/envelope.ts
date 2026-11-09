@@ -3,7 +3,8 @@
  * on the protocol the sender picked for the recipient, sent whole behind a wire tag or nested in
  * one or more {@link Frame}s by the chunker before they hit the bus.
  */
-import { PROTOCOL_MAX, PROTOCOL_MIN } from './constants';
+import { PROTOCOL_MAX, PROTOCOL_MIN, STRUCTURED_DATA_PROTOCOL } from './constants';
+import { decodeData, encodeData, type EncodedData } from './data';
 
 /** One message between nodes: who sent it, what it is, and its data. */
 export interface Envelope<T = unknown> {
@@ -38,8 +39,12 @@ export interface Envelope<T = unknown> {
 }
 
 /** Serialize an envelope to its wire string. */
-export function encodeEnvelope(envelope: Envelope): string {
-  return JSON.stringify(envelope);
+export function encodeEnvelope(envelope: Envelope, encoded: EncodedData = encodeData(envelope.data)): string {
+  if (encoded.nodes === undefined) { return JSON.stringify({ ...envelope, data: encoded.value }); }
+
+  if (envelope.v < STRUCTURED_DATA_PROTOCOL) { throw new TypeError('[sync] structured data requires protocol 3'); }
+
+  return JSON.stringify({ ...envelope, data: encoded.value, encoding: { v: 1, nodes: encoded.nodes } });
 }
 
 /**
@@ -85,5 +90,21 @@ export function decodeEnvelope(json: string): Envelope | undefined {
     return undefined;
   }
 
-  return isEnvelope(parsed) ? parsed : undefined;
+  return readEnvelope(parsed);
+}
+
+/** Validate a parsed envelope and decode only explicitly marked structured payloads. */
+export function readEnvelope(value: unknown): Envelope | undefined {
+  if (!isEnvelope(value)) { return; }
+
+  if (!('encoding' in value)) { return value; }
+
+  const encoding: unknown = value.encoding;
+
+  if (value.v < STRUCTURED_DATA_PROTOCOL || typeof encoding !== 'object' || encoding === null || !('v' in encoding) || encoding.v !== 1
+    || !('nodes' in encoding) || !Array.isArray(encoding.nodes)) { return; }
+
+  try {
+    return { v: value.v, src: value.src, iid: value.iid, type: value.type, mid: value.mid, ...value.dst !== undefined && { dst: value.dst }, data: decodeData(value.data, encoding.nodes) };
+  } catch { return undefined; }
 }

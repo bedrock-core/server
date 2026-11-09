@@ -1,7 +1,7 @@
 /**
  * A SyncNode is one addon's handle to the cross-addon layer. It owns and wires together the
- * five subsystems — {@link Bus}, {@link Discovery}, {@link Rpc}, {@link State} and
- * {@link Events} — and drives their shared lifecycle.
+ * subsystems — {@link Bus}, {@link Discovery}, {@link Rpc}, {@link State}, {@link Events} and
+ * {@link Replication} — and drives their shared lifecycle.
  *
  * sync is the first layer on `@minecraft/server`: a node needs no engine, just an id. Several
  * nodes can live in one script realm (they talk over the real `system` script-event bus),
@@ -11,6 +11,7 @@ import { Bus } from './bus';
 import { Discovery } from './discovery';
 import { Events } from './events';
 import { Rpc } from './rpc';
+import { Replication } from './replication';
 import { State } from './state';
 import { MessageType } from './constants';
 
@@ -33,7 +34,7 @@ export interface SyncNodeOptions {
   instanceId?: string;
 }
 
-/** One addon's handle to the transport: the bus, discovery, rpc, state and events, with one lifecycle. */
+/** One addon's transport, discovery, RPC, state, events and selective snapshots, with one lifecycle. */
 export class SyncNode {
   private _started = false;
   readonly id: string;
@@ -42,6 +43,7 @@ export class SyncNode {
   readonly rpc: Rpc;
   readonly state: State;
   readonly events: Events;
+  readonly replication: Replication;
 
   constructor(options: SyncNodeOptions) {
     this.id = options.id;
@@ -58,12 +60,14 @@ export class SyncNode {
     this.rpc = new Rpc(this.bus);
     this.state = new State(this.bus, options.id);
     this.events = new Events(this.bus, options.id);
+    this.replication = new Replication(this.bus, this.discovery);
     this.discovery.peers.subscribe((next, previous) => {
       for (const peer of previous) {
         if (next.some(current => current.id === peer.id && current.instanceId === peer.instanceId)) { continue; }
 
         this.state.forget(peer.id);
         this.rpc.forgetPeer(peer.id, peer.instanceId);
+        this.replication.forgetPeer(peer.id, peer.instanceId);
       }
     });
   }
@@ -79,6 +83,7 @@ export class SyncNode {
     // 2. Responders before announcers, so an incoming whois/state-req is already answerable.
     this.rpc.start();
     this.events.start();
+    this.replication.start();
     this.discovery.start();
     // 3. State announces a sync request + broadcasts its owned snapshots.
     this.state.start();
@@ -89,6 +94,7 @@ export class SyncNode {
 
     this._started = false;
 
+    this.replication.stop();
     this.state.stop();
     this.discovery.stop();
     this.events.stop();

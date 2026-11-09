@@ -26,7 +26,7 @@
  */
 import { type Frame, decodeFrame, splitIntoFrames } from './chunk';
 import { WireTag } from './constants';
-import { type Envelope, isEnvelope } from './envelope';
+import { type Envelope, readEnvelope } from './envelope';
 
 /** One decoded script-event message: either envelopes to dispatch, or a frame to reassemble. */
 export type WireMessage
@@ -85,9 +85,9 @@ export function decodeWire(message: string): WireMessage | undefined {
 
   switch (message[0]) {
     case WireTag.Envelope: {
-      const envelope = parseJson(body);
+      const envelope = readEnvelope(parseJson(body));
 
-      return isEnvelope(envelope) ? { kind: 'envelopes', envelopes: [envelope] } : undefined;
+      return envelope ? { kind: 'envelopes', envelopes: [envelope] } : undefined;
     }
 
     case WireTag.Batch: {
@@ -95,7 +95,7 @@ export function decodeWire(message: string): WireMessage | undefined {
 
       if (!Array.isArray(parsed)) { return undefined; }
 
-      const envelopes = parsed.filter(isEnvelope);
+      const envelopes = parsed.map(readEnvelope).filter((envelope): envelope is Envelope => envelope !== undefined);
 
       return envelopes.length > 0 ? { kind: 'envelopes', envelopes } : undefined;
     }

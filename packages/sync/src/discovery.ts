@@ -177,7 +177,7 @@ export class Discovery {
     this._self = {
       version: options.version ?? '0.0.0',
       schemaVersion: options.schemaVersion ?? 0,
-      meta: options.meta,
+      ...options.meta !== undefined && { meta: options.meta },
       pmin: PROTOCOL_MIN,
       pmax: PROTOCOL_MAX,
       caps: SELF_CAPS,
@@ -353,6 +353,15 @@ export class Discovery {
     };
 
     this._lastSeen.set(id, system.currentTick);
+
+    const peer = this._peers.get(id);
+
+    if (peer !== undefined) {
+      this._peers.delete(id);
+      this._bus.forgetPeer(id);
+      this._publishPeers();
+      this._onDown.emit(peer);
+    }
 
     const existing = this._incompatible.get(id);
 

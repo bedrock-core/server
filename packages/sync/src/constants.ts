@@ -10,19 +10,22 @@
  *
  * `PROTOCOL_MIN` is the oldest wire format this build still reads and writes; `PROTOCOL_MAX` the
  * newest it knows. Raising `MIN` drops support for everything below it, which is a breaking
- * change — the window is two versions wide, so a version is readable for two releases after it
- * stops being written.
+ * change. Plain JSON traffic can use any negotiated version; structured application values
+ * require protocol 3.
  */
 export const PROTOCOL_MIN = 1;
 
 /** Newest protocol this build speaks. See {@link PROTOCOL_MIN}. */
-export const PROTOCOL_MAX = 2;
+export const PROTOCOL_MAX = 3;
 
 /**
  * First protocol that reads the wire tag. Below it a message must be a bare frame, which is why
  * this is the line {@link encodeLegacy} is chosen on rather than a bare `2` in the bus.
  */
 export const TAGGED_WIRE_PROTOCOL = 2;
+
+/** First protocol that reconstructs structured application values. */
+export const STRUCTURED_DATA_PROTOCOL = 3;
 
 /**
  * Optional behaviours a node advertises alongside its protocol range.
@@ -121,6 +124,9 @@ export const MessageType = {
 
   /** A happening the sender announces to every realm; delivered once, kept by nobody. */
   Event: 'event',
+
+  /** A named publication snapshot or a late reader's request for its current value. */
+  Replica: 'replica',
 } as const;
 
 /** What an envelope carries, by name. */

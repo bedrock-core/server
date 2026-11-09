@@ -2,7 +2,7 @@
  * `@bedrock-core/sync` — the low-level cross-addon transport for Minecraft Bedrock.
  *
  * Each addon runs in its own isolated script realm; this package layers a message bus, peer
- * discovery, RPC and a replicated state channel on top of script events so bedrock-core
+ * discovery, RPC, replicated state and watched snapshots on top of script events so bedrock-core
  * addons can talk to each other. sync is the first layer on `@minecraft/server` — no engine
  * abstraction, no persistence (addons persist their own data). Typical usage:
  *
@@ -43,6 +43,9 @@ export type { EventHandler } from './events';
 
 export { State, stateKey } from './state';
 export type { SnapshotEntry, StateChange, StateChangeListener, StateKey } from './state';
+
+export { Replication } from './replication';
+export type { ReplicaPublication, ReplicaSnapshot, ReplicaSubscription } from './replication';
 
 export type { Unsubscribe } from './bus';
 

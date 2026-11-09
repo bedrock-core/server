@@ -45,7 +45,8 @@ function isResponseData(value: unknown): value is ResponseData {
 
   if (!('rid' in value && 'ok' in value)) { return false; }
 
-  return typeof value.rid === 'string' && typeof value.ok === 'boolean';
+  return typeof value.rid === 'string' && typeof value.ok === 'boolean'
+    && (!('err' in value) || value.err === undefined || typeof value.err === 'string');
 }
 
 /** Handles an inbound request. `from` is the requester's addon id. */
@@ -112,7 +113,7 @@ export class Rpc {
     params?: unknown,
     options: RequestOptions = {},
   ): Promise<unknown> {
-    const data: RequestData = { method, params };
+    const data: RequestData = { method, ...params !== undefined && { params } };
     const mid = this._bus.send({ dst, type: MessageType.Request, data });
 
     const timeoutTicks = options.timeoutTicks ?? this._defaultTimeoutTicks;
@@ -194,7 +195,7 @@ export class Rpc {
       const result = handler(params, envelope.src);
 
       void Promise.resolve(result).then(
-        value => respond({ rid: envelope.mid, ok: true, data: value }),
+        value => respond({ rid: envelope.mid, ok: true, ...value !== undefined && { data: value } }),
         (error: unknown) => respond({ rid: envelope.mid, ok: false, err: errorMessage(error) }),
       );
     } catch (error) {

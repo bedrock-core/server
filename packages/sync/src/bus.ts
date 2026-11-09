@@ -25,7 +25,8 @@
  */
 import { system, type ScriptEventCommandMessageAfterEvent } from '@minecraft/server';
 import { Reassembler, splitIntoFrames } from './chunk';
-import { BUS_CHANNEL, BUS_NAMESPACE, Cap, MAX_MESSAGE, PROTOCOL_MAX, PROTOCOL_MIN, TAGGED_WIRE_PROTOCOL } from './constants';
+import { BUS_CHANNEL, BUS_NAMESPACE, Cap, MAX_MESSAGE, PROTOCOL_MAX, PROTOCOL_MIN, STRUCTURED_DATA_PROTOCOL, TAGGED_WIRE_PROTOCOL } from './constants';
+import { encodeData } from './data';
 import { type Envelope, decodeEnvelope, encodeEnvelope } from './envelope';
 import { OutboundQueue } from './queue';
 import { decodeWire, encodeLegacy, tagChunk } from './wire';
@@ -158,7 +159,19 @@ export class Bus {
   /** Build, frame and queue an envelope. Returns the message id. */
   send(options: SendOptions): string {
     const mid = options.mid ?? this._nextMid();
-    const protocol = options.protocol ?? this._protocolFor(options.dst);
+    let protocol = options.protocol ?? this._protocolFor(options.dst);
+    const data = encodeData(options.data);
+
+    if (data.nodes !== undefined) {
+      const peer = options.dst === undefined ? undefined : this._peerProtocols.get(options.dst);
+
+      if ((options.protocol !== undefined && options.protocol < STRUCTURED_DATA_PROTOCOL) || (peer !== undefined && peer.protocol < STRUCTURED_DATA_PROTOCOL)) {
+        throw new TypeError('[sync] recipient does not support structured data (protocol 3 required)');
+      }
+
+      protocol = STRUCTURED_DATA_PROTOCOL;
+    }
+
     const envelope: Envelope = {
       v: protocol,
       src: this._selfId,
@@ -176,7 +189,7 @@ export class Bus {
     // heard). Deliver it to local handlers directly, on the next tick to preserve the
     // async semantics of a real hop. This makes RPC-to-self work (e.g. the config UI
     // reading the config of the very addon hosting it).
-    const encoded = encodeEnvelope(envelope);
+    const encoded = encodeEnvelope(envelope, data);
 
     if (options.dst === this._selfId) {
       const local = decodeEnvelope(encoded);

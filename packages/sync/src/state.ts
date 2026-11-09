@@ -182,7 +182,7 @@ export class State {
     const entry = { v: snapshot, ver: ++this._clock, src: this._selfId };
 
     this._applyEntry(ns, key, entry, ns === this._selfId);
-    this._bus.send({ type: MessageType.StateDelta, data: { ns, key, value: snapshot, ver: entry.ver } });
+    this._bus.send({ type: MessageType.StateDelta, data: { ns, key, ...snapshot !== undefined && { value: snapshot }, ver: entry.ver } });
   }
 
   /** Delete a key (tombstone). Broadcasts a delta. Owner-only, like {@link State.set}. */

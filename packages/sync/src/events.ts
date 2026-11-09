@@ -63,7 +63,7 @@ export class Events {
     const local = cloneData(payload);
 
     this._dispatch(this._selfId, name, local);
-    this._bus.send({ type: MessageType.Event, data: { n: name, p: payload } });
+    this._bus.send({ type: MessageType.Event, data: { n: name, ...payload !== undefined && { p: payload } } });
   }
 
   /** Listen for one event of one namespace. Attaching before that addon exists is fine. */
