@@ -2,7 +2,7 @@ import { effect } from '@bedrock-core/observable';
 import { createBindings, createModule, memberKey, objectModule, type ApiConnection, type ApiDefinition, type Bindings } from './bindings';
 import type { ApiObjectAddress, ApiReferenceShape } from './types';
 import type { SyncNode } from '@bedrock-core/sync';
-import type { Registry } from '../registry';
+import type { AddonRegistry } from '../registries/addons';
 import { isRecord } from '../guards';
 
 type ObjectShape = Extract<ApiReferenceShape, { reference: 'api' }>;
@@ -12,7 +12,7 @@ const addresses = new WeakMap<object, { address: ApiObjectAddress; active(): boo
 const remoteObjects = new WeakMap<SyncNode, Map<string, object>>();
 
 /** Object identity and disposal reuse Runtime bindings and the existing transport services. */
-export function createObjectReferences(node: SyncNode, registry: Registry, bindings: Bindings, bind: (module: string, definition: ApiDefinition) => void): {
+export function createObjectReferences(node: SyncNode, registry: AddonRegistry, bindings: Bindings, bind: (module: string, definition: ApiDefinition) => void): {
   encode(value: unknown, shape: ObjectShape): ApiObjectAddress;
   decode(value: unknown, shape: ObjectShape): unknown;
   release(value: object): boolean;

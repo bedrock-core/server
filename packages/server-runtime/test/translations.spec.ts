@@ -1,23 +1,59 @@
-import { describe, expect, it, vi } from 'vitest';
-import { createResourceBundle } from '@bedrock-core/i18n';
-import { TranslationsRegistry } from '../src/translations';
-import { State } from '../../sync/src/state';
-import type { Bus } from '../../sync/src/bus';
+import { vi } from 'vitest';
+vi.mock('@minecraft/server', () => ({ system: { run: vi.fn(() => 1), clearRun: vi.fn() } }));
+import { describe, expect, it } from 'vitest';
+import { createResourceBundle, type I18nBundle } from '@bedrock-core/i18n';
+import { observable } from '@bedrock-core/observable';
+import { registerTranslations, type Translations } from '../src/i18n';
+import { TRANSLATIONS } from '../src/i18n/publish';
+import { RegistryStore } from '../src/registries/store';
+import type { RegistrySnapshot } from '../src/registries/view';
+import type { Runtime } from '../src/runtime';
 
-vi.mock('@minecraft/server', () => ({ system: {} }));
+const context = vi.hoisted(() => ({ host: vi.fn(), reader: vi.fn() }));
 
-function fixture(): { state: State; translations: TranslationsRegistry } {
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- State only uses the transport's on/send methods in this fixture
-  const bus = { on: (): (() => void) => (): void => {}, send: (): string => 'message' } as unknown as Bus;
-  const state = new State(bus, 'owner');
-  const translations = new TranslationsRegistry(state, 'owner');
+vi.mock('../src/installation', async importOriginal => ({
+  ...await importOriginal<typeof import('../src/installation')>(),
+  registryOf: context.host,
+}));
+vi.mock('../src/registries/registration', () => ({ createRegistryReader: context.reader }));
 
-  translations.start();
+function fixture(): { publication: RegistryStore<I18nBundle>; translations: Translations } {
+  const descriptor = { id: TRANSLATIONS.id, contract: 1, revision: 1 };
+  const publication = new RegistryStore<I18nBundle>(descriptor, TRANSLATIONS, {}, () => {});
+  const snapshot = observable<RegistrySnapshot<I18nBundle>>({ status: 'ready', providers: [], entries: {} });
 
-  return { state, translations };
+  publication.snapshot.subscribe((value) => {
+    snapshot.set({ status: 'ready', providers: [], entries: Object.fromEntries(Object.entries(value.entries).map(([id, bundle]) => [id, {
+      id, value: bundle, provider: 'owner', instanceId: 'owner-instance', descriptor, version: value.version, stale: false,
+    }])) });
+  });
+  context.host.mockReturnValue({ publication: () => publication });
+  context.reader.mockReturnValue({ snapshot, stop(): void {} });
+  const host = { id: 'owner', provideService: vi.fn() };
+  // The fixture host supplies the Runtime operations used by this declaration.
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion
+  const runtime = host as unknown as Runtime;
+  const { value: translations } = registerTranslations().install(runtime, { defer: () => undefined });
+
+  expect(host.provideService).toHaveBeenCalledExactlyOnceWith('core:translations', translations);
+
+  return { publication, translations };
 }
 
 describe('live translation bundles', () => {
+  it('exposes the current owned bundle inside snapshot notifications', () => {
+    const { translations } = fixture();
+    const seen: (I18nBundle | undefined)[] = [];
+    const first = createResourceBundle('owner', { en_US: { text: 'first' } });
+    const second = createResourceBundle('owner', { en_US: { text: 'second' } });
+
+    translations.bundles.subscribe(() => { seen.push(translations.own()); });
+    translations.provide(first);
+    translations.provide(second);
+    expect(seen).toEqual([first, second]);
+    translations.stop();
+  });
+
   it('keeps retained resolvers current and preserves namespace ordering on replacement', () => {
     const { translations } = fixture();
     const resolver = translations.forLocale('en_US');
@@ -36,16 +72,13 @@ describe('live translation bundles', () => {
     expect(translations.bundles.get()).toEqual({});
   });
 
-  it('ignores unrelated state and removes invalidated bundles from live resolvers', () => {
-    const { state, translations } = fixture();
+  it('removes withdrawn bundles from live resolvers and rejects publication after shutdown', () => {
+    const { publication, translations } = fixture();
     const resolver = translations.forLocale('en_US');
-    const original = translations.bundles.get();
 
-    state.set('owner', 'unrelated', 1);
-    expect(translations.bundles.get()).toBe(original);
     translations.provide(createResourceBundle('owner', { en_US: { text: 'value' } }));
     expect(resolver('owner.text')).toBe('value');
-    state.delete('owner', 'core-i18n/bundle');
+    publication.delete('owner');
     expect(resolver('owner.text')).toBeUndefined();
     expect(translations.namespaces()).toEqual([]);
     translations.stop();

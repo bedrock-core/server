@@ -22,6 +22,18 @@
 	"repository": "github:bedrock-core/server",
 	"type": "module",
 	"exports": {
+		"./i18n": {
+			"types": "./src/i18n/index.ts",
+			"import": "./src/i18n/index.ts"
+		},
+		"./i18n/publish": {
+			"types": "./src/i18n/publish.ts",
+			"import": "./src/i18n/publish.ts"
+		},
+		"./library": {
+			"types": "./src/library.ts",
+			"import": "./src/library.ts"
+		},
 		"./api/native-values": {
 			"types": "./src/api/native-values.ts",
 			"import": "./src/api/native-values.ts"
@@ -62,7 +74,6 @@
 		"coverage": "vitest run --coverage"
 	},
 	"dependencies": {
-		"@bedrock-core/db": "workspace:^",
 		"@bedrock-core/i18n": "workspace:^",
 		"@bedrock-core/observable": "workspace:^",
 		"@bedrock-core/sync": "workspace:^"

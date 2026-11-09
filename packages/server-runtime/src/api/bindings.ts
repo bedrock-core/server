@@ -1,7 +1,7 @@
 import { effect, observable, type Observable, type Unsubscribe } from '@bedrock-core/observable';
 import { cloneData, freezeData } from '@bedrock-core/sync/data';
 import type { SyncNode } from '@bedrock-core/sync';
-import type { Registry } from '../registry';
+import type { AddonRegistry } from '../registries/addons';
 import type { ApiCallShape, ApiModule, ApiModuleShape, ApiObjectAddress, ApiShape } from './types';
 import { freezeApiData, transformData, type ApiDataContext } from './codec';
 
@@ -17,7 +17,7 @@ export interface ApiDefinition {
 export interface ApiConnection {
   data: ApiDataContext;
   node: SyncNode;
-  registry: Registry;
+  registry: AddonRegistry;
   call(namespace: string, module: string, path: readonly string[], args: unknown[], shape: ApiCallShape, reference?: ApiObjectAddress): Promise<unknown>;
   bind(module: string, definition: ApiDefinition): void;
 }

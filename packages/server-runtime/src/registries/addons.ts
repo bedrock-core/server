@@ -4,17 +4,17 @@
  * version in announce metadata; the registry merges the local addon with those peers,
  * keyed by the explicit addon namespace (e.g. `bt_gc_economy`).
  *
- * {@link Registry.addons} is the directory itself: an observable list derived from discovery, so
+ * {@link AddonRegistry.addons} is the directory itself: an observable list derived from discovery, so
  * it can be watched or `computed` over exactly like a config leaf or a shared value. The registry
  * holds no directory state of its own — `all()`, `get()` and `has()` all read that one list — so
  * there is never a cached answer to "who is here" that can disagree with the live one.
  *
  * A collision (two addons with the same namespace) is surfaced via
- * {@link Registry.onNamespaceCollision} and logged. Dependencies are declared and matched
+ * {@link AddonRegistry.onNamespaceCollision} and logged. Dependencies are declared and matched
  * by namespace and are soft: a missing one warns but never blocks.
  *
  * A Core addon with an incompatible transport is absent from the directory.
- * {@link Registry.incompatible} identifies it from its announce metadata, so the addon list
+ * {@link AddonRegistry.incompatible} identifies it from its announce metadata, so the addon list
  * can report the incompatibility.
  */
 import {
@@ -28,12 +28,14 @@ import {
 } from '@bedrock-core/sync';
 import { computed, effect, observable, signal, type Computed, type Observable, type ReadonlyObservable, type Unsubscribe } from '@bedrock-core/observable';
 import { system } from '@minecraft/server';
-import { type AddonManifest, validateManifest, runtimeVersionFromPeer, RUNTIME_VERSION } from './manifest';
+import { type AddonManifest, validateManifest, runtimeVersionFromPeer, RUNTIME_VERSION } from '../manifest';
+import { readRegistryDescriptors, type RegistryDescriptor } from './descriptor';
+import { Registry } from './base';
 
 /**
  * The owning manifest, the addon namespace as `id`, whether it is local, and the
- * `@bedrock-core/server-runtime` version that addon was built against (which the host
- * election compares — not the addon's own `version`).
+ * `@bedrock-core/server-runtime` version that addon was built against.
+ * The addon's pack version remains in manifest.header.version.
  */
 export interface RegisteredAddon {
   readonly manifest: AddonManifest;
@@ -42,6 +44,7 @@ export interface RegisteredAddon {
   readonly runtimeVersion: string;
   readonly instanceId: string;
   readonly apis: readonly string[];
+  readonly registries: readonly RegistryDescriptor[];
 }
 
 /** Told an addon that registered or unregistered. */
@@ -55,7 +58,7 @@ function sameIds(a: readonly string[], b: readonly string[]): boolean {
 }
 
 /** Every bedrock-core addon in the world, from discovery: presence, dependencies, collisions. */
-export class Registry {
+export class AddonRegistry extends Registry<RegisteredAddon, readonly RegisteredAddon[]> {
   /**
    * Every registered addon — the local addon, when present, plus live peers — as an observable list.
    *
@@ -81,8 +84,9 @@ export class Registry {
   private readonly _disposers: Unsubscribe[] = [];
 
   constructor(discovery: Discovery, self?: AddonManifest, instanceId = '') {
+    super();
     this._discovery = discovery;
-    this._self = observable<RegisteredAddon | undefined>(self === undefined ? undefined : { manifest: self, id: self.namespace, self: true, runtimeVersion: RUNTIME_VERSION, instanceId, apis: [] });
+    this._self = observable<RegisteredAddon | undefined>(self === undefined ? undefined : { manifest: self, id: self.namespace, self: true, runtimeVersion: RUNTIME_VERSION, instanceId, apis: Object.freeze([]), registries: Object.freeze([]) });
 
     this._addons = computed(
       () => [...(this._self.get() === undefined ? [] : [this._self.get()!]), ...discovery.peers.get().flatMap((peer) => {
@@ -133,7 +137,12 @@ export class Registry {
     this._addons.dispose();
   }
 
-  /** Every registered addon: the local addon plus all live peers. A snapshot of {@link Registry.addons}. */
+  /** The local registration, or undefined for an API-only consumer endpoint. */
+  get self(): RegisteredAddon | undefined { return this._self.get(); }
+
+  get snapshot(): ReadonlyObservable<readonly RegisteredAddon[]> { return this.addons; }
+
+  /** Every registered addon: the local addon plus all live peers. A snapshot of {@link AddonRegistry.addons}. */
   all(): readonly RegisteredAddon[] {
     return this._addons.get();
   }
@@ -143,20 +152,15 @@ export class Registry {
     return this._addons.get().find(addon => addon.id === id);
   }
 
-  /** Whether an addon with the given namespace is present. */
-  has(id: string): boolean {
-    return this.get(id) !== undefined;
-  }
-
-  /** @internal Ready public exports belong to the manifest's existing addon registration. */
-  setApis(apis: readonly string[]): boolean {
+  /** @internal Public exports and registry descriptors share the addon's discovery advertisement. */
+  setAdvertisements(apis: readonly string[], registries: readonly RegistryDescriptor[]): boolean {
     const self = this._self.get();
 
     if (self === undefined) { throw new Error('API providers require addon registration'); }
 
-    if (sameIds(self.apis, apis)) { return false; }
+    if (sameIds(self.apis, apis) && JSON.stringify(self.registries) === JSON.stringify(registries)) { return false; }
 
-    this._self.set({ ...self, apis: Object.freeze([...apis]) });
+    this._self.set({ ...self, apis: Object.freeze([...apis]), registries: readRegistryDescriptors(registries) });
 
     return true;
   }
@@ -224,7 +228,7 @@ export class Registry {
    * Notified when a peer addon registers (becomes visible). Returns an unsubscribe function.
    *
    * A delta, not a value: to react to who is present rather than to each arrival, subscribe to
-   * {@link Registry.addons}.
+   * {@link AddonRegistry.addons}.
    */
   onRegister(listener: AddonListener): Unsubscribe {
     return this._addons.subscribe((addons, previous) => {
@@ -249,7 +253,7 @@ export class Registry {
 
   /**
    * Addons heard on the bus that this build cannot talk to, because the protocol ranges the two
-   * were built with do not overlap. Present in the world, absent from {@link Registry.all}.
+   * were built with do not overlap. Present in the world, absent from {@link AddonRegistry.all}.
    */
   incompatible(): readonly IncompatiblePeer[] {
     return this._discovery.incompatiblePeers.get().filter(peer => runtimeVersionFromPeer(peer.meta) !== undefined);
@@ -304,7 +308,8 @@ export class Registry {
     if (manifest.namespace !== peer.id || manifest.header.version !== peer.version) { return undefined; }
 
     return { manifest, id: peer.id, self: false, runtimeVersion, instanceId: peer.instanceId,
-      apis: Object.freeze(Array.isArray(peer.meta?.apis) ? peer.meta.apis.filter((name): name is string => typeof name === 'string') : []) };
+      apis: Object.freeze(Array.isArray(peer.meta?.apis) ? peer.meta.apis.filter((name): name is string => typeof name === 'string') : []),
+      registries: readRegistryDescriptors(peer.meta?.registries) };
   }
 
   private _reportDependencies(missing: readonly string[], previous: readonly string[]): void {

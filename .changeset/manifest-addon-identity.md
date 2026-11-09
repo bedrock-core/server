@@ -1,6 +1,5 @@
 ---
 '@bedrock-core/server-runtime': minor
-'@bedrock-core/server': minor
 ---
 
 Register addons with explicit manifest namespaces and native display metadata, publish author lists, and derive catalog icons from pack_icon.png.

@@ -1,7 +1,7 @@
 import type { ReadonlyObservable, Signal } from '@bedrock-core/observable';
 import type { Block, BlockComponent, BlockPermutation, Container, ContainerSlot, Dimension, Entity, EntityComponent, ItemStack } from '@minecraft/server';
 
-/** A value class's shared, synchronous mapping to and from JSON data. */
+/** A value class's shared, synchronous mapping to and from supported application data. */
 export interface Codec<Value, Data> {
   encode(value: Value): Data;
   decode(data: Data): Value;
@@ -28,6 +28,8 @@ export type ApiDataShape
     | { readonly kind: 'native-value'; readonly value: NativeValue }
     | ApiReferenceShape
     | ({ readonly kind: 'callback' } & ApiCallShape)
+    | { readonly kind: 'map'; readonly key?: ApiDataShape; readonly value?: ApiDataShape }
+    | { readonly kind: 'set'; readonly item: ApiDataShape }
     | { readonly kind: 'array'; readonly item: ApiDataShape }
     | { readonly kind: 'tuple'; readonly items: readonly (ApiDataShape | null)[]; readonly rest?: ApiDataShape }
     | { readonly kind: 'object'; readonly members: Readonly<Record<string, ApiDataShape>>; readonly index?: ApiDataShape };
@@ -42,7 +44,7 @@ export interface ApiCallShape {
   readonly result?: ApiDataShape;
 }
 
-/** Constants crossing the API boundary use ordinary JSON data semantics. */
+/** Immutable constants described by generated API bindings. */
 export type ApiConstant = undefined | null | boolean | number | string | readonly ApiConstant[] | { readonly [key: string]: ApiConstant };
 
 /** Builder's checked public export kinds and immutable constants. */
@@ -59,7 +61,10 @@ export interface ApiModuleShape {
   readonly members: Readonly<Record<string, ApiShape>>;
 }
 
-type ReadonlyValue<T> = T extends Entity | Dimension | Block | EntityComponent | BlockComponent | Container | ContainerSlot | ItemStack | BlockPermutation ? T : T extends (...args: never[]) => unknown ? T : T extends object ? { readonly [K in keyof T]: ReadonlyValue<T[K]> } : T;
+type ReadonlyValue<T> = T extends Entity | Dimension | Block | EntityComponent | BlockComponent | Container | ContainerSlot | ItemStack | BlockPermutation ? T
+  : T extends ReadonlyMap<infer K, infer V> ? ReadonlyMap<ReadonlyValue<K>, ReadonlyValue<V>>
+    : T extends ReadonlySet<infer V> ? ReadonlySet<ReadonlyValue<V>>
+      : T extends (...args: never[]) => unknown ? T : T extends object ? { readonly [K in keyof T]: ReadonlyValue<T[K]> } : T;
 
 /** Imported exports: async calls, snapshots that can be absent, and events without emit. */
 export type ApiModule<T> = T extends abstract new (...args: never[]) => unknown ? T : T extends (...args: infer A) => Promise<infer R>

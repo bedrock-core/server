@@ -24,6 +24,9 @@ interface Authored {
   Money: typeof Money;
   funds: ReadonlyObservable<Money | undefined>;
   quoted: Signal<Money>;
+  collections: ReadonlyObservable<Map<string, Set<Money>>>;
+  collectionEvents: Signal<Map<string, Set<Money>>>;
+  collectionCall(value: Map<Date, Set<bigint>>): Promise<Map<Date, Set<bigint>>>;
   purchase(price: Money, confirm: (price: Money, note?: string) => Promise<Money>): Promise<Money>;
   balance(playerId: string, amount: number, actorId?: string): Promise<{ gold: number }>;
   synchronous(): number;
@@ -33,6 +36,22 @@ interface Authored {
 }
 
 function consumer(api: ApiModule<Authored>): void {
+  const collection = api.collections.get();
+  const collectionValue: number | undefined = collection?.get('key')?.values().next().value?.gold;
+
+  // @ts-expect-error collection snapshots do not expose map mutations
+  collection?.set('key', new Set());
+  // @ts-expect-error nested collection snapshots do not expose set mutations
+  collection?.get('key')?.add(new Money(1));
+  api.collectionEvents.subscribe((value) => {
+    // @ts-expect-error collection event snapshots do not expose mutations
+    value.clear();
+  });
+  void api.collectionCall(new Map([[new Date(), new Set([BigInt(1)])]])).then((result) => {
+    result.set(new Date(), new Set([BigInt(2)]));
+  });
+  void collectionValue;
+
   api.world.afterEvents.dropped.subscribe((event) => {
     const reference: Entity | undefined = event.entity;
 
@@ -114,20 +133,30 @@ function authoring(
   runtime: Runtime,
   manifest: Public.AddonManifest,
   API: { currency: Observable<string>; changed: Signal<number> & { emit(value: number): void } },
-  registerApi: typeof Public.registerApi,
+  registerModule: typeof Public.registerModule,
 ): void {
-  const declaration: Public.ApiDeclaration<typeof API> = registerApi(API);
-  const { api } = runtime.register({ manifest, api: declaration });
-  const implementation: typeof API = api;
+  const declaration: Public.ModuleDeclaration<typeof API> = registerModule(API);
+  const registered = runtime.register({ manifest, module: declaration });
+  const facade: Runtime['api'] = registered.api;
+  const implementation: typeof API = declaration.api;
+  const installed: typeof API = registered.module;
 
-  api.currency.set('gold');
-  api.changed.emit(1);
-  void implementation;
+  // @ts-expect-error Module declarations use an ordinary field and cannot replace Runtime.api.
+  runtime.register({ manifest, api: declaration });
+
+  implementation.currency.set('gold');
+  implementation.changed.emit(1);
+  // @ts-expect-error Provider registration preserves the Runtime API facade.
+  void registered.api.currency;
+  void facade;
+  void installed;
 }
 
 void authoring;
 
 function runtimeSurface(runtime: Runtime): void {
+  // @ts-expect-error translation access belongs to the i18n library integration
+  void runtime.translations;
   // @ts-expect-error raw transport is private to the runtime implementation
   void runtime.rpc;
   // @ts-expect-error raw node is private to the runtime implementation

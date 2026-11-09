@@ -3,10 +3,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ApiModuleShape } from '../src/api';
 import type { ApiReferenceShape } from '../src/api/types';
 import type { AddonManifest } from '../src/manifest';
+import type { Runtime as RuntimeInstance } from '../src/runtime';
 import type { Codec } from '../src/api';
 import { decodeWire, encodeBatch } from '../../sync/src/wire';
 import { encodeEnvelope } from '../../sync/src/envelope';
 import { BUS_CHANNEL, MessageType } from '../../sync/src/constants';
+import { defineRegistry, registryReference, Registry, type Declaration, type Installation, type RegistryAccessor, type RegistryDefinition } from '../src/library';
+import { translations, registerTranslations, publishTranslations } from '../src/i18n';
+import { createI18n, createResourceBundle } from '@bedrock-core/i18n';
 
 const engine = vi.hoisted(() => {
   class Entity {
@@ -66,16 +70,23 @@ vi.mock('@minecraft/server', () => ({
 
 // These tests run the actual Runtime, Bus, queue, framing, discovery, RPC, mirror and events.
 // Persistence is unrelated to the public API boundary.
-vi.mock('@bedrock-core/db/minecraft', () => ({ createEngineDb: (): object => ({ stop(): void {} }) }));
 
 const { Runtime, core } = await import('../src/runtime');
 const { createApiModule, provideApiModule } = await import('../src/api');
-const { defineApiDeclaration, defineApiModule, registerApi } = await import('../src/api/declaration');
+const { defineApiDeclaration, defineApiModule, registerModule } = await import('../src/api/declaration');
 const { createClientApiModule, stopApiClient } = await import('../src/api/client');
 const { MAX_MESSAGE } = await import('../../sync/src/constants');
 const { SyncNode } = await import('../../sync/src/node');
 const runtimes: InstanceType<typeof Runtime>[] = [];
 const syncNodes: InstanceType<typeof SyncNode>[] = [];
+
+declare module '@bedrock-core/server-runtime' {
+  interface RuntimeServices {
+    'fixture:counter': { readonly count: number };
+    'fixture:failed': { readonly count: number };
+    'fixture:nested': { readonly count: number };
+  }
+}
 
 class Money {
   static readonly codec: Codec<Money, number> = {
@@ -224,6 +235,644 @@ afterEach(async () => {
 });
 
 describe('public package peers over the Runtime transport', () => {
+  it('returns its existing identity with shared read-only declaration accessors', () => {
+    const owner = runtime();
+    const value = { find: (id: string): string => id };
+    const seen: unknown[] = [];
+    const result = owner.register({
+      manifest: manifest('typed'),
+      textureRegistry: { install: () => ({ value }) },
+      later: { install(core: RuntimeInstance) {
+        seen.push(Reflect.get(core, 'textureRegistry'));
+
+        return { value: undefined };
+      } },
+    });
+
+    expect(result).toBe(owner);
+    expect(result.textureRegistry).toBe(value);
+    expect(Reflect.get(owner, 'textureRegistry')).toBe(value);
+    expect(seen).toEqual([value]);
+    expect(Reflect.set(result, 'textureRegistry', {})).toBe(false);
+    owner.stop();
+    expect(owner).not.toHaveProperty('textureRegistry');
+    expect(owner).not.toHaveProperty('host');
+    owner.register({ manifest: manifest('typed_again'), textureRegistry: { install: () => ({ value: 4 }) } });
+    expect(Reflect.get(owner, 'textureRegistry')).toBe(4);
+  });
+
+  it('removes installed property aliases when registration rolls back', () => {
+    const owner = runtime();
+    const cleanup = vi.fn();
+
+    expect(() => owner.register({
+      manifest: manifest('rollback'),
+      first: { install: () => ({ value: 4, stop: cleanup }) },
+      broken: { install(): never { throw new Error('installation failed'); } },
+    })).toThrow('installation failed');
+    expect(owner.registered).toBe(false);
+    expect(owner).not.toHaveProperty('first');
+    expect(cleanup).toHaveBeenCalledOnce();
+    expect(() => owner.manifest).toThrow('register()');
+  });
+
+  it('owns reusable library recipes independently and withdraws only the selected installation', () => {
+    const first = runtime();
+    const second = runtime();
+    const stopped: number[] = [];
+    let created = 0;
+    const declaration: Declaration<{ count: number }> = { install(core): Installation<{ count: number }> {
+      const value = { count: ++created };
+
+      core.provideService('fixture:counter', value);
+
+      return { value, stop: (): void => { stopped.push(value.count); } };
+    } };
+    const a = first.register({ manifest: manifest('first'), counter: declaration });
+    const b = second.register({ manifest: manifest('second'), counter: declaration });
+
+    expect(a.counter).not.toBe(b.counter);
+    expect(first.uninstall(declaration)).toBe(true);
+    expect(first).not.toHaveProperty('counter');
+    expect(first.service('fixture:counter')).toBeUndefined();
+    expect(second.service('fixture:counter')).toBe(b.counter);
+    expect(stopped).toEqual([1]);
+    expect(first.uninstall(declaration)).toBe(false);
+    expect(first.install(declaration).count).toBe(3);
+    expect(b.counter.count).toBe(2);
+  });
+
+  it('withdraws nested libraries while preserving independent installations', () => {
+    const owner = runtime();
+    const order: string[] = [];
+    const parent: Declaration<void> = { install(core, lifetime): Installation<void> {
+      lifetime.defer(() => { order.push('parent resource'); });
+      core.install({ install: (): Installation<void> => ({ value: undefined, stop: (): void => { order.push('child'); } }) });
+
+      return { value: undefined, stop: (): void => { order.push('parent'); } };
+    } };
+
+    owner.register({ manifest: manifest('owner'), parent });
+    owner.install({ install: (): Installation<void> => ({ value: undefined, stop: (): void => { order.push('independent'); } }) });
+    owner.uninstall(parent);
+    expect(order).toEqual(['child', 'parent', 'parent resource']);
+    owner.stop();
+    expect(order).toEqual(['child', 'parent', 'parent resource', 'independent']);
+  });
+
+  it('releases partial setup completely even when a cleanup throws', () => {
+    const owner = runtime();
+    const release = vi.fn();
+
+    owner.register({ manifest: manifest('owner') });
+    expect(() => owner.install({ install(core, lifetime): never {
+      lifetime.defer(release);
+      core.provideService('fixture:failed', { count: 1 });
+      lifetime.defer(() => { throw new Error('cleanup failed'); });
+      throw new Error('setup failed');
+    } })).toThrow('library installation and cleanup failed');
+    expect(release).toHaveBeenCalledOnce();
+    expect(owner.service('fixture:failed')).toBeUndefined();
+    expect(owner.registered).toBe(true);
+  });
+
+  it('releases the returned instance when Runtime stops during setup', () => {
+    const owner = runtime();
+    const early = vi.fn();
+    const late = vi.fn();
+
+    owner.register({ manifest: manifest('owner') });
+    expect(() => owner.install({ install(core, lifetime): Installation<void> {
+      lifetime.defer(early);
+      core.stop();
+
+      return { value: undefined, stop: late };
+    } })).toThrow('stopped during setup');
+    expect(early).toHaveBeenCalledOnce();
+    expect(late).toHaveBeenCalledOnce();
+    expect(owner.registered).toBe(false);
+    owner.register({ manifest: manifest('restarted') });
+  });
+
+  it('rejects declaration keys that collide with Runtime members before starting', () => {
+    const owner = runtime();
+    const install = vi.fn();
+
+    expect(() => owner.register({ manifest: manifest('collision'), stop: { install } })).toThrow('member \'stop\' is reserved');
+    expect(install).not.toHaveBeenCalled();
+    expect(owner.registered).toBe(false);
+    expect(engine.listeners.size).toBe(0);
+  });
+
+  it('reads the local manifest from its AddonRegistry entry', () => {
+    const owner = runtime();
+
+    owner.register({ manifest: manifest('identity') });
+    const local = owner.registry.self;
+
+    expect(local?.manifest).toBe(owner.manifest);
+    expect(local).toBe(owner.registry.get(owner.id));
+    owner.api.provideModule('@fixture/identity', { kind: 'object', members: {} }, {});
+    expect(owner.manifest).toBe(local?.manifest);
+    expect(owner.registry.self?.apis).toContain('@fixture/identity');
+  });
+
+  const records: RegistryDefinition<{ label: string }> = {
+    id: 'fixture:records', contract: 1,
+    accepts: (value): value is { label: string } => typeof value === 'object' && value !== null
+      && 'label' in value && typeof value.label === 'string',
+  };
+
+  it('publishes translation bundles without consuming peers and acquires them through the i18n library accessor', async () => {
+    const owner = runtime();
+    const reader = runtime();
+    const unused = runtime();
+
+    owner.register({ manifest: manifest('provider') });
+    reader.register({ manifest: manifest('reader'), translations: registerTranslations() });
+    unused.register({ manifest: manifest('unused') });
+    publishTranslations(owner, createResourceBundle('provider', { en_US: { private: 'selective-translation-secret' } }));
+    await ticks(16);
+    expect(engine.messages.join('')).toContain('selective-translation-secret');
+    expect(owner).not.toHaveProperty('translations');
+    expect(owner).not.toHaveProperty('db');
+    const resolve = translations(reader).forLocale('en_US');
+
+    await ticks(16);
+    expect(resolve('provider.private')).toBe('selective-translation-secret');
+    publishTranslations(owner, createResourceBundle('provider', { en_US: { private: 'replacement' } }));
+    await ticks(12);
+    expect(resolve('provider.private')).toBe('replacement');
+    reader.stop();
+    expect(resolve('provider.private')).toBeUndefined();
+    expect(() => translations(reader)).toThrow('not registered');
+  });
+
+  it('automatically publishes built-in translations without installing or accessing their reader', async () => {
+    const i18n = await import('@bedrock-core/i18n');
+    const bundle = createResourceBundle('provider', { en_US: { automatic: 'automatic-publisher-only-value' } });
+
+    vi.spyOn(i18n, 'currentI18n').mockReturnValue(createI18n(bundle, { asDefault: false }));
+    const owner = runtime();
+
+    owner.register({ manifest: manifest('provider') });
+    await ticks(12);
+    expect(engine.messages.join('')).toContain('automatic-publisher-only-value');
+    expect(owner.registry.self?.registries.map(value => value.id)).toContain('core:translations');
+    expect(owner.service('core:translations')).toBeUndefined();
+    expect(() => translations(owner)).toThrow('not registered');
+  });
+
+  it('cancels default translation publication when the runtime stops before its deferred bootstrap', async () => {
+    const i18n = await import('@bedrock-core/i18n');
+    const bundle = createResourceBundle('provider', { en_US: { cancelled: 'cancelled-default-publication' } });
+    const current = vi.spyOn(i18n, 'currentI18n').mockReturnValue(createI18n(bundle, { asDefault: false }));
+    const owner = runtime();
+
+    owner.register({ manifest: manifest('provider') });
+    owner.stop();
+    expect(engine.tasks.size).toBe(0);
+    await ticks(12);
+    expect(current).not.toHaveBeenCalled();
+    expect(engine.messages.join('')).not.toContain('cancelled-default-publication');
+    expect(owner.registered).toBe(false);
+  });
+
+  it('preserves an explicit translation publication made before default bootstrap', async () => {
+    const i18n = await import('@bedrock-core/i18n');
+    const fallback = createResourceBundle('provider', { en_US: { text: 'default-bootstrap-value' } });
+    const explicit = createResourceBundle('provider', { en_US: { text: 'explicit-publication-value' } });
+
+    vi.spyOn(i18n, 'currentI18n').mockReturnValue(createI18n(fallback, { asDefault: false }));
+    const owner = runtime();
+
+    owner.register({ manifest: manifest('provider') });
+    publishTranslations(owner, explicit);
+    await ticks(12);
+    const accessor = owner.install(registerTranslations());
+
+    expect(accessor.own()).toEqual(explicit);
+    expect(accessor.forLocale('en_US')('provider.text')).toBe('explicit-publication-value');
+    expect(engine.messages.join('')).not.toContain('default-bootstrap-value');
+  });
+
+  it('keeps built-in publishing alive after the optional reader is uninstalled', async () => {
+    const owner = runtime();
+    const reader = runtime();
+    const declaration = registerTranslations();
+
+    owner.register({ manifest: manifest('provider'), translations: declaration });
+    reader.register({ manifest: manifest('reader'), translations: registerTranslations() });
+    publishTranslations(owner, createResourceBundle('provider', { en_US: { text: 'first' } }));
+    await ticks(12);
+    const resolve = translations(reader).forLocale('en_US');
+
+    expect(resolve('provider.text')).toBe('first');
+    owner.uninstall(declaration);
+    expect(owner.service('core:translations')).toBeUndefined();
+    publishTranslations(owner, createResourceBundle('provider', { en_US: { text: 'after-reader-removal' } }));
+    await ticks(12);
+    expect(resolve('provider.text')).toBe('after-reader-removal');
+    expect(reader.registry.get('provider')?.registries.map(value => value.id)).toContain('core:translations');
+    const reinstalled = owner.install(registerTranslations());
+
+    expect(reinstalled.own()?.namespace).toBe('provider');
+    expect(reinstalled.forLocale('en_US')('provider.text')).toBe('after-reader-removal');
+  });
+
+  it('uses one registered accessor for local writes and compatible external records', async () => {
+    const first = runtime();
+    const second = runtime();
+    const local = first.register({ manifest: manifest('first'), records: defineRegistry(records) }).records;
+    const peer = second.register({ manifest: manifest('second'), records: defineRegistry(records, { entries: { foreign: { label: 'peer' } } }) }).records;
+
+    local.set('local', { label: 'owned' });
+    await ticks(12);
+    expect(local.get('foreign')?.label).toBe('peer');
+    expect(peer.get('local')?.label).toBe('owned');
+    local.delete('local');
+    await ticks(8);
+    expect(peer.get('local')).toBeUndefined();
+    expect(local.get('foreign')?.label).toBe('peer');
+  });
+
+  it('broadcasts registry publications and retains snapshots only while readers declare interest', async () => {
+    const owner = runtime();
+    const unused = runtime();
+    const reader = runtime();
+    const data = owner.register({ manifest: manifest('provider'), data: defineRegistry(records, {
+      revision: 1, entries: { stone: { label: 'selective-private-record' } },
+    }) }).data;
+
+    unused.register({ manifest: manifest('unused') });
+    reader.register({ manifest: manifest('reader') });
+    await ticks(16);
+    expect(engine.messages.join('')).toContain('selective-private-record');
+    const first = reader.install(defineRegistry(records));
+    const second = reader.install(defineRegistry(records));
+    const ready = first.whenReady();
+
+    await ticks(16);
+    await ready;
+    expect(first.get('stone')?.label).toBe('selective-private-record');
+    expect(second.get('stone')?.label).toBe('selective-private-record');
+    expect(unused.registry.get('provider')?.registries[0]?.id).toBe(records.id);
+    first.stop();
+    data.set('stone', { label: 'shared-reader-update' });
+    await ticks(12);
+    expect(first.get('stone')).toBeUndefined();
+    expect(second.get('stone')?.label).toBe('shared-reader-update');
+    second.stop();
+    await ticks(8);
+    engine.messages = [];
+    data.set('stone', { label: 'unused-after-unsubscribe' });
+    await ticks(12);
+    expect(engine.messages.join('')).toContain('unused-after-unsubscribe');
+    expect(second.snapshot.get()).toEqual({ status: 'stopped', providers: [], entries: {} });
+    const late = unused.install(defineRegistry(records));
+
+    await ticks(16);
+    expect(late.get('stone')?.label).toBe('unused-after-unsubscribe');
+  });
+
+  it('adopts newer compatible data independently of addon versions and rejects incompatible Minecraft coverage and contracts', async () => {
+    const older = runtime();
+    const newer = runtime();
+    const incompatible = runtime();
+    const outside = runtime();
+    const reader = runtime();
+
+    older.register({ manifest: manifest('older'), data: defineRegistry(records, { revision: 1, entries: { stone: { label: 'old' } } }) });
+    const latest = newer.register({ manifest: manifest('newer'), data: defineRegistry(records, { revision: 5,
+      coverage: { min: [1, 26, 50], max: [1, 26, 70] }, entries: { stone: { label: 'new' }, extra: { label: 'extra' } },
+    }) }).data;
+
+    incompatible.register({ manifest: manifest('incompatible'), data: defineRegistry({ ...records, contract: 2 }, {
+      revision: 99, entries: { stone: { label: 'incompatible-secret' } },
+    }) });
+    outside.register({ manifest: manifest('outside'), data: defineRegistry(records, {
+      revision: 100, coverage: { min: [1, 27, 0] }, entries: { stone: { label: 'outside-secret' } },
+    }) });
+    const { view } = reader.register({ manifest: manifest('reader'), view: defineRegistry(records, { minecraft: [1, 26, 60] }) });
+
+    await ticks(24);
+    expect(view.get('stone')?.label).toBe('new');
+    expect(view.get('extra')?.label).toBe('extra');
+    expect(view.snapshot.get().providers.map(provider => provider.id).sort()).toEqual(['newer', 'older']);
+    latest.stop();
+    await ticks(16);
+    expect(view.get('stone')?.label).toBe('old');
+    expect(view.get('extra')).toBeUndefined();
+  });
+
+  it('broadcasts one replacement for multiple consumers without periodic registry traffic', async () => {
+    const owner = runtime();
+    const first = runtime();
+    const second = runtime();
+    const data = owner.register({ manifest: manifest('provider'), data: defineRegistry(records, { revision: 1 }) }).data;
+    const a = first.register({ manifest: manifest('first'), records: defineRegistry(records) }).records;
+    const b = second.register({ manifest: manifest('second'), records: defineRegistry(records) }).records;
+
+    await ticks(24);
+    engine.messages = [];
+    data.set('stone', { label: 'one-broadcast' });
+    await ticks(16);
+    const envelopes = (): ReturnType<typeof decodeWire>[] => engine.messages.map(decodeWire);
+    const snapshots = envelopes().flatMap(wire => wire?.kind === 'envelopes' ? wire.envelopes : [])
+      .filter(envelope => envelope.src === owner.id && envelope.type === 'replica');
+
+    expect(snapshots).toHaveLength(1);
+    expect(snapshots[0].dst).toBeUndefined();
+    expect(a.get('stone')?.label).toBe('one-broadcast');
+    expect(b.get('stone')?.label).toBe('one-broadcast');
+    expect(data).toBeInstanceOf(Registry);
+    expect(a).toBeInstanceOf(Registry);
+    expect(owner.registry).toBeInstanceOf(Registry);
+    expect(a.has('stone')).toBe(true);
+    engine.messages = [];
+    await ticks(180);
+    expect(envelopes().flatMap(wire => wire?.kind === 'envelopes' ? wire.envelopes : [])
+      .filter(envelope => envelope.type === 'replica')).toEqual([]);
+  });
+
+  it('resolves typed links through their owning provider and rejects mixed revisions and stale reference versions', async () => {
+    const models: RegistryDefinition<{ texture: ReturnType<typeof registryReference<{ label: string }>> }> = {
+      id: 'fixture:models', contract: 1,
+      accepts: (value): value is { texture: ReturnType<typeof registryReference<{ label: string }>> } => typeof value === 'object' && value !== null
+        && 'texture' in value && typeof value.texture === 'object' && value.texture !== null,
+    };
+    const owner = runtime();
+    const alternate = runtime();
+    const reader = runtime();
+    const pinned = registryReference(records, 'stone', { version: 0 });
+    const { textures } = owner.register({ manifest: manifest('provider'),
+      models: defineRegistry(models, { revision: 4, entries: { stone: { texture: pinned } } }),
+      textures: defineRegistry(records, { revision: 4, entries: { stone: { label: 'linked' } } }),
+    });
+
+    alternate.register({ manifest: manifest('alternate'), textures: defineRegistry(records, { revision: 9, entries: { stone: { label: 'other' } } }) });
+    const { modelView, textureView } = reader.register({ manifest: manifest('reader'), modelView: defineRegistry(models), textureView: defineRegistry(records) });
+
+    await ticks(24);
+    const model = modelView.resolve(registryReference(models, 'stone'));
+
+    expect(model.status).toBe('ready');
+
+    if (model.status !== 'ready') { throw new Error('model was not ready'); }
+
+    expect(textureView.get('stone')?.label).toBe('other');
+    const linked = textureView.resolve(model.entry.value.texture, model.entry);
+
+    expect(linked.status === 'ready' && linked.entry.value.label).toBe('linked');
+    textures.set('stone', { label: 'updated' });
+    await ticks(12);
+    expect(textureView.resolve(pinned, model.entry)).toEqual({ status: 'loading' });
+    const updated = textureView.resolve(registryReference(records, 'stone', { version: 1 }), model.entry);
+
+    expect(updated.status === 'ready' && updated.entry.value.label).toBe('updated');
+    textures.stop();
+    await ticks(12);
+    expect(textureView.resolve(pinned, model.entry)).toEqual({ status: 'unavailable' });
+    expect(textureView.resolve(registryReference(records, 'missing'))).toEqual({ status: 'missing' });
+  });
+
+  it('rejects invalid provider snapshots atomically and lets a registry policy choose among valid providers', async () => {
+    const valid = runtime();
+    const invalid = runtime();
+    const reader = runtime();
+    const numbers: RegistryDefinition<{ label: number }> = { id: records.id, contract: 1,
+      accepts: (value): value is { label: number } => typeof value === 'object' && value !== null && 'label' in value && typeof value.label === 'number' };
+
+    valid.register({ manifest: manifest('valid'), data: defineRegistry(records, { revision: 1, entries: { stone: { label: 'valid' } } }) });
+    invalid.register({ manifest: manifest('invalid'), data: defineRegistry(numbers, { revision: 99, entries: { stone: { label: 7 } } }) });
+    const { view } = reader.register({ manifest: manifest('reader'), view: defineRegistry(records, { select: candidates => candidates.at(-1) }) });
+
+    await ticks(24);
+    expect(view.get('stone')?.label).toBe('valid');
+    expect(view.snapshot.get().providers.find(provider => provider.id === 'invalid')?.status).toBe('invalid');
+    expect(view.of('invalid')).toBeUndefined();
+  });
+
+  it('cleans up interests after failed nested library setup and rejects outstanding readiness waits on stop', async () => {
+    const owner = runtime();
+    const reader = runtime();
+    const data = owner.register({ manifest: manifest('provider'), data: defineRegistry(records, { revision: 1 }) }).data;
+    let partial: RegistryAccessor<{ label: string }> | undefined;
+
+    reader.register({ manifest: manifest('reader') });
+    await ticks(12);
+    expect(() => reader.install({ install(core: RuntimeInstance) {
+      partial = core.install(defineRegistry(records));
+      throw new Error('library setup failed');
+    } })).toThrow('library setup failed');
+    expect(partial?.snapshot.get().status).toBe('stopped');
+    expect(partial?.resolve(registryReference(records, 'stone'))).toEqual({ status: 'stopped' });
+    await ticks(12);
+    engine.messages = [];
+    data.set('late', { label: 'rollback-not-delivered' });
+    await ticks(12);
+    expect(engine.messages.join('')).toContain('rollback-not-delivered');
+    expect(partial?.snapshot.get()).toEqual({ status: 'stopped', providers: [], entries: {} });
+    const waiting = reader.install(defineRegistry({ ...records, id: 'fixture:absent' }));
+    const outcome = waiting.whenReady().catch((error: unknown) => error);
+
+    waiting.stop();
+    expect(await outcome).toMatchObject({ message: 'registry is stopped' });
+  });
+
+  it('drops departed datasets by default, supports explicit stale caches and fences provider replacement', async () => {
+    const owner = runtime();
+    const reader = runtime();
+
+    owner.register({ manifest: manifest('provider'), data: defineRegistry(records, { revision: 3, entries: { stone: { label: 'original' } } }) });
+    const { live, cached } = reader.register({ manifest: manifest('reader'), live: defineRegistry(records), cached: defineRegistry(records, { retainOnDeparture: true }) });
+
+    await ticks(20);
+    const old = cached.resolve(registryReference(records, 'stone'));
+
+    expect(old.status).toBe('ready');
+    owner.stop();
+    await ticks(400);
+    expect(live.get('stone')).toBeUndefined();
+    const stale = cached.resolve(registryReference(records, 'stone'));
+
+    expect(stale.status === 'stale' && stale.entry.value.label).toBe('original');
+    const replacement = runtime();
+
+    replacement.register({ manifest: manifest('provider'), data: defineRegistry(records, { revision: 3, entries: { stone: { label: 'replacement' } } }) });
+    await ticks(24);
+    expect(cached.get('stone')?.label).toBe('replacement');
+
+    if (old.status !== 'ready') { throw new Error('old entry was not ready'); }
+
+    expect(cached.resolve(registryReference(records, 'stone'), old.entry)).toEqual({ status: 'unavailable' });
+  });
+
+  it('rejects delayed snapshots after updates and a new subscription token', async () => {
+    const owner = runtime();
+    const reader = runtime();
+    const { data } = owner.register({ manifest: manifest('provider'), data: defineRegistry(records, { revision: 1, entries: { stone: { label: 'first' } } }) });
+    const { view } = reader.register({ manifest: manifest('reader'), view: defineRegistry(records) });
+
+    await ticks(20);
+    const delayed = engine.messages.flatMap((message) => {
+      const wire = decodeWire(message);
+
+      return wire?.kind === 'envelopes' ? wire.envelopes : [];
+    }).find(envelope => envelope.type === 'replica' && envelope.src === 'provider' && envelope.dst === reader.id && envelope.data !== undefined
+      && typeof envelope.data === 'object' && envelope.data !== null && 'op' in envelope.data && envelope.data.op === 'snapshot');
+
+    expect(delayed).toBeDefined();
+    data.set('stone', { label: 'latest' });
+    await ticks(12);
+
+    const replay = (mid: string): void => {
+      for (const listener of engine.listeners) { listener({ id: BUS_CHANNEL, message: encodeBatch([encodeEnvelope({ ...delayed!, mid })]) }); }
+    };
+
+    replay('delayed-revision');
+    expect(view.get('stone')?.label).toBe('latest');
+    view.stop();
+    const next = reader.install(defineRegistry(records));
+
+    await ticks(16);
+    replay('delayed-token');
+    expect(next.get('stone')?.label).toBe('latest');
+  });
+
+  it('keeps registry advertisements compact and retains descriptors across API changes', async () => {
+    const owner = runtime();
+    const reader = runtime();
+    const { dataset } = owner.register({ manifest: manifest('provider'), dataset: defineRegistry(records, {
+      revision: 7, coverage: { min: [1, 26, 50] },
+      entries: { 'minecraft:stone': { label: 'registry-private-stone-record' } },
+    }) });
+
+    reader.register({ manifest: manifest('reader') });
+    await ticks(16);
+    const expected = [{ id: records.id, contract: 1, revision: 7, minecraft: { min: [1, 26, 50] } }];
+
+    expect(reader.registry.get('provider')?.registries).toEqual(expected);
+    expect(owner.registry.get('provider')?.registries).toEqual(expected);
+    expect(reader.registry.get('provider')?.manifest).not.toHaveProperty('registries');
+    expect(reader).not.toHaveProperty('registries');
+    expect(JSON.stringify(reader.registry.get('provider'))).not.toContain('registry-private-stone-record');
+    const release = owner.api.provideModule('@fixture/advertised', { kind: 'object', members: {} }, {});
+
+    await ticks(8);
+    expect(reader.registry.get('provider')?.apis).toEqual(['@fixture/advertised']);
+    expect(reader.registry.get('provider')?.registries).toEqual(expected);
+    release();
+    await ticks(8);
+    expect(reader.registry.get('provider')?.apis).toEqual([]);
+    expect(reader.registry.get('provider')?.registries).toEqual(expected);
+    dataset.set('minecraft:dirt', { label: 'registry-private-dirt-record' });
+    await ticks(8);
+    expect(JSON.stringify(reader.registry.get('provider'))).not.toContain('registry-private-dirt-record');
+    dataset.stop();
+    await ticks(8);
+    expect(reader.registry.get('provider')?.registries).toEqual([]);
+    expect(reader.registry.has('provider')).toBe(true);
+  });
+
+  it('isolates registry instances, preserves owners on duplicate setup and clears stale handles on stop', () => {
+    const first = runtime();
+    const second = runtime();
+    const declaration = defineRegistry(records, { revision: 1, entries: { local: { label: 'first' } } });
+    const { data } = first.register({ manifest: manifest('first'), data: declaration });
+    const other = second.register({ manifest: manifest('second'), data: defineRegistry(records, {
+      revision: 2, entries: { local: { label: 'second' } },
+    }) }).data;
+
+    expect(() => first.install(defineRegistry(records, { revision: 9 }))).toThrow('already published');
+    expect(() => first.install(declaration)).toThrow('already installed');
+    expect(() => second.install(declaration)).toThrow('already published');
+    expect(data.get('local')?.label).toBe('first');
+    expect(other.get('local')?.label).toBe('second');
+    first.stop();
+    expect(data.snapshot.get().entries).toEqual({});
+    expect(() => data.set('late', { label: 'late' })).toThrow('stopped');
+    expect(other.get('local')?.label).toBe('second');
+    first.register({ manifest: manifest('first'), data: defineRegistry(records, { revision: 3 }) });
+    expect(first.registry.get('first')?.registries[0]?.revision).toBe(3);
+  });
+
+  it('rolls back nested registry publications while keeping earlier library state installed', () => {
+    const owner = runtime();
+
+    owner.register({ manifest: manifest('owner'), data: defineRegistry(records, { revision: 1 }) });
+    expect(() => owner.install({
+      install(core: RuntimeInstance) {
+        core.install(defineRegistry({ ...records, id: 'fixture:partial' }, { revision: 2 }));
+        throw new Error('library setup failed');
+      },
+    })).toThrow('library setup failed');
+    expect(owner.registry.get('owner')?.registries.map(entry => entry.id)).toEqual([records.id]);
+    expect(() => owner.install(defineRegistry({ ...records, id: 'fixture:partial' }, { revision: 3 }))).not.toThrow();
+    expect(() => owner.install(defineRegistry({ ...records, id: 'fixture:bad' }, { revision: -1 }))).toThrow('invalid registry');
+    expect(owner.registry.get('owner')?.registries.map(entry => entry.id)).toEqual(['fixture:partial', records.id]);
+  });
+
+  it('owns typed local services independently in each Runtime and rejects duplicate providers', () => {
+    const first = runtime();
+    const second = runtime();
+    const counter = { count: 2 };
+
+    expect(first.service('fixture:counter')).toBeUndefined();
+    expect(() => first.provideService('fixture:counter', counter)).toThrow('register');
+    first.register({ manifest: manifest('first'), counter: {
+      install(core: RuntimeInstance) {
+        core.provideService('fixture:counter', counter);
+
+        return { value: counter, stop(): void {
+          expect(first.service('fixture:counter')).toBe(counter);
+          expect(() => first.provideService('fixture:failed', counter)).toThrow('stopping');
+        } };
+      },
+    } });
+    second.register({ manifest: manifest('second'), counter: {
+      install(core: RuntimeInstance) {
+        const value = { count: 7 };
+
+        core.provideService('fixture:counter', value);
+
+        return { value };
+      },
+    } });
+    expect(first.service('fixture:counter')).toBe(counter);
+    expect(second.service('fixture:counter')?.count).toBe(7);
+    expect(() => first.provideService('fixture:counter', { count: 9 })).toThrow('already registered');
+    first.stop();
+    expect(first.service('fixture:counter')).toBeUndefined();
+    expect(second.service('fixture:counter')?.count).toBe(7);
+  });
+
+  it('removes partially installed services and preserves existing ones after nested setup fails', () => {
+    const owner = runtime();
+    const stopped: string[] = [];
+
+    owner.register({ manifest: manifest('owner') });
+    owner.provideService('fixture:counter', { count: 1 });
+    expect(() => owner.install({
+      install(core: RuntimeInstance, lifetime) {
+        lifetime.defer(() => stopped.push('parent'));
+        core.provideService('fixture:failed', { count: 2 });
+        core.install({
+          install(runtime: RuntimeInstance): Installation<void> {
+            runtime.provideService('fixture:nested', { count: 3 });
+
+            return { value: undefined, stop(): void { stopped.push('nested'); } };
+          },
+        });
+        throw new Error('setup failed');
+      },
+    })).toThrow('setup failed');
+    expect(stopped).toEqual(['nested', 'parent']);
+    expect(owner.service('fixture:counter')?.count).toBe(1);
+    expect(owner.service('fixture:failed')).toBeUndefined();
+    expect(owner.service('fixture:nested')).toBeUndefined();
+  });
+
   it('preserves a complete manifest across framed discovery and API readiness updates', async () => {
     const owner = runtime();
     const consumer = runtime();
@@ -261,17 +910,17 @@ describe('public package peers over the Runtime transport', () => {
     const contract = { kind: 'object', members: { API: shape } } as const;
 
     defineApiModule('@fixture/object-view', contract, exports);
-    owner.register({ manifest: manifest('owner'), api: registerApi(API) });
+    owner.register({ manifest: manifest('owner'), module: registerModule(API) });
     consumer.register({ manifest: manifest('consumer') });
-    const object = consumer.api.of('owner', API);
-    const module = consumer.api.of('owner', exports);
+    const object = consumer.api.createModule('owner', API);
+    const module = consumer.api.createModule('owner', exports);
     const result = object.sum(2, 3);
 
     await ticks();
     expect(await result).toBe('5G');
     expect(module.API.current.get()).toBe(2);
     expect('set' in object.current).toBe(false);
-    expect(() => consumer.api.of('owner', {})).toThrow('no generated contract');
+    expect(() => consumer.api.createModule('owner', {})).toThrow('no generated contract');
   });
 
   it('isolates library declaration instances by owner and withdraws only the stopped instance', async () => {
@@ -282,20 +931,20 @@ describe('public package peers over the Runtime transport', () => {
     const b = source();
 
     b.current.set(7);
-    const declarationA = defineApiDeclaration('@fixture/library#create:checked', shape, registerApi(a));
-    const declarationB = defineApiDeclaration('@fixture/library#create:checked', shape, registerApi(b));
+    const declarationA = defineApiDeclaration('@fixture/library#create:checked', shape, registerModule(a));
+    const declarationB = defineApiDeclaration('@fixture/library#create:checked', shape, registerModule(b));
 
     expect(declarationA.api).toBe(a);
-    first.register({ manifest: manifest('first'), api: declarationA });
-    second.register({ manifest: manifest('second'), api: declarationB });
+    first.register({ manifest: manifest('first'), module: declarationA });
+    second.register({ manifest: manifest('second'), module: declarationB });
     consumer.register({ manifest: manifest('consumer') });
-    const viewA = consumer.api.of('first', a);
-    const viewB = consumer.api.of('second', a);
+    const viewA = consumer.api.createModule('first', a);
+    const viewB = consumer.api.createModule('second', a);
 
     await ticks();
     expect(viewA.current.get()).toBe(2);
     expect(viewB.current.get()).toBe(7);
-    declarationA.stop?.();
+    first.uninstall(declarationA);
     b.current.set(9);
     await ticks();
     expect(viewA.current.get()).toBeUndefined();
@@ -318,7 +967,7 @@ describe('public package peers over the Runtime transport', () => {
     owner.register({ manifest: manifest('economy') });
     consumer.register({ manifest: manifest('shop') });
     expect(owner.registry.get('economy')?.apis).not.toContain('@fixture/declared');
-    const declaration = registerApi(API);
+    const declaration = registerModule(API);
     const installed = owner.install(declaration);
 
     expect(installed).toBe(API);
@@ -330,8 +979,8 @@ describe('public package peers over the Runtime transport', () => {
     expect(client.API.current.get()).toBe(2);
     expect('set' in client.API.current).toBe(false);
     expect('emit' in client.API.changed).toBe(false);
-    declaration.stop?.();
-    declaration.stop?.();
+    expect(owner.uninstall(declaration)).toBe(true);
+    expect(owner.uninstall(declaration)).toBe(false);
     await ticks();
     expect(owner.registry.get('economy')?.apis).not.toContain('@fixture/declared');
     expect(client.API.current.get()).toBeUndefined();
@@ -343,9 +992,9 @@ describe('public package peers over the Runtime transport', () => {
     const contract = { kind: 'object', members: { API: shape } } as const;
 
     defineApiModule('@fixture/registered', contract, { API });
-    const { api } = owner.register({ manifest: manifest('economy'), api: registerApi(API) });
+    const { api } = owner.register({ manifest: manifest('economy'), module: registerModule(API) });
 
-    expect(api).toBe(API);
+    expect(api).toBe(owner.api);
     expect(owner.registry.get('economy')?.apis).toContain('@fixture/registered');
     owner.stop();
     expect(API.changed.size()).toBe(0);
@@ -354,7 +1003,7 @@ describe('public package peers over the Runtime transport', () => {
   it('rejects API objects without generated metadata and rolls registration back', () => {
     const owner = runtime();
 
-    expect(() => owner.register({ manifest: manifest('economy'), api: registerApi(source()) })).toThrow('Builder public API entry');
+    expect(() => owner.register({ manifest: manifest('economy'), module: registerModule(source()) })).toThrow('Builder public API entry');
     expect(owner.registered).toBe(false);
     expect(engine.listeners.size).toBe(0);
   });
@@ -368,7 +1017,7 @@ describe('public package peers over the Runtime transport', () => {
     defineApiModule('@fixture/taken', contract, { API });
     owner.register({ manifest: manifest('economy') });
     owner.api.provideModule('@fixture/taken', shape, source());
-    expect(() => owner.install(registerApi(API))).toThrow('already provided');
+    expect(() => owner.install(registerModule(API))).toThrow('already provided');
     expect(owner.registry.get('economy')?.apis).not.toContain('@fixture/first');
     expect(owner.registry.get('economy')?.apis).toContain('@fixture/taken');
     expect(API.changed.size()).toBe(0);
@@ -389,14 +1038,14 @@ describe('public package peers over the Runtime transport', () => {
 
     defineApiModule('@fixture/cleanup-first', contract, { API });
     defineApiModule('@fixture/cleanup-second', contract, { API });
-    const declaration = registerApi(API);
+    const declaration = registerModule(API);
 
-    owner.register({ manifest: manifest('economy'), api: declaration });
+    owner.register({ manifest: manifest('economy'), module: declaration });
     expect(subscriptions).toBe(2);
-    expect(() => declaration.stop?.()).toThrow('API declaration cleanup failed');
+    expect(() => owner.uninstall(declaration)).toThrow('library cleanup failed');
     expect(subscriptions).toBe(0);
     expect(owner.registry.get('economy')?.apis).toEqual([]);
-    expect(() => declaration.stop?.()).not.toThrow();
+    expect(owner.uninstall(declaration)).toBe(false);
   });
 
   it('starts one portable consumer endpoint lazily without advertising a registered addon', async () => {
@@ -1189,7 +1838,7 @@ describe('public package peers over the Runtime transport', () => {
     expect(events).toEqual([{ amount: 8 }]);
   });
 
-  it('preserves undefined call arguments and uses JSON data for results and large payloads', async () => {
+  it('preserves exact call arguments and results in large structured payloads', async () => {
     const { consumer, exports } = pair();
     const client = consumer.api.createModule<ReturnType<typeof source>>('economy', '@fixture/economy', shape);
     const called = vi.spyOn(exports, 'echo');
@@ -1204,13 +1853,13 @@ describe('public package peers over the Runtime transport', () => {
 
     const echoed = await result;
 
-    const copied = { nested: [null, null, 'x'.repeat(12000)] };
+    const copied = payload;
 
-    expect(called).toHaveBeenCalledWith('first', undefined, 3, copied, 0);
-    expect(echoed).toEqual(['first', null, 3, copied, 0]);
+    expect(called).toHaveBeenCalledWith('first', undefined, 3, copied, -0);
+    expect(echoed).toEqual(['first', undefined, 3, copied, -0]);
     const optional = echoed[3];
 
-    expect(optional !== null && typeof optional === 'object' && Object.hasOwn(optional, 'optional')).toBe(false);
+    expect(optional !== null && typeof optional === 'object' && Object.hasOwn(optional, 'optional')).toBe(true);
     expect(await empty).toBeUndefined();
     expect(engine.messages.every(message => message.length <= MAX_MESSAGE)).toBe(true);
   });
@@ -1556,23 +2205,21 @@ describe('public package peers over the Runtime transport', () => {
     releaseEvent();
   });
 
-  it('rejects JSON serialization failures before RPC and returns result serialization errors', async () => {
+  it('rejects unsupported arguments before RPC and reports unsupported result values', async () => {
     const { consumer, exports } = pair();
     const client = consumer.api.createModule<ReturnType<typeof source>>('economy', '@fixture/economy', shape);
     const called = vi.spyOn(exports, 'echo');
-    const cycle: Record<string, unknown> = {};
 
-    cycle.self = cycle;
     await ticks();
 
-    for (const unsupported of [BigInt(2), cycle]) {
+    for (const unsupported of [Symbol('unsupported'), new WeakMap()]) {
       await expect(client.echo(unsupported)).rejects.toThrow();
     }
 
     expect(called).not.toHaveBeenCalled();
-    called.mockResolvedValue([BigInt(1)]);
+    called.mockResolvedValue([Symbol('unsupported')]);
 
-    const rejected = expect(client.echo()).rejects.toThrow(/JSON|BigInt|bigint/i);
+    const rejected = expect(client.echo()).rejects.toThrow(/unsupported.*symbol/i);
 
     await ticks();
     await rejected;
@@ -1582,7 +2229,7 @@ describe('public package peers over the Runtime transport', () => {
     const { owner, consumer, exports } = pair();
     const invalid = source();
 
-    Object.defineProperty(invalid, 'current', { value: observable(BigInt(1)) });
+    Object.defineProperty(invalid, 'current', { value: observable(Symbol('unsupported')) });
     expect(() => owner.api.provideModule('@fixture/invalid', shape, invalid)).toThrow();
 
     const client = consumer.api.createModule<ReturnType<typeof source>>('economy', '@fixture/economy', shape);
@@ -1591,7 +2238,7 @@ describe('public package peers over the Runtime transport', () => {
 
     // The provider's transport guard still runs when JavaScript bypasses TypeScript's source value type.
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    Reflect.apply(exports.current.set, exports.current, [BigInt(1)]);
+    Reflect.apply(exports.current.set, exports.current, [Symbol('unsupported')]);
     await ticks();
     expect(client.current.get()).toBeUndefined();
   });
@@ -1668,15 +2315,15 @@ describe('public package peers over the Runtime transport', () => {
     expect(happened).toHaveBeenCalledTimes(1);
     const report = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
-    Reflect.apply(event.emit, event, [BigInt(1)]);
-    expect(report).toHaveBeenCalledWith('[observable] signal: listener threw', expect.objectContaining({ message: expect.stringMatching(/JSON|BigInt|bigint/i) }));
+    Reflect.apply(event.emit, event, [Symbol('unsupported')]);
+    expect(report).toHaveBeenCalledWith('[observable] signal: listener threw', expect.objectContaining({ message: expect.stringMatching(/unsupported.*symbol/i) }));
   });
 
   it('rolls back registration when a queued provider has invalid initial data', () => {
     const owner = runtime();
     const invalid = source();
 
-    Object.defineProperty(invalid, 'current', { value: observable(BigInt(1)) });
+    Object.defineProperty(invalid, 'current', { value: observable(Symbol('unsupported')) });
     owner.api.provideModule('@fixture/economy', shape, invalid);
     expect(() => owner.register({ manifest: manifest('economy') })).toThrow();
     expect(owner.registered).toBe(false);
@@ -1734,22 +2381,22 @@ describe('public package peers over the Runtime transport', () => {
     const owner = runtime();
     const order: string[] = [];
 
-    expect(() => owner.install({ install: (): number => 1 })).toThrow(/register/);
+    expect(() => owner.install({ install: () => ({ value: 1 }) })).toThrow(/register/);
     const registered = owner.register({
       manifest: manifest('economy'),
-      first: { install: (): number => {
+      first: { install: () => {
         order.push('first');
 
-        return 1;
-      }, stop: (): void => { order.push('stop first'); } },
+        return { value: 1, stop: (): void => { order.push('stop first'); } };
+      } },
     });
 
     expect(registered.first).toBe(1);
-    expect(owner.install({ install: (): number => {
+    expect(owner.install({ install: () => {
       order.push('second');
 
-      return 2;
-    }, stop: (): void => { order.push('stop second'); } })).toBe(2);
+      return { value: 2, stop: (): void => { order.push('stop second'); } };
+    } })).toBe(2);
     owner.stop();
     owner.stop();
     expect(order).toEqual(['first', 'second', 'stop second', 'stop first']);
@@ -1757,7 +2404,7 @@ describe('public package peers over the Runtime transport', () => {
     expect(owner).not.toHaveProperty('node');
     expect(owner).not.toHaveProperty('shared');
     expect(owner).not.toHaveProperty('events');
-    expect(Object.keys(owner.api).sort()).toEqual(['createModule', 'of', 'provideModule', 'release']);
+    expect(Object.keys(owner.api).sort()).toEqual(['createModule', 'provideModule', 'release']);
     expect(owner.api).not.toHaveProperty('start');
     expect(owner.api).not.toHaveProperty('stop');
     expect(owner.api).not.toHaveProperty('_backend');
@@ -1770,7 +2417,10 @@ describe('public package peers over the Runtime transport', () => {
     const release = vi.fn();
 
     owner.register({ manifest: manifest('economy') });
-    expect(() => owner.install({ install: (): never => { throw new Error('incomplete install'); }, stop: release })).toThrow('incomplete install');
+    expect(() => owner.install({ install: (_core, lifetime): never => {
+      lifetime.defer(release);
+      throw new Error('incomplete install');
+    } })).toThrow('incomplete install');
     owner.stop();
     expect(release).toHaveBeenCalledTimes(1);
   });
@@ -1783,12 +2433,10 @@ describe('public package peers over the Runtime transport', () => {
     const moduleShape = { kind: 'object', members: { accepting: { kind: 'state' } } } as const;
     const client = consumer.api.createModule<{ accepting: ReadonlyObservable<boolean | undefined> }>('leaderboard', '@fixture/leaderboard', moduleShape);
 
-    let dispose = (): void => {};
-
     consumer.register({
       manifest: manifest('shop'),
       integration: {
-        install(): void {
+        install() {
           const enabled = computed(() => configured.get() && client.accepting.get() === true, [configured, client.accepting]);
 
           let disconnect = (): void => {};
@@ -1799,9 +2447,8 @@ describe('public package peers over the Runtime transport', () => {
             disconnect = enabled.get() ? events.subscribe(received) : (): void => {};
           }, [enabled]);
 
-          dispose = (): void => { stopEffect(); disconnect(); enabled.dispose(); };
+          return { value: undefined, stop: (): void => { stopEffect(); disconnect(); enabled.dispose(); } };
         },
-        stop(): void { dispose(); },
       },
     });
     expect(events.size()).toBe(0);
@@ -1870,12 +2517,105 @@ describe('public package peers over the Runtime transport', () => {
 
     const result = await called;
 
-    expect(seen).toEqual([['z', 'nested'], ['first']]);
-    expect(Object.keys(result)).toEqual(['z', 'nested']);
-    expect(Object.keys(result.nested)).toEqual(['first']);
-    expect(Object.hasOwn(result, 'a')).toBe(false);
-    expect(Object.hasOwn(result.nested, 'last')).toBe(false);
+    expect(seen).toEqual([['z', 'a', 'nested'], ['last', 'first']]);
+    expect(Object.keys(result)).toEqual(['z', 'a', 'nested']);
+    expect(Object.keys(result.nested)).toEqual(['last', 'first']);
+    expect(Object.hasOwn(result, 'a')).toBe(true);
+    expect(Object.hasOwn(result.nested, 'last')).toBe(true);
   });
+  it('preserves structured graphs through remote calls, loopback, state and signals', async () => {
+    const { owner, consumer } = pair();
+    const key = { id: 'player' };
+    const graph = { key, map: new Map([[key, new Set([key])]]), self: null as unknown, absent: undefined, exact: -0, large: BigInt('9007199254740993'), bytes: new Uint8Array([1, 2, 3]) };
+
+    graph.self = graph;
+    const current = observable(graph);
+    const changed = signal<typeof graph>();
+    const exports = { current, changed, echo: async (input: typeof graph): Promise<typeof graph> => input };
+    const shape = { kind: 'object', members: { current: { kind: 'state' }, changed: { kind: 'event' }, echo: { kind: 'function' } } } as const;
+
+    owner.api.provideModule('@fixture/structured', shape, exports);
+    await ticks();
+    const client = consumer.api.createModule<typeof exports>('economy', '@fixture/structured', shape);
+    const local = owner.api.createModule<typeof exports>('economy', '@fixture/structured', shape);
+    const pending = [client.echo(graph), local.echo(graph)];
+
+    await ticks(15);
+
+    for (const result of await Promise.all(pending)) {
+      expect(result.self).toBe(result);
+      expect(result.map.get(result.key)?.has(result.key)).toBe(true);
+      expect(result).not.toBe(graph);
+      expect(Object.hasOwn(result, 'absent')).toBe(true);
+      expect(Object.is(result.exact, -0)).toBe(true);
+      expect(result.large).toBe(graph.large);
+      expect([...result.bytes]).toEqual([1, 2, 3]);
+    }
+
+    const snapshot = client.current.get();
+
+    expect(snapshot).toBeDefined();
+    expect(snapshot?.self).toBe(snapshot);
+    expect(snapshot?.map.get(snapshot.key)?.has(snapshot.key)).toBe(true);
+    expect(client.current.get()).toBe(snapshot);
+    expect(() => Reflect.apply(Map.prototype.set, snapshot?.map, [key, new Set()])).toThrow();
+    expect(Object.isFrozen(key)).toBe(false);
+    const events: unknown[] = [];
+    const stop = client.changed.subscribe((value) => {
+      expect(value.self).toBe(value);
+      expect(value.map.get(value.key)?.has(value.key)).toBe(true);
+      events.push(value.large);
+    });
+
+    changed.emit(graph);
+    current.set({ ...graph, large: BigInt(3) });
+    await ticks();
+    expect(events).toEqual([graph.large]);
+    expect(client.current.get()?.large).toBe(BigInt(3));
+    stop();
+  });
+
+  it('adapts native keys and value classes inside collections and callbacks', async () => {
+    const { owner, consumer } = pair();
+    const actor = new engine.Entity('collection-actor');
+
+    engine.entities.set(actor.id, actor);
+    const data = { kind: 'map', key: { kind: 'reference', reference: 'entity' }, value: { kind: 'set', item: { kind: 'codec', codec: Money.codec } } } as const;
+    const shape = { kind: 'object', members: { inspect: {
+      kind: 'function', parameters: { items: [data, { kind: 'callback', parameters: { items: [data] }, result: data }] }, result: data,
+    } } } as const;
+
+    type Values = Map<InstanceType<typeof engine.Entity>, Set<Money>>;
+    const exports = { async inspect(values: Values, callback: (values: Values) => Promise<Values>): Promise<Values> {
+      expect([...values.get(actor)!][0]).toBeInstanceOf(Money);
+
+      return callback(values);
+    } };
+
+    owner.api.provideModule('@fixture/collections', shape, exports);
+    await ticks();
+    const client = consumer.api.createModule<typeof exports>('economy', '@fixture/collections', shape);
+    const callback = vi.fn(async (values: Values): Promise<Values> => values);
+    const pending = client.inspect(new Map([[actor, new Set([new Money(7)])]]), callback);
+
+    await ticks(15);
+    const result = await pending;
+
+    expect(callback).toHaveBeenCalledOnce();
+    expect([...result.get(actor)!][0]).toBeInstanceOf(Money);
+    expect([...result.get(actor)!][0].gold).toBe(7);
+  });
+
+  it('keeps plain traffic compatible and refuses structured payloads addressed to older peers', () => {
+    const node = new SyncNode({ id: 'protocol-owner' });
+
+    syncNodes.push(node);
+    node.bus.setPeerProtocol('older', 2, []);
+    expect(() => node.bus.send({ dst: 'older', type: 'test', data: { value: 1 } })).not.toThrow();
+    expect(() => node.bus.send({ dst: 'older', type: 'test', data: new Map([['value', 1]]) })).toThrow('protocol 3');
+    expect(() => node.bus.send({ type: 'test', data: new Set([1]) })).not.toThrow();
+  });
+
   it('rolls back every declaration and transport after registration fails', () => {
     const owner = runtime();
     const first = vi.fn();
@@ -1883,8 +2623,8 @@ describe('public package peers over the Runtime transport', () => {
 
     expect(() => owner.register({
       manifest: manifest('rollback'),
-      first: { install(): void {}, stop: first },
-      failed: { install(): never { throw new Error('install failed'); }, stop: failed },
+      first: { install() { return { value: undefined, stop: first }; } },
+      failed: { install(_core, lifetime): never { lifetime.defer(failed); throw new Error('install failed'); } },
     })).toThrow('install failed');
     expect(first).toHaveBeenCalledTimes(1);
     expect(failed).toHaveBeenCalledTimes(1);
@@ -1901,15 +2641,13 @@ describe('public package peers over the Runtime transport', () => {
 
     owner.register({
       manifest: manifest('cleanup'),
-      earlier: { install(): void {}, stop: earlier },
-      broken: { install(): void {}, stop(): void { owner.stop(); throw new Error('cleanup failure'); } },
+      earlier: { install() { return { value: undefined, stop: earlier }; } },
+      broken: { install() { return { value: undefined, stop(): void { owner.stop(); throw new Error('cleanup failure'); } }; } },
     });
-    const database = vi.spyOn(owner.db, 'stop');
     const registry = vi.spyOn(owner.registry, 'stop');
 
     expect(() => owner.stop()).toThrow(AggregateError);
     expect(earlier).toHaveBeenCalledTimes(1);
-    expect(database).toHaveBeenCalledTimes(1);
     expect(registry).toHaveBeenCalledTimes(1);
     expect(owner.registered).toBe(false);
     expect(engine.tasks.size).toBe(0);

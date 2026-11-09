@@ -13,7 +13,7 @@ describe('API bindings in a build-time evaluator', () => {
       kind: 'object', members: { default: { kind: 'value', value: metadata } },
     });
 
-    expect(client.default).toEqual({ namespace: 'economy', header: { version: '1.0.0' }, fields: [1, null, null] });
+    expect(client.default).toEqual({ namespace: 'economy', header: { version: '1.0.0' }, fields: [1, null, undefined] });
     expect(Object.isFrozen(client.default)).toBe(true);
     expect(Object.isFrozen(client.default.header)).toBe(true);
     expect(Object.isFrozen(client.default.fields)).toBe(true);

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { decodeArguments, encodeArguments, freezeApiData, transformData } from '../src/api/codec';
 import type { ApiDataShape, ApiParametersShape } from '../src/api/types';
+import { cloneData } from '@bedrock-core/sync/data';
 
 vi.mock('@minecraft/server', () => ({}));
 
@@ -66,16 +67,16 @@ describe('API value transport', () => {
     expect(() => transformData({}, marker, 'decode')).toThrow('invalid encoded API value');
     expect(() => transformData([1], marker, 'decode')).toThrow('expected null marker');
     expect(() => transformData(new Marker(), { kind: 'codec', codec: { encode: () => undefined, decode: () => new Marker() } }, 'encode'))
-      .toThrow('defined JSON data');
+      .toThrow('defined data');
     expect(() => decodeArguments({ args: [1], missing: [0] })).toThrow('invalid addon API argument position');
   });
 
-  it('preserves JSON semantics in codec data and unrelated object fields', () => {
+  it('preserves structured values in codec data and unrelated object fields', () => {
     const shape: ApiDataShape = { kind: 'object', members: { marker } };
     const encoded = transformData({ marker: new Marker(), omitted: undefined, numbers: [-0, undefined] }, shape, 'encode');
-    const decoded = transformData(JSON.parse(JSON.stringify(encoded)), shape, 'decode');
+    const decoded = transformData(cloneData(encoded), shape, 'decode');
 
-    expect(decoded).toEqual({ marker: new Marker(), numbers: [0, null] });
-    expect(typeof decoded === 'object' && decoded !== null && Object.hasOwn(decoded, 'omitted')).toBe(false);
+    expect(decoded).toEqual({ marker: new Marker(), omitted: undefined, numbers: [-0, undefined] });
+    expect(typeof decoded === 'object' && decoded !== null && Object.hasOwn(decoded, 'omitted')).toBe(true);
   });
 });

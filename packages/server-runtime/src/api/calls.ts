@@ -1,6 +1,6 @@
 import { system } from '@minecraft/server';
 import type { SyncNode } from '@bedrock-core/sync';
-import type { Registry } from '../registry';
+import type { AddonRegistry } from '../registries/addons';
 import type { ApiConnection, Bindings } from './bindings';
 import { memberKey } from './bindings';
 import { decodeArguments, encodeArguments, transformData, type ApiDataContext, type CallCallbacks } from './codec';
@@ -8,7 +8,7 @@ import type { ApiCallShape, ApiObjectAddress } from './types';
 import { isRecord } from '../guards';
 
 /** Shared outbound API calls and call-scoped callbacks over the existing Sync services. */
-export function createApiCalls(node: SyncNode, registry: Registry, bindings: Bindings, data: ApiDataContext, running: () => boolean): {
+export function createApiCalls(node: SyncNode, registry: AddonRegistry, bindings: Bindings, data: ApiDataContext, running: () => boolean): {
   call: ApiConnection['call'];
   callbacks(target: string, instance: string | undefined, active: () => boolean): CallCallbacks & { close(): void };
 } {

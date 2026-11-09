@@ -1,5 +1,4 @@
-import type { Declaration } from '../declaration';
-import type { Runtime } from '../runtime';
+import type { Declaration, Installation } from '../library';
 import type { ApiModule, ApiModuleShape } from './types';
 import { createModule, type Bindings } from './bindings';
 
@@ -12,10 +11,13 @@ interface Definition {
 
 const definitions = new WeakMap<object, Map<string, Definition>>();
 
-/** An API implementation installed and withdrawn by its owning Runtime. */
-export interface ApiDeclaration<T extends object> extends Declaration<T> {
+/** The API library compiler recognizes this checked declaration identity. */
+interface ApiDeclaration<T extends object> extends Declaration<T> {
   readonly api: T;
 }
+
+/** An API implementation installed and withdrawn by its owning Runtime. */
+export type ModuleDeclaration<T extends object> = ApiDeclaration<T>;
 
 /** @internal Attach Builder's checked public entry to its exported implementation objects. */
 export function defineApiModule(module: string, shape: ApiModuleShape, exports: object): void {
@@ -38,7 +40,7 @@ export function defineApiModule(module: string, shape: ApiModuleShape, exports: 
 }
 
 /** @internal Prepare a generated library factory's per-Runtime implementation. */
-export function defineApiDeclaration<T extends object>(module: string, shape: ApiModuleShape, declaration: ApiDeclaration<T>): ApiDeclaration<T> {
+export function defineApiDeclaration<T extends object>(module: string, shape: ApiModuleShape, declaration: ModuleDeclaration<T>): ModuleDeclaration<T> {
   const entries = definitions.get(declaration.api) ?? new Map<string, Definition>();
 
   entries.set(module, { module, shape, exports: declaration.api, path: [] });
@@ -67,49 +69,21 @@ export function createApiView<T extends object>(bindings: Bindings, namespace: s
 }
 
 /** Publish an exported API object through core.register(); stopping Core withdraws its entries. */
-export function registerApi<T extends object>(api: T): ApiDeclaration<T> {
-  let owner: Runtime | undefined;
-  const releases: (() => void)[] = [];
-
-  const stop = (): void => {
-    const failures: unknown[] = [];
-
-    for (const release of releases.splice(0).reverse()) {
-      try { release(); } catch (error) { failures.push(error); }
-    }
-
-    owner = undefined;
-
-    if (failures.length) { throw new AggregateError(failures, 'API declaration cleanup failed'); }
-  };
-
+export function registerModule<T extends object>(api: T): ModuleDeclaration<T> {
   return {
     api,
-    install(core): T {
-      if (owner) { throw new Error('API declaration is already installed'); }
-
+    install(core, lifetime): Installation<T> {
       const entries = definitions.get(api);
 
       if (!entries?.size) {
-        throw new Error('registerApi() requires a generated contract from a Builder public API entry or library factory');
+        throw new Error('registerModule() requires a generated contract from a Builder public API entry or library factory');
       }
 
-      owner = core;
-
-      try {
-        for (const entry of entries.values()) {
-          releases.push(core.api.provideModule(entry.module, entry.shape, entry.exports));
-        }
-      } catch (error) {
-        try { stop(); } catch (cleanupError) {
-          throw new AggregateError([error, cleanupError], 'API installation and cleanup failed', { cause: cleanupError });
-        }
-
-        throw error;
+      for (const entry of entries.values()) {
+        lifetime.defer(core.api.provideModule(entry.module, entry.shape, entry.exports));
       }
 
-      return api;
+      return { value: api };
     },
-    stop,
   };
 }

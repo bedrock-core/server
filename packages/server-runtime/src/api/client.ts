@@ -1,5 +1,5 @@
 import { SyncNode } from '@bedrock-core/sync';
-import { Registry } from '../registry';
+import { AddonRegistry } from '../registries/addons';
 import { createBindings, createModule, defaultBindings, type ApiConnection } from './bindings';
 import { createApiCalls } from './calls';
 import { nativeReferences } from './references';
@@ -31,7 +31,7 @@ const ensure = (): void => {
 
   // This transport endpoint is a consumer, not an advertised addon identity.
   const node = new SyncNode({ id: `api_client_${Math.random().toString(36).slice(2)}` });
-  const registry = new Registry(node.discovery);
+  const registry = new AddonRegistry(node.discovery);
   const objects = createObjectReferences(node, registry, bindings, () => {
     throw new Error('Providing API objects requires Core registration');
   });

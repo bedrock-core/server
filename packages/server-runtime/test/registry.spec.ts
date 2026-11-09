@@ -5,7 +5,7 @@ import type { AddonManifest } from '../src/manifest';
 
 vi.mock('@minecraft/server', () => ({ system: {} }));
 
-const { Registry } = await import('../src/registry');
+const { AddonRegistry } = await import('../src/registries/addons');
 
 const manifest = {
   format_version: 3,
@@ -16,7 +16,7 @@ const manifest = {
 } satisfies AddonManifest;
 
 function fixture(): {
-  registry: InstanceType<typeof Registry>;
+  registry: InstanceType<typeof AddonRegistry>;
   incompatible: Observable<readonly IncompatiblePeer[]>;
   peers: Observable<readonly PeerInfo[]>;
 } {
@@ -27,7 +27,7 @@ function fixture(): {
     onCollision: (): Unsubscribe => (): void => { /* this fixture emits only peer advertisements */ },
   };
   // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- expose only the discovery members the registry observes
-  const registry = new Registry(discovery as unknown as Discovery, manifest);
+  const registry = new AddonRegistry(discovery as unknown as Discovery, manifest);
 
   registry.start();
 
@@ -81,6 +81,20 @@ describe('registered addon manifests', () => {
     peers.set([peer(input, identity, version)]);
     expect(registry.all().map(addon => addon.id)).toEqual(['consumer']);
     expect(registry.missingDependencies()).toEqual(['core_peer']);
+    registry.stop();
+  });
+
+  it('validates registry descriptors separately from addon identity and preserves legacy providers', () => {
+    const { registry, peers } = fixture();
+    const remote = peer(provider);
+    const descriptor = { id: 'fixture:models', contract: 1, revision: 4 };
+
+    peers.set([{ ...remote, meta: { ...remote.meta, registries: [descriptor, { id: 'bad', contract: 0 }, { ...descriptor, id: 'fixture:textures', contract: 2 }] } }]);
+    expect(registry.get('core_peer')?.registries).toEqual([descriptor, { ...descriptor, id: 'fixture:textures', contract: 2 }]);
+    expect(registry.get('core_peer')?.manifest).toEqual(provider);
+    peers.set([remote]);
+    expect(registry.get('core_peer')?.registries).toEqual([]);
+    expect(registry.has('core_peer')).toBe(true);
     registry.stop();
   });
 });

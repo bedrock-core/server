@@ -16,7 +16,7 @@ import { Runtime, authorize, core, registerModule } from '@bedrock-core/server-r
 import { defineApiModule } from '@bedrock-core/server-runtime/api';
 import { schema, worldTarget } from '@bedrock-core/db';
 import { createEngineDb } from '@bedrock-core/db/minecraft';
-import { registerRegistry, registryReference, isRegistryReference, type Declaration, type Installation, type RegistryDefinition, type RegistryReference } from '@bedrock-core/server-runtime/library';
+import { defineRegistry, registryReference, isRegistryReference, type Declaration, type Installation, type RegistryDefinition, type RegistryReference } from '@bedrock-core/server-runtime/library';
 import { SyncNode } from '@bedrock-core/sync';
 import { world } from '@minecraft/server';
 import { type Test, register } from '@minecraft/server-gametest';
@@ -615,7 +615,7 @@ gametest('registry_publication_lifetime', (test) => {
   };
   const registered = owner.register({
     manifest: testManifest('test_registry_owner', 'Registry owner'),
-    models: registerRegistry(records, { revision: 7, coverage: { min: [1, 26, 50] },
+    models: defineRegistry(records, { revision: 7, coverage: { min: [1, 26, 50] },
       entries: { 'minecraft:stone': { texture: 'textures/blocks/stone' } } }),
   });
 
@@ -704,16 +704,16 @@ gametest('registry_selective_links', (test) => {
   const reader = new Runtime();
   const pinned = registryReference(textures, 'minecraft:stone', { version: 0 });
   const published = owner.register({ manifest: testManifest('test_link_owner', 'Link owner'),
-    models: registerRegistry(models, { revision: 7, entries: { 'minecraft:stone': { texture: pinned } } }),
-    textures: registerRegistry(textures, { revision: 7, coverage: { min: [1, 26, 50], max: [1, 26, 70] },
+    models: defineRegistry(models, { revision: 7, entries: { 'minecraft:stone': { texture: pinned } } }),
+    textures: defineRegistry(textures, { revision: 7, coverage: { min: [1, 26, 50], max: [1, 26, 70] },
       entries: { 'minecraft:stone': { path: 'linked' } } }),
   });
 
   alternate.register({ manifest: testManifest('test_link_alternate', 'Alternate'),
-    textures: registerRegistry(textures, { revision: 9, entries: { 'minecraft:stone': { path: 'alternate' } } }),
+    textures: defineRegistry(textures, { revision: 9, entries: { 'minecraft:stone': { path: 'alternate' } } }),
   });
   const views = reader.register({ manifest: testManifest('test_link_reader', 'Link reader'),
-    models: registerRegistry(models), textures: registerRegistry(textures, { minecraft: [1, 26, 60] }),
+    models: defineRegistry(models), textures: defineRegistry(textures, { minecraft: [1, 26, 60] }),
   });
 
   test.runOnFinish(() => { reader.stop(); alternate.stop(); owner.stop(); });

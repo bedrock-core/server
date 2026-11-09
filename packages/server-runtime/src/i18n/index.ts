@@ -1,18 +1,28 @@
 import { createI18n, LOCALE_PROPERTY, pickLocale } from '@bedrock-core/i18n';
 import type { I18n, I18nBundle, TranslationResolver } from '@bedrock-core/i18n';
 import { observable, type ReadonlyObservable, type Unsubscribe } from '@bedrock-core/observable';
-import { stateKey, type State } from '@bedrock-core/sync';
 import type { Player } from '@minecraft/server';
-import { isRecord } from './guards';
-import { isUsable } from './handle';
+import type { Declaration, Installation } from '../library';
+import type { Runtime } from '../runtime';
+import { isUsable } from '../handle';
+import { Registry } from '../registries/base';
+import { createRegistryReader } from '../registries/registration';
+import { registryOf } from '../installation';
+import type { RegistryReader } from '../registries/view';
+import { publishTranslations, TRANSLATIONS } from './publish';
 
 const DEFAULT_LOCALE = 'en_US';
-const BUNDLE_KEY = stateKey<I18nBundle>('core-i18n/bundle');
+
+interface TranslationStorage {
+  own(): I18nBundle | undefined;
+  provide(bundle: I18nBundle): void;
+  open(): Pick<RegistryReader<I18nBundle>, 'snapshot' | 'stop'>;
+}
 
 type Bundles = Readonly<Record<string, I18nBundle>>;
 
 /** Published translation bundles and synchronous resolvers over their current contents. */
-export class TranslationsRegistry {
+class TranslationsRegistry extends Registry<I18nBundle, Bundles> {
   readonly bundles: ReadonlyObservable<Bundles>;
   private readonly _source = observable<Bundles>(Object.freeze({}));
   private readonly _verbs = new Map<string, I18n<unknown>>();
@@ -20,40 +30,63 @@ export class TranslationsRegistry {
   private readonly _resolvers = new Map<string, TranslationResolver>();
   private _locales: Set<string> | undefined;
   private _release: Unsubscribe | undefined;
+  private _registry: ReturnType<TranslationStorage['open']> | undefined;
+  private _active = false;
 
-  constructor(private readonly _state: State, private readonly _self: string) {
-    this.bundles = this._source;
+  constructor(private readonly _storage: TranslationStorage, private readonly _self: string) {
+    super();
+    this.bundles = {
+      get: (): Bundles => this._source.get(),
+      subscribe: (listener): Unsubscribe => this._source.subscribe(listener),
+    };
   }
 
+  get snapshot(): ReadonlyObservable<Bundles> { return this.bundles; }
+
+  get(id: string): I18nBundle | undefined { return this.of(id); }
+
   start(): void {
-    this._release?.();
-    this._release = this._state.subscribe((change) => {
-      if (change.key === BUNDLE_KEY) { this._refresh(); }
-    });
-    this._refresh();
+    if (this._active) { return; }
+
+    this._active = true;
+
+    try {
+      this._registry = this._storage.open();
+      this._release = this._registry.snapshot.subscribe(() => this._refresh());
+      this._refresh();
+    } catch (error) { this.stop(); throw error; }
   }
 
   stop(): void {
     this._release?.();
     this._release = undefined;
+    this._active = false;
+    this._registry?.stop();
+    this._registry = undefined;
     this._invalidate();
     this._source.set(Object.freeze({}));
     this._resolvers.clear();
   }
 
-  /** Publish this addon's bundle. Registration owns the service lifetime. */
+  /** Replace this addon's bundle without changing ownership of the built-in publisher. */
   provide(bundle: I18nBundle): void {
-    if (this._release === undefined) { throw new Error('translations are unavailable: register the runtime first'); }
+    if (!this._active) { throw new Error('translations are unavailable: register the runtime first'); }
 
-    this._state.set(this._self, BUNDLE_KEY, bundle);
+    this._storage.provide(bundle);
+
+    this._refresh();
   }
 
   own(): I18nBundle | undefined {
-    return this.of(this._self);
+    return this._active ? this._storage.own() : undefined;
   }
 
   of(addonId: string): I18nBundle | undefined {
-    return this._source.get()[addonId];
+    if (addonId === this._self) { return this.own(); }
+
+    const bundles = this._source.get();
+
+    return Object.hasOwn(bundles, addonId) ? bundles[addonId] : undefined;
   }
 
   namespaces(): string[] {
@@ -139,11 +172,9 @@ export class TranslationsRegistry {
   }
 
   private _refresh(): void {
-    const next = Object.fromEntries(this._state.namespaces().flatMap((namespace) => {
-      const bundle = this._state.get(namespace, BUNDLE_KEY);
-
-      return isBundle(bundle) ? [[namespace, bundle]] : [];
-    }));
+    const next = this._registry === undefined
+      ? {}
+      : Object.fromEntries(Object.entries(this._registry.snapshot.get().entries).map(([namespace, entry]) => [namespace, entry.value]));
     const previous = this._source.get();
 
     if (Object.keys(previous).length === Object.keys(next).length
@@ -160,38 +191,44 @@ export class TranslationsRegistry {
   }
 }
 
-/** A locale table: a record whose every value is a string. An empty record qualifies. */
-function isFlatMap(value: unknown): value is Record<string, string> {
-  if (!isRecord(value)) { return false; }
-
-  for (const entry of Object.values(value)) {
-    if (typeof entry !== 'string') { return false; }
+declare module '@bedrock-core/server-runtime' {
+  interface RuntimeServices {
+    'core:translations': TranslationsRegistry;
   }
-
-  return true;
 }
 
-function isFlatMapRecord(value: unknown): value is Record<string, Record<string, string>> {
-  return isRecord(value) && Object.values(value).every(isFlatMap);
+/** Install translation lookup and resolvers. Core publishes local bundles independently. */
+export function registerTranslations(): Declaration<TranslationsRegistry> {
+  return { install(runtime, lifetime): Installation<TranslationsRegistry> {
+    const host = registryOf(runtime);
+    const value = new TranslationsRegistry({
+      open: (): RegistryReader<I18nBundle> => createRegistryReader(runtime, TRANSLATIONS, { select: candidates => candidates.find(candidate => candidate.provider === candidate.id) ?? candidates[0] }),
+      own: (): I18nBundle | undefined => {
+        const bundle = host.publication(TRANSLATIONS.id)?.get(runtime.id);
+
+        return TRANSLATIONS.accepts(bundle) ? bundle : undefined;
+      },
+      provide: (bundle): void => publishTranslations(runtime, bundle),
+    }, runtime.id);
+
+    lifetime.defer(() => value.stop());
+    value.start();
+    runtime.provideService('core:translations', value);
+
+    return { value };
+  } };
 }
 
-/** The shape `createI18n` relies on, so one addon's bad payload cannot poison the chain. */
-function isBundle(value: unknown): value is I18nBundle {
-  if (!isRecord(value)) { return false; }
+/** Retrieve the translation registry installed on this Runtime. */
+export function translations(runtime: Runtime): TranslationsRegistry {
+  const value = runtime.service('core:translations');
 
-  if (typeof value['namespace'] !== 'string' || typeof value['defaultLocale'] !== 'string') { return false; }
+  if (value === undefined) { throw new Error('translations are not registered: include registerTranslations() in core.register()'); }
 
-  if (!Array.isArray(value['libs']) || !value['libs'].every(entry => typeof entry === 'string')) { return false; }
-
-  const args = value['args'];
-
-  if (!isRecord(args)) { return false; }
-
-  for (const order of Object.values(args)) {
-    if (!Array.isArray(order) || !order.every(name => typeof name === 'string')) { return false; }
-  }
-
-  if (!isFlatMapRecord(value['locales'])) { return false; }
-
-  return value['extra'] === undefined || isFlatMapRecord(value['extra']);
+  return value;
 }
+
+export type { I18nBundle, TranslationResolver } from '@bedrock-core/i18n';
+export type { TranslationsRegistry as Translations };
+
+export { publishTranslations } from './publish';
