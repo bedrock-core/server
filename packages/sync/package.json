@@ -42,6 +42,7 @@
 		"build": "tsc -p tsconfig.json",
 		"typecheck": "tsc -p tsconfig.bench.json",
 		"test": "vitest run",
+		"coverage": "vitest run --coverage",
 		"bench": "vitest bench --run",
 		"lint": "eslint ."
 	},

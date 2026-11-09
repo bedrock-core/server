@@ -8,9 +8,11 @@
  * what crosses the wire.
  */
 import { Reassembler, splitIntoFrames } from '../src/chunk';
-import { PROTOCOL_MAX } from '../src/constants';
+import { PROTOCOL_MAX, PROTOCOL_MIN, TAGGED_WIRE_PROTOCOL } from '../src/constants';
 import { type Envelope, decodeEnvelope, encodeEnvelope } from '../src/envelope';
-import { batchLength, decodeWire, encodeBatch, tagChunk } from '../src/wire';
+import { batchLength, decodeWire, encodeBatch, encodeLegacy, tagChunk } from '../src/wire';
+
+export { BENCH_PROTOCOLS as PROTOCOLS } from './structured';
 
 /** A stable stand-in for a real node's instance id (`<tick36>-<8 random chars>`). */
 export const INSTANCE_ID = 'ya-a1b2c3d4';
@@ -19,9 +21,11 @@ export const INSTANCE_ID = 'ya-a1b2c3d4';
 export const MESSAGE_ID = `${INSTANCE_ID}/1`;
 
 /** Build the envelope `Bus.send` would build for a broadcast of `data`. */
-export function envelopeFor(data: unknown, mid = MESSAGE_ID): Envelope {
+export function envelopeFor(data: unknown, mid = MESSAGE_ID, protocol = PROTOCOL_MAX): Envelope {
+  if (!Number.isInteger(protocol) || protocol < PROTOCOL_MIN || protocol > PROTOCOL_MAX) { throw new Error('Unsupported benchmark protocol'); }
+
   return {
-    v: PROTOCOL_MAX,
+    v: protocol,
     src: 'benchmark',
     iid: INSTANCE_ID,
     type: 'state-delta',
@@ -38,32 +42,48 @@ export function envelopeFor(data: unknown, mid = MESSAGE_ID): Envelope {
 export function toWire(envelope: Envelope, maxMessage: number): string[] {
   const encoded = encodeEnvelope(envelope);
 
+  if (envelope.v < TAGGED_WIRE_PROTOCOL) { return encodeLegacy(encoded, envelope.mid, maxMessage); }
+
   if (encoded.length + 1 <= maxMessage) { return [encodeBatch([encoded])]; }
 
   return splitIntoFrames(encoded, envelope.mid, maxMessage - 1).map(tagChunk);
 }
 
-/** Pack a run of envelopes into as few messages as the cap allows, the way the queue does. */
+/** Tagged packing assumes every peer advertises Cap.Batch; legacy frames always stand alone. */
 export function packEnvelopes(envelopes: readonly Envelope[], maxMessage: number): string[] {
   const messages: string[] = [];
   let parts: string[] = [];
   let lengths: number[] = [];
 
+  const flush = (): void => {
+    if (parts.length > 0) { messages.push(encodeBatch(parts)); }
+
+    parts = [];
+    lengths = [];
+  };
+
   for (const envelope of envelopes) {
     const encoded = encodeEnvelope(envelope);
+
+    if (envelope.v < TAGGED_WIRE_PROTOCOL || encoded.length + 1 > maxMessage) {
+      flush();
+      messages.push(...(envelope.v < TAGGED_WIRE_PROTOCOL
+        ? encodeLegacy(encoded, envelope.mid, maxMessage)
+        : splitIntoFrames(encoded, envelope.mid, maxMessage - 1).map(tagChunk)));
+      continue;
+    }
 
     lengths.push(encoded.length);
 
     if (batchLength(lengths) > maxMessage && parts.length > 0) {
-      messages.push(encodeBatch(parts));
-      parts = [];
+      flush();
       lengths = [encoded.length];
     }
 
     parts.push(encoded);
   }
 
-  if (parts.length > 0) { messages.push(encodeBatch(parts)); }
+  flush();
 
   return messages;
 }

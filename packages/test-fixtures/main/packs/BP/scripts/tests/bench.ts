@@ -10,11 +10,12 @@
  * server is not V8 on a desktop, the tick loop is real, and the engine's own limits — the per-tick
  * script-event budget, the size cap on one message — exist nowhere else. The off-engine numbers
  * say which approach is cheaper; these say whether it fits.
+ * Protocol cases share the current codec implementation rather than emulating older releases.
  */
 import { system } from '@minecraft/server';
 import { type Test, register } from '@minecraft/server-gametest';
-import { Bus, MAX_MESSAGE } from '@bedrock-core/sync';
-import { encodeEnvelope, decodeEnvelope } from '@bedrock-core/server-test-fixtures/bench';
+import { Bus, MAX_MESSAGE, capsFor } from '@bedrock-core/sync';
+import { encodeEnvelope, decodeEnvelope, BENCH_PROTOCOLS as PROTOCOLS, STRUCTURED_PAYLOADS } from '@bedrock-core/server-test-fixtures/bench';
 
 const STRUCTURE = 'core:empty';
 
@@ -68,12 +69,42 @@ const SIZES = [
   { label: '16KB', value: LARGE },
 ];
 
+interface Workload {
+  label: string;
+  value: unknown;
+  protocol: number;
+  format: string;
+  valid?: (value: unknown) => boolean;
+}
+
+const WORKLOADS: readonly Workload[] = [
+  ...PROTOCOLS.flatMap(protocol => SIZES.map(size => ({ ...size, protocol, format: 'JSON' }))),
+  ...STRUCTURED_PAYLOADS.map(size => ({ ...size, protocol: 3, format: 'structured' })),
+];
+
+function validValue(workload: Workload, value: unknown): boolean {
+  return workload.valid ? workload.valid(value) : JSON.stringify(value) === JSON.stringify(workload.value);
+}
+
+function connect(a: Bus, b: Bus, protocol: number): void {
+  a.setPeerProtocol(b.selfId, protocol, capsFor(protocol, undefined));
+  b.setPeerProtocol(a.selfId, protocol, capsFor(protocol, undefined));
+}
+
+function receivedValue(data: unknown): unknown {
+  return typeof data === 'object' && data !== null && 'value' in data ? data.value : undefined;
+}
+
 // Serialization runs on the calling tick, so a payload whose encode does not fit in a tick cannot
 // be sent at all, whatever the transport does with it afterwards.
 benchmark('serialize', (test) => {
-  for (const { label, value } of SIZES) {
-    const envelope = { v: 2, src: 'bench', iid: 'bench-1', type: 'bench', mid: 'bench-1/1', data: value };
+  for (const workload of WORKLOADS) {
+    const { label, value, protocol, format } = workload;
+    const envelope = { v: protocol, src: 'bench', iid: 'bench-1', type: 'bench', mid: 'bench-1/1', data: value };
     const runs = label === '16KB' ? 10 : 100;
+    const decoded = decodeEnvelope(encodeEnvelope(envelope));
+
+    test.assert(decoded?.v === protocol && validValue(workload, decoded.data), `${format} ${label} must round trip at v${protocol}`);
 
     const encodeStart = Date.now();
     let encoded = '';
@@ -87,6 +118,8 @@ benchmark('serialize', (test) => {
 
     report('serialize', {
       payload: label,
+      protocol,
+      format,
       runs,
       chars: encoded.length,
       encodeMs,
@@ -107,7 +140,7 @@ benchmark('send_latency', (test) => {
   b.start();
 
   const sentAt = new Map<string, { tick: number; ms: number }>();
-  const results: Record<string, unknown>[] = [];
+  const results = new Map<string, { ticks: number; ms: number; protocol: number; value: unknown }>();
 
   b.on('bench-latency', (envelope) => {
     const label = labelOf(envelope.data);
@@ -115,32 +148,44 @@ benchmark('send_latency', (test) => {
 
     if (!sent || label === undefined) { return; }
 
-    results.push({
-      payload: label,
+    results.set(label, {
       ticks: system.currentTick - sent.tick,
       ms: Date.now() - sent.ms,
+      protocol: envelope.v,
+      value: receivedValue(envelope.data),
     });
   });
 
   const sequence = test.startSequence().thenIdle(20);
 
-  for (const { label, value } of SIZES) {
+  for (const workload of WORKLOADS) {
+    const { label, value, protocol, format } = workload;
+    const key = `${protocol}:${label}`;
+
     sequence
       .thenExecute(() => {
-        sentAt.set(label, { tick: system.currentTick, ms: Date.now() });
-        a.send({ type: 'bench-latency', data: { label, value } });
+        connect(a, b, protocol);
+        sentAt.set(key, { tick: system.currentTick, ms: Date.now() });
+        a.send({ dst: b.selfId, type: 'bench-latency', data: { label: key, value } });
       })
-      .thenIdle(20);
+      .thenIdle(20)
+      .thenExecute(() => {
+        const result = results.get(key);
+
+        if (!result || result.protocol !== a.broadcastProtocol || result.protocol !== protocol || !validValue(workload, result.value)) {
+          a.stop();
+          b.stop();
+          test.fail(`v${protocol} ${label} did not arrive intact`);
+
+          return;
+        }
+
+        report('send_latency', { payload: label, protocol: a.broadcastProtocol, format, ticks: result.ticks, ms: result.ms });
+      });
   }
 
   sequence
     .thenExecute(() => {
-      for (const result of results) { report('send_latency', result); }
-
-      if (results.length !== SIZES.length) {
-        test.fail(`only ${results.length} of ${SIZES.length} payloads arrived`);
-      }
-
       a.stop();
       b.stop();
     })
@@ -156,38 +201,68 @@ benchmark('backpressure', (test) => {
   a.start();
   b.start();
 
-  let startTick = 0;
-  let startMs = 0;
-  let received = 0;
-  let lastTick = 0;
-  let lastMs = 0;
+  const cases: readonly Workload[] = [
+    ...PROTOCOLS.map(protocol => ({ label: '16KB', value: LARGE, protocol, format: 'JSON' })),
+    { ...STRUCTURED_PAYLOADS[1], protocol: 3, format: 'structured' },
+  ];
+  const arrivals = new Map<string, {
+    startTick: number;
+    startMs: number;
+    lastTick: number;
+    lastMs: number;
+    values: Map<number, { protocol: number; value: unknown }>;
+  }>();
 
-  b.on('bench-bp', () => {
-    received++;
-    lastTick = system.currentTick;
-    lastMs = Date.now();
+  b.on('bench-bp', (envelope) => {
+    const label = labelOf(envelope.data);
+    const current = label === undefined ? undefined : arrivals.get(label);
+    const data = envelope.data;
+
+    if (!current || typeof data !== 'object' || data === null || !('i' in data)
+      || typeof data.i !== 'number' || data.i < 0 || data.i >= 3) { return; }
+
+    current.lastTick = system.currentTick;
+    current.lastMs = Date.now();
+    current.values.set(data.i, { protocol: envelope.v, value: receivedValue(data) });
   });
 
-  test.startSequence()
-    .thenIdle(20)
-    .thenExecute(() => {
-      startTick = system.currentTick;
-      startMs = Date.now();
+  const sequence = test.startSequence().thenIdle(20);
 
-      for (let i = 0; i < 3; i++) { a.send({ type: 'bench-bp', data: { i, value: LARGE } }); }
-    })
-    .thenIdle(120)
-    .thenExecute(() => {
-      report('backpressure', {
-        concurrent: 3,
-        payload: '16KB',
-        received,
-        ticks: received > 0 ? lastTick - startTick : null,
-        ms: received > 0 ? lastMs - startMs : null,
+  for (const workload of cases) {
+    const { label, value, protocol, format } = workload;
+    const key = `${protocol}:${label}`;
+
+    sequence
+      .thenExecute(() => {
+        connect(a, b, protocol);
+        arrivals.set(key, { startTick: system.currentTick, startMs: Date.now(), lastTick: 0, lastMs: 0, values: new Map() });
+
+        for (let i = 0; i < 3; i++) { a.send({ dst: b.selfId, type: 'bench-bp', data: { label: key, i, value } }); }
+      })
+      .thenIdle(120)
+      .thenExecute(() => {
+        const current = arrivals.get(key)!;
+
+        report('backpressure', {
+          concurrent: 3,
+          payload: label,
+          protocol: a.broadcastProtocol,
+          format,
+          received: current.values.size,
+          ticks: current.values.size > 0 ? current.lastTick - current.startTick : null,
+          ms: current.values.size > 0 ? current.lastMs - current.startMs : null,
+        });
+
+        if (current.values.size !== 3 || [...current.values.values()].some(result => result.protocol !== protocol || !validValue(workload, result.value))) {
+          a.stop();
+          b.stop();
+          test.fail(`v${protocol} ${label} did not deliver three intact payloads`);
+        }
       });
+  }
 
-      if (received !== 3) { test.fail(`only ${received} of 3 large payloads arrived`); }
-
+  sequence
+    .thenExecute(() => {
       a.stop();
       b.stop();
     })
@@ -206,6 +281,7 @@ benchmark('packing', (test) => {
   const BURST = 40;
   let messagesOnWire = 0;
   let envelopesDelivered = 0;
+  const receivedProtocols = new Set<number>();
 
   const probe = system.afterEvents.scriptEventReceive.subscribe(
     (event) => {
@@ -214,28 +290,45 @@ benchmark('packing', (test) => {
     { namespaces: ['bedrock-core'] },
   );
 
-  b.on('bench-pack', () => { envelopesDelivered++; });
+  b.on('bench-pack', (envelope) => { envelopesDelivered++; receivedProtocols.add(envelope.v); });
 
-  test.startSequence()
-    .thenIdle(20)
-    .thenExecute(() => {
-      for (let i = 0; i < BURST; i++) {
-        a.send({ type: 'bench-pack', data: { ns: 'economy', key: `price:${i}`, value: 16 + i, ver: 1200 + i } });
-      }
-    })
-    .thenIdle(40)
-    .thenExecute(() => {
-      report('packing', {
-        envelopesSent: BURST,
-        messagesOnWire,
-        envelopesDelivered,
-        envelopesPerMessage: messagesOnWire > 0 ? Number((envelopesDelivered / messagesOnWire).toFixed(2)) : null,
+  const sequence = test.startSequence().thenIdle(20);
+
+  for (const protocol of PROTOCOLS) {
+    sequence
+      .thenExecute(() => {
+        connect(a, b, protocol);
+        messagesOnWire = 0;
+        envelopesDelivered = 0;
+        receivedProtocols.clear();
+
+        for (let i = 0; i < BURST; i++) {
+          a.send({ type: 'bench-pack', data: { ns: 'economy', key: `price:${i}`, value: 16 + i, ver: 1200 + i } });
+        }
+      })
+      .thenIdle(40)
+      .thenExecute(() => {
+        report('packing', {
+          protocol: a.broadcastProtocol,
+          envelopesSent: BURST,
+          messagesOnWire,
+          envelopesDelivered,
+          envelopesPerMessage: messagesOnWire > 0 ? Number((envelopesDelivered / messagesOnWire).toFixed(2)) : null,
+        });
+
+        if (envelopesDelivered !== BURST || receivedProtocols.size !== 1 || !receivedProtocols.has(protocol) || messagesOnWire < 1
+          || (protocol === 1 ? messagesOnWire !== BURST : messagesOnWire >= BURST)) {
+          system.afterEvents.scriptEventReceive.unsubscribe(probe);
+          a.stop();
+          b.stop();
+          test.fail(`v${protocol} did not deliver and pack the ${BURST}-envelope burst correctly`);
+        }
       });
+  }
 
+  sequence
+    .thenExecute(() => {
       system.afterEvents.scriptEventReceive.unsubscribe(probe);
-
-      if (envelopesDelivered !== BURST) { test.fail(`delivered ${envelopesDelivered} of ${BURST} envelopes`); }
-
       a.stop();
       b.stop();
     })

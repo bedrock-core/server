@@ -1,0 +1,19 @@
+coverage:
+  status:
+    project:
+      default: false
+      sync:
+        flags: [sync]
+        paths: [packages/sync/src/]
+        informational: true
+    patch:
+      default: false
+      sync:
+        flags: [sync]
+        paths: [packages/sync/src/]
+        informational: true
+
+flags:
+  sync:
+    paths: [packages/sync/src/]
+    carryforward: false

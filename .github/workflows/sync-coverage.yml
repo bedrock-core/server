@@ -1,0 +1,72 @@
+name: Sync coverage
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sync-coverage-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  coverage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+
+    defaults:
+      run:
+        working-directory: server
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: server
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26.13.0
+          package-manager-cache: false
+
+      - name: Install pinned Corepack before restoring the Yarn cache
+        run: |
+          npm install --global corepack@0.36.0
+          corepack enable yarn
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26.13.0
+          cache: yarn
+          cache-dependency-path: server/yarn.lock
+
+      - run: yarn install --immutable
+
+      - name: Measure Sync coverage
+        run: yarn workspace @bedrock-core/sync coverage
+
+      - name: Upload Sync coverage to Codecov
+        uses: codecov/codecov-action@v7
+        with:
+          working-directory: server
+          files: packages/sync/coverage/lcov.info
+          flags: sync
+          name: sync
+          disable_search: true
+          fail_ci_if_error: true
+          use_oidc: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+
+      - name: Keep the coverage report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: sync-coverage
+          path: server/packages/sync/coverage/
+          if-no-files-found: warn
+          retention-days: 14

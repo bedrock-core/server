@@ -8,16 +8,17 @@
  *
  * Peers are separate `State` instances over their own `Bus`, all inside this script realm. They
  * talk through the engine's real `scriptEvent` transport, so serialization, the per-tick send
- * budget and delivery order are the engine's. What this does *not* separate is the QuickJS heap:
- * four packs would each parse their own copy, and that parse is counted once here. The apply and
- * convergence figures hold; treat the memory question as unmeasured.
+ * budget and delivery order are the engine's. Each bus parses its own incoming events, but these
+ * instances still share one QuickJS VM, heap, scheduler and garbage collector. Cross-pack
+ * isolation and per-pack memory costs are not measured here.
  *
  * Every test prints `BENCH {...}` lines, which `scripts/bench-report.mjs` lifts out of the
  * transcript. Nothing is asserted except what would make a measurement meaningless.
  */
 import { system } from '@minecraft/server';
 import { type Test, register } from '@minecraft/server-gametest';
-import { Bus, State } from '@bedrock-core/sync';
+import { Bus, State, capsFor } from '@bedrock-core/sync';
+import { BENCH_PROTOCOLS as PROTOCOLS, STRUCTURED_PAYLOADS } from '@bedrock-core/server-test-fixtures/bench';
 
 const STRUCTURE = 'core:empty';
 
@@ -52,6 +53,23 @@ const SIZES = [
   { label: '10KB', value: payload(10_000) },
 ];
 
+interface Workload {
+  label: string;
+  value: unknown;
+  protocol: number;
+  format: string;
+  valid?: (value: unknown) => boolean;
+}
+
+const WORKLOADS: readonly Workload[] = [
+  ...PROTOCOLS.flatMap(protocol => SIZES.map(size => ({ ...size, protocol, format: 'JSON' }))),
+  ...STRUCTURED_PAYLOADS.map(size => ({ ...size, protocol: 3, format: 'structured' })),
+];
+
+function validValue(workload: Workload, value: unknown): boolean {
+  return workload.valid ? workload.valid(value) : JSON.stringify(value) === JSON.stringify(workload.value);
+}
+
 interface Realm {
   id: string;
   bus: Bus;
@@ -82,6 +100,14 @@ function stopAll(realms: Realm[]): void {
   }
 }
 
+function connect(realms: readonly Realm[], protocol: number): void {
+  for (const realm of realms) {
+    for (const peer of realms) {
+      if (peer.id !== realm.id) { realm.bus.setPeerProtocol(peer.id, protocol, capsFor(protocol, undefined)); }
+    }
+  }
+}
+
 /**
  * What the owner pays to publish, measured on its own tick.
  *
@@ -90,25 +116,42 @@ function stopAll(realms: Realm[]): void {
  * are listening, so it is measured once per size rather than once per fan-out.
  */
 benchmark('shared_publish', (test) => {
-  const owner = realm('s6pub');
   const RUNS = 50;
 
-  for (const { label, value } of SIZES) {
+  for (const [index, workload] of WORKLOADS.entries()) {
+    const { label, value, protocol, format } = workload;
+    const ns = `s6pub_${protocol}_${index}`;
+    const owner = realm(ns);
+
+    owner.bus.setPeerProtocol('s6_publish_sink', protocol, capsFor(protocol, undefined));
+
+    // A fresh queue per workload and populated keys keep this a repeated-update measurement.
+    for (let i = 0; i < RUNS; i++) { owner.state.set(ns, `k${i}`, null); }
+
     const start = Date.now();
 
-    for (let i = 0; i < RUNS; i++) { owner.state.set('s6pub', `k${i}`, value); }
+    for (let i = 0; i < RUNS; i++) { owner.state.set(ns, `k${i}`, value); }
 
     const ms = Date.now() - start;
 
     report('shared_publish', {
       payload: label,
+      protocol: owner.bus.broadcastProtocol,
+      format,
       runs: RUNS,
       totalMs: ms,
       usPerSet: Math.round((ms * 1000) / RUNS),
     });
+
+    const intact = owner.bus.broadcastProtocol === protocol && validValue(workload, owner.state.get(ns, 'k0'));
+
+    stopAll([owner]);
+
+    if (!intact) {
+      test.fail(`v${protocol} ${label} did not retain the published value`);
+    }
   }
 
-  stopAll([owner]);
   test.succeed();
 });
 
@@ -141,21 +184,28 @@ function convergence(test: Test, peerCount: number): void {
 
   const sequence = test.startSequence().thenIdle(20);
 
-  for (const { label, value } of SIZES) {
+  for (const workload of WORKLOADS) {
+    const { label, value, protocol, format } = workload;
+    const key = `${protocol}:${label}`;
+
     sequence
       .thenExecute(() => {
+        connect(all, protocol);
         sentTick = system.currentTick;
         sentMs = Date.now();
-        owner.state.set(ns, label, value);
+        owner.state.set(ns, key, value);
       })
       .thenIdle(60)
       .thenExecute(() => {
-        const arrivals = seen.get(label) ?? [];
-        const converged = arrivals.length === peerCount;
+        const arrivals = seen.get(key) ?? [];
+        const converged = arrivals.length === peerCount && owner.bus.broadcastProtocol === protocol
+          && peers.every(peer => validValue(workload, peer.state.get(ns, key)));
 
         report('shared_converge', {
           peers: peerCount,
           payload: label,
+          protocol: owner.bus.broadcastProtocol,
+          format,
           arrived: arrivals.length,
           // The worst peer is the one a warm read has to wait for.
           ticks: converged ? Math.max(...arrivals.map(a => a.ticks)) : null,
@@ -163,7 +213,8 @@ function convergence(test: Test, peerCount: number): void {
         });
 
         if (!converged) {
-          test.fail(`${label} reached ${arrivals.length} of ${peerCount} peers — the transport dropped it`);
+          stopAll(all);
+          test.fail(`v${protocol} ${label} reached ${arrivals.length} of ${peerCount} peers intact`);
         }
       });
   }
@@ -182,49 +233,69 @@ benchmark('shared_converge_4', test => convergence(test, 4));
  * sees in normal use, and it happens while the world is still loading.
  */
 benchmark('shared_persist_boot', (test) => {
-  const ns = 's6boot';
   const KEYS = 100;
-  const owner = realm(ns);
-  const peer = realm('s6_boot_peer');
-  const value = payload(200);
+  const cases: readonly Workload[] = [
+    ...PROTOCOLS.map(protocol => ({ label: '200B', value: payload(200), protocol, format: 'JSON' })),
+    { ...STRUCTURED_PAYLOADS[2], protocol: 3, format: 'structured' },
+  ];
 
-  let applied = 0;
-  let startTick = 0;
-  let startMs = 0;
-  let lastTick = 0;
-  let lastMs = 0;
+  const sequence = test.startSequence();
 
-  peer.state.subscribe((change) => {
-    if (change.ns !== ns) { return; }
+  for (const [index, workload] of cases.entries()) {
+    const { label, value, protocol, format } = workload;
+    const ns = `s6boot_${protocol}_${index}`;
+    let owner: Realm;
+    let peer: Realm;
+    let applied = 0;
+    let startTick = 0;
+    let startMs = 0;
+    let lastTick = 0;
+    let lastMs = 0;
 
-    applied++;
-    lastTick = system.currentTick;
-    lastMs = Date.now();
-  });
+    sequence
+      .thenExecute(() => {
+        owner = realm(ns);
+        peer = realm(`s6_boot_peer_${protocol}_${index}`);
+        connect([owner, peer], protocol);
+        peer.state.subscribe((change) => {
+          if (change.ns !== ns) { return; }
 
-  test.startSequence()
-    .thenIdle(20)
-    .thenExecute(() => {
-      startTick = system.currentTick;
-      startMs = Date.now();
+          applied++;
+          lastTick = system.currentTick;
+          lastMs = Date.now();
+        });
+      })
+      .thenIdle(20)
+      .thenExecute(() => {
+        startTick = system.currentTick;
+        startMs = Date.now();
 
-      for (let i = 0; i < KEYS; i++) { owner.state.set(ns, `key:${i}`, value); }
-    })
-    .thenIdle(200)
-    .thenExecute(() => {
-      report('shared_persist_boot', {
-        keys: KEYS,
-        payload: '200B',
-        applied,
-        ticks: applied > 0 ? lastTick - startTick : null,
-        ms: applied > 0 ? lastMs - startMs : null,
-        // What a late joiner would have to replay to catch up.
-        snapshotEntries: owner.state.snapshot(ns).length,
+        for (let i = 0; i < KEYS; i++) { owner.state.set(ns, `key:${i}`, value); }
+      })
+      .thenIdle(200)
+      .thenExecute(() => {
+        report('shared_persist_boot', {
+          keys: KEYS,
+          payload: label,
+          protocol: owner.bus.broadcastProtocol,
+          format,
+          applied,
+          ticks: applied > 0 ? lastTick - startTick : null,
+          ms: applied > 0 ? lastMs - startMs : null,
+          // What a late joiner would have to replay to catch up.
+          snapshotEntries: owner.state.snapshot(ns).length,
+        });
+
+        const intact = applied === KEYS && owner.bus.broadcastProtocol === protocol && owner.state.snapshot(ns).length === KEYS
+          && Array.from({ length: KEYS }, (_, i) => peer.state.get(ns, `key:${i}`)).every(item => validValue(workload, item));
+
+        stopAll([owner, peer]);
+
+        if (!intact) {
+          test.fail(`v${protocol} ${label}: peer applied ${applied} of ${KEYS} keys intact`);
+        }
       });
+  }
 
-      if (applied !== KEYS) { test.fail(`peer applied ${applied} of ${KEYS} keys`); }
-
-      stopAll([owner, peer]);
-    })
-    .thenSucceed();
+  sequence.thenSucceed();
 });
