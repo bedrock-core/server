@@ -23,7 +23,7 @@ import { BENCH_PROTOCOLS as PROTOCOLS, STRUCTURED_PAYLOADS } from '@bedrock-core
 const STRUCTURE = 'core:empty';
 
 function benchmark(name: string, fn: (test: Test) => void): void {
-  register('bench', name, fn).structureName(STRUCTURE).tag('bench').maxTicks(1200);
+  register('bench', name, fn).batch(`bench_${name}`).structureName(STRUCTURE).tag('bench').maxTicks(1200);
 }
 
 function report(name: string, data: Record<string, unknown>): void {
