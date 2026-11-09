@@ -1,22 +1,18 @@
 #!/usr/bin/env node
 // Publish every public workspace as a yarn-packed tarball through the npm CLI.
 //
-// Two tools on purpose, each doing the half the other cannot:
 //   - `yarn pack` rewrites the workspace: protocols into concrete versions —
 //     `npm publish` from a workspace directory would ship `workspace:*` verbatim
 //     and every consumer install would fail.
 //   - `npm publish` (>= 11.5.1) performs the OIDC trusted-publishing exchange in
-//     CI, which yarn's publisher cannot — so releases need no npm token at all.
+//     CI, so releases need no npm token.
 //     Locally it falls back to your npm login and prompts for the 2FA code.
 //
 // A version that is already on the registry is skipped, so re-running after a
-// partial release (or after a manual bootstrap publish) is safe — the same job
-// `--tolerate-republish` did in the all-yarn flow.
+// partial release is safe.
 //
 // `0.0.0` is the placeholder a package that has never shipped sits at, and it is
-// skipped too: a package reaches its first release by having its version set by
-// hand, because a changeset describes the delta between two released versions
-// and there is no first one to diff against.
+// skipped until its release version has been assigned.
 //
 // Usage: node scripts/publish-tarballs.mjs [excluded-package-name ...]
 //        node scripts/publish-tarballs.mjs --only <package-name>
@@ -26,6 +22,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const args = process.argv.slice(2);
+
+if (args[0] === '--only' ? args.length !== 2 || args[1].startsWith('-') : args.some(arg => arg.startsWith('-'))) {
+	throw new Error('Usage: publish-tarballs.mjs [excluded-package-name ...] | --only <package-name>');
+}
+
 const only = args[0] === '--only' ? args[1] : undefined;
 const exclude = new Set(only === undefined ? args : []);
 const shell = process.platform === 'win32';
@@ -41,15 +42,17 @@ function run(cmd, args, opts = {}) {
 const rows = run('yarn', ['workspaces', 'list', '--json', '-v'])
 	.trim().split('\n').map(line => JSON.parse(line));
 
+for (const name of only === undefined ? exclude : [only]) {
+	if (!rows.some(row => row.name === name)) { throw new Error(`Unknown workspace: ${name}`); }
+}
+
 const byLocation = new Map(rows.map(row => [row.location, row]));
 const pending = rows.filter((row) => {
-	// The root is included when it is a package in its own right — a repo whose root
-	// is the meta, or a single-package repo. The topological sort below puts it after
-	// everything it depends on, so one sweep releases the whole repo in order. A
-	// private root, as in the apps workspace, drops out on the `private` check.
-	if (only !== undefined) return row.name === only;
 	const manifest = JSON.parse(readFileSync(join(row.location, 'package.json'), 'utf-8'));
-	return manifest.private !== true && !exclude.has(row.name);
+
+	if (only === row.name && manifest.private === true) { throw new Error(`Cannot publish private workspace: ${only}`); }
+
+	return manifest.private !== true && (only === undefined ? !exclude.has(row.name) : row.name === only);
 });
 
 const ordered = [];
@@ -80,9 +83,15 @@ for (const row of ordered) {
 
 	let exists = false;
 	try {
-		run('npm', ['view', `${name}@${version}`, 'version'], { stdio: ['ignore', 'pipe', 'ignore'] });
+		run('npm', ['view', `${name}@${version}`, 'version', '--json'], { stdio: ['ignore', 'pipe', 'pipe'] });
 		exists = true;
-	} catch { /* not on the registry yet — publish it */ }
+	} catch (error) {
+		const missing = [error.stdout, error.stderr].some(output => {
+			try { return JSON.parse(String(output)).error?.code === 'E404'; } catch { return false; }
+		});
+
+		if (!missing) { throw error; }
+	}
 
 	if (exists) {
 		console.log(`skip    ${name}@${version} — already published`);
@@ -96,4 +105,4 @@ for (const row of ordered) {
 	published++;
 }
 
-console.log(`${published} published, ${ordered.length - published} already current`);
+console.log(`${published} published, ${ordered.length - published} skipped`);

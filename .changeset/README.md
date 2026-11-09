@@ -3,8 +3,9 @@
 This folder is managed by [Changesets](https://github.com/changesets/changesets).
 It tracks pending version bumps and changelog entries for the publishable packages:
 `@bedrock-core/server`, `@bedrock-core/server-runtime`, `@bedrock-core/sync`,
-`@bedrock-core/db`, `@bedrock-core/observable` and `@bedrock-core/i18n`. The monorepo
-root and the GameTest fixtures are `private` and are ignored automatically.
+`@bedrock-core/db`, `@bedrock-core/observable` and `@bedrock-core/i18n`. The public
+root package is included explicitly through `workspaces: [".", ...]`. The private
+GameTest fixtures are excluded from releases.
 
 ## Authoring a changeset
 
@@ -23,24 +24,22 @@ your change.
 The **Release** workflow (`.github/workflows/publish.yml`) has two jobs:
 
 - **A push to `main` with changesets pending** opens (or refreshes) a **"Version
-  Packages"** PR built by `yarn version-packages`. That runs `changeset version`,
+  Packages"** PR through `changeset version`,
   consuming the pending changesets, bumping the changed packages **and their
-  dependents** (`updateInternalDependencies: patch`) and writing CHANGELOGs, then
-  `scripts/sync-meta-version.mjs` and `scripts/sync-runtime-version.mjs`, which set
-  the root meta's version and rewrite `RUNTIME_VERSION`. Nothing is published from
+  dependents** (`updateInternalDependencies: patch`) and writing CHANGELOGs.
+  `yarn version-packages` runs the same command locally. Nothing is published from
   a push.
 - **A manual run** (Actions, Release, Run workflow) after that PR merges runs
   `yarn release`: `lint:libs`, `build:libs`, `scripts/publish-tarballs.mjs`,
-  and `scripts/tag-packages.mjs`. Each changed package goes to npm
+  and `changeset git-tag`. Each changed package goes to npm
   through trusted publishing (OIDC), with no npm token, and is tagged
   `@bedrock-core/<name>@<version>`.
 
-**`@bedrock-core/server`'s version IS `@bedrock-core/server-runtime`'s**,
-character for character, prerelease tag included. The runtime is what the meta
-is; `db`, `observable`, `sync` and `i18n` are support around it, so a consumer
-reading either number is reading the same one. A release the runtime does not move
-leaves the meta where it is. The root is not a valid changeset target: do not
-select it.
+**`@bedrock-core/server` and `@bedrock-core/server-runtime` form a fixed release
+group.** A changeset for either package releases both at the same version,
+including prerelease tags. Both are valid changeset targets. The other libraries
+are versioned independently. `RUNTIME_VERSION` reads Server Runtime's package
+metadata directly.
 
 `0.0.0` is what an unreleased package sits at, and `publish-tarballs.mjs` skips it.
 

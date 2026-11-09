@@ -5,7 +5,7 @@
   "access": "public",
   "baseBranch": "main",
   "updateInternalDependencies": "patch",
-  "fixed": [],
+  "fixed": [["@bedrock-core/server", "@bedrock-core/server-runtime"]],
   "linked": [],
   "ignore": []
 }
