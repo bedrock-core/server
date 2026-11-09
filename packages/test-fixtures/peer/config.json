@@ -14,12 +14,12 @@
     "formatVersion": "1.0.0",
     "profiles": {
       "default": {
+        "pretty": {
+          "indent": "tab"
+        },
+        "debug": true,
         "stages": {
-          "manifest": {
-            "pretty": {
-              "indent": "tab"
-            }
-          },
+          "manifest": true,
           "generator": false,
           "guides": false,
           "i18n": {
@@ -28,12 +28,7 @@
             "sourceDir": "i18n"
           },
           "ui-compiler": false,
-          "bundler": {
-            "pretty": {
-              "indent": "tab"
-            },
-            "debug": true
-          }
+          "bundler": true
         },
         "export": {
           "behaviorPack": "%APPDATA%/Minecraft Bedrock/Users/Shared/games/com.mojang/development_behavior_packs/core-server-fixture-peer_bp",
@@ -41,10 +36,10 @@
         }
       },
       "build": {
+        "pretty": false,
+        "debug": true,
         "stages": {
-          "manifest": {
-            "pretty": false
-          },
+          "manifest": true,
           "generator": false,
           "guides": false,
           "i18n": {
@@ -53,10 +48,7 @@
             "sourceDir": "i18n"
           },
           "ui-compiler": false,
-          "bundler": {
-            "pretty": false,
-            "debug": true
-          }
+          "bundler": true
         },
         "export": {
           "behaviorPack": "./build/BP",
@@ -64,10 +56,10 @@
         }
       },
       "build-test": {
+        "pretty": false,
+        "debug": true,
         "stages": {
-          "manifest": {
-            "pretty": false
-          },
+          "manifest": true,
           "generator": false,
           "guides": false,
           "i18n": {
@@ -76,10 +68,7 @@
             "sourceDir": "i18n"
           },
           "ui-compiler": false,
-          "bundler": {
-            "pretty": false,
-            "debug": true
-          }
+          "bundler": true
         },
         "export": {
           "behaviorPack": "./build/test/BP",
