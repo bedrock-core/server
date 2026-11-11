@@ -48,7 +48,7 @@
 		"packages/test-fixtures"
 	],
 	"resolutions": {
-		"@bedrock-core/bds-runner": "^0.1.0",
+		"@bedrock-core/bds-runner": "0.3.0",
 		"@minecraft/server": "2.10.0",
 		"@minecraft/server-gametest": "1.0.0-beta.1.26.50-stable",
 		"@minecraft/server-ui": "2.2.0",
@@ -79,7 +79,7 @@
 		"bds:fetch": "bc-bds fetch",
 		"bds:where": "bc-bds where",
 		"changeset": "changeset",
-		"version-packages": "changeset version",
+		"version-packages": "changeset version && yarn workspaces focus @bedrock-core/server @bedrock-core/sync @bedrock-core/server-runtime",
 		"release": "yarn lint:libs && yarn build:libs && node scripts/publish-tarballs.mjs && changeset git-tag",
 		"clean": "node scripts/clean.mjs"
 	},
@@ -90,7 +90,7 @@
 		"@minecraft/server": ">=2.9.0 || >=2.10.0-0"
 	},
 	"devDependencies": {
-		"@bedrock-core/bds-runner": "^0.1.0",
+		"@bedrock-core/bds-runner": "^0.3.0",
 		"@changesets/changelog-github": "^0.7.0",
 		"@changesets/cli": "3.0.3",
 		"@eslint/js": "^10.0.1",

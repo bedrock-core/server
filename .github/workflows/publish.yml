@@ -63,7 +63,8 @@ jobs:
           cache: 'yarn'
           cache-dependency-path: server/yarn.lock
 
-      - run: yarn install --immutable
+      - name: Install the publishable libraries only
+        run: yarn workspaces focus @bedrock-core/server @bedrock-core/sync @bedrock-core/server-runtime
 
       # No `publish` input: with changesets pending this opens the PR, and with
       # none pending it does nothing.

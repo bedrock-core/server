@@ -32,7 +32,7 @@
 		"@minecraft/server-ui": "*"
 	},
 	"devDependencies": {
-		"@bedrock-core/builder": "0.1.0",
+		"@bedrock-core/builder": "0.2.0",
 		"@eslint/js": "*",
 		"@eslint/json": "*",
 		"@stylistic/eslint-plugin": "*",
