@@ -66,7 +66,7 @@ __metadata:
     prismarine-nbt: "npm:^2.7.0"
     yauzl: "npm:^3.2.0"
   bin:
-    bc-bds: ./bin/bc-bds.mjs
+    bc-bds: bin/bc-bds.mjs
   checksum: 10c0/c486a5e5ba2adec99923c01878b4348b3a594ea4e8827b3300d33072dc50266cd2217e8fef73228f9dcd0185e18fd6c9e867976af5c4dc86cddfba1acf4ff4b5
   languageName: node
   linkType: hard
@@ -186,7 +186,7 @@ __metadata:
     ajv: "npm:8.17.1"
     typescript-native: "npm:typescript@7.1.0-beta"
   bin:
-    bc-builder: ./dist/bin/builder.js
+    bc-builder: dist/bin/builder.js
   checksum: 10c0/f752d55c7e9d12b7cd98f2639e31d95b4aa3c00a0776f679a06d35de56a855eb13d66f8d8824ac4623db02e72af03a219925079498d0fa22b8459dc2275874e6
   languageName: node
   linkType: hard
