@@ -60,7 +60,7 @@ jobs:
         uses: codecov/codecov-action@v7
         with:
           working-directory: server
-          files: packages/${{ matrix.library }}/coverage/lcov.info
+          files: coverage/${{ matrix.library }}/lcov.info
           flags: ${{ matrix.library }}
           name: ${{ matrix.library }}
           disable_search: true
@@ -72,6 +72,6 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.library }}-coverage
-          path: server/packages/${{ matrix.library }}/coverage/
+          path: server/coverage/${{ matrix.library }}/
           if-no-files-found: warn
           retention-days: 14

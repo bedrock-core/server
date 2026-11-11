@@ -1,0 +1,5 @@
+/packages/db/** text=auto eol=lf
+/packages/i18n/** text=auto eol=lf
+/packages/observable/** text=auto eol=lf
+/packages/server-runtime/** text=auto eol=lf
+/packages/sync/** text=auto eol=lf
