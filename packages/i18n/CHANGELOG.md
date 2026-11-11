@@ -1,5 +1,11 @@
 # @bedrock-core/i18n
 
+## 0.3.0
+
+### Minor Changes
+
+- [`3dec9bf`](https://github.com/bedrock-core/server/commit/3dec9bf611ef201e73318d8e0a190a6b6cf78276) Thanks [@drav0011](https://github.com/drav0011)! - Create typed translations directly from locale objects, support explicit default locales and namespace binding, and extend selectors with compiler-known library and vanilla resources.
+
 ## 0.2.0
 
 ### Minor Changes

@@ -1,5 +1,12 @@
 # @bedrock-core/server
 
+## 0.3.0
+
+### Patch Changes
+
+- Updated dependencies [[`8d1bed2`](https://github.com/bedrock-core/server/commit/8d1bed2f27e9c4fd227443ca5a2a46fd5b009eaf), [`0ffc2b9`](https://github.com/bedrock-core/server/commit/0ffc2b919d795fd0d164758f0a5abbffa7283be5), [`8d1bed2`](https://github.com/bedrock-core/server/commit/8d1bed2f27e9c4fd227443ca5a2a46fd5b009eaf), [`8d1bed2`](https://github.com/bedrock-core/server/commit/8d1bed2f27e9c4fd227443ca5a2a46fd5b009eaf), [`8d1bed2`](https://github.com/bedrock-core/server/commit/8d1bed2f27e9c4fd227443ca5a2a46fd5b009eaf), [`8d1bed2`](https://github.com/bedrock-core/server/commit/8d1bed2f27e9c4fd227443ca5a2a46fd5b009eaf), [`8d1bed2`](https://github.com/bedrock-core/server/commit/8d1bed2f27e9c4fd227443ca5a2a46fd5b009eaf), [`0ffc2b9`](https://github.com/bedrock-core/server/commit/0ffc2b919d795fd0d164758f0a5abbffa7283be5), [`0ffc2b9`](https://github.com/bedrock-core/server/commit/0ffc2b919d795fd0d164758f0a5abbffa7283be5), [`0ffc2b9`](https://github.com/bedrock-core/server/commit/0ffc2b919d795fd0d164758f0a5abbffa7283be5), [`0ffc2b9`](https://github.com/bedrock-core/server/commit/0ffc2b919d795fd0d164758f0a5abbffa7283be5), [`0ffc2b9`](https://github.com/bedrock-core/server/commit/0ffc2b919d795fd0d164758f0a5abbffa7283be5)]:
+  - @bedrock-core/server-runtime@0.3.0
+
 ## 0.2.1
 
 ### Patch Changes
