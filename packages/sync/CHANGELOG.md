@@ -1,5 +1,27 @@
 # @bedrock-core/sync
 
+## 2.0.0
+
+### Major Changes
+
+- [`0ffc2b9`](https://github.com/bedrock-core/server/commit/0ffc2b919d795fd0d164758f0a5abbffa7283be5) Thanks [@drav0011](https://github.com/drav0011)! - Preserve structured application values across API calls, replicated state and signals: collections, sparse arrays, exact numeric values, big integers, dates, regular expressions and binary views. Retain cycles and aliases within each message, including object keys in maps. Guard collection snapshots against mutation and retain native-reference and custom-codec handling inside collections. Structured payloads use protocol 3; plain JSON traffic remains compatible with earlier protocols.
+  
+  Expose named snapshot replication through SyncNode.replication. Publishers broadcast immutable replacements and withdrawals; explicit watches retain remote values and request one current snapshot when opened. Sync owns replication startup, shutdown and peer-instance invalidation. Server Runtime uses this transport for registry datasets while owning their schemas and provider selection.
+
+### Minor Changes
+
+- [`5195432`](https://github.com/bedrock-core/server/commit/51954329ccc4569248fdd50e95359317189f10a5) Thanks [@drav0011](https://github.com/drav0011)! - Store replicated values in shared observables so keyed reads, subscriptions and snapshots use the same state. Preserve observable handles across deletions and peer departure, and copy published values and local event payloads using the structured wire-data semantics. Expose snapshot copy and freeze helpers through `/data`.
+  
+  Track running peer instances in discovery, invalidate departed instances' snapshots and pending calls, and reject stale-instance traffic. Match RPC responses to their target and optional running instance, clean up request timers, and return handler or serialization failures as RPC errors. Discovery and state notifications isolate listener failures through standard signals.
+
+### Patch Changes
+
+- [`cfa5387`](https://github.com/bedrock-core/server/commit/cfa53879bb9be50fcdcf55c7883d2c51f6fd0b73) Thanks [@drav0011](https://github.com/drav0011)! - Retire a previously compatible peer when its replacement announces an incompatible protocol range. Clear its negotiated transport protocol and invalidate outstanding calls, state and publication snapshots owned by the departed instance.
+
+- [`cfa5387`](https://github.com/bedrock-core/server/commit/cfa53879bb9be50fcdcf55c7883d2c51f6fd0b73) Thanks [@drav0011](https://github.com/drav0011)! - Validate RPC error response fields before settling pending requests. Malformed replies leave the request available for a valid response or its timeout.
+- Updated dependencies [[`06eb9bd`](https://github.com/bedrock-core/server/commit/06eb9bd14fe0ad36d2247db1b442e8c980d80961)]:
+  - @bedrock-core/observable@1.1.0
+
 ## 1.0.0
 
 ### Major Changes

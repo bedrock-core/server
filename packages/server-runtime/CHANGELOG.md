@@ -1,5 +1,45 @@
 # @bedrock-core/server-runtime
 
+## 0.3.0
+
+### Minor Changes
+
+- [`8d1bed2`](https://github.com/bedrock-core/server/commit/8d1bed2f27e9c4fd227443ca5a2a46fd5b009eaf) Thanks [@drav0011](https://github.com/drav0011)! - Resolve generated API objects by owner namespace and support per-Runtime library API declaration factories.
+
+- [`0ffc2b9`](https://github.com/bedrock-core/server/commit/0ffc2b919d795fd0d164758f0a5abbffa7283be5) Thanks [@drav0011](https://github.com/drav0011)! - Install library-owned registries through defineRegistry, with local writes, compatible external reads, validated immutable records and owned cleanup. Keep compact provider descriptors in addon discovery. Core publishes available built-in data independently of optional readers. registerTranslations installs lookup and resolvers; the i18n/publish entry supports publisher-only updates.
+
+- [`8d1bed2`](https://github.com/bedrock-core/server/commit/8d1bed2f27e9c4fd227443ca5a2a46fd5b009eaf) Thanks [@drav0011](https://github.com/drav0011)! - Register addons with explicit manifest namespaces and native display metadata, publish author lists, and derive catalog icons from pack_icon.png.
+  
+  Expose typed addon functions, read-only observables and signals through public package exports. Keep transport APIs private to the runtime and own library-service teardown through declarations.
+
+- [`8d1bed2`](https://github.com/bedrock-core/server/commit/8d1bed2f27e9c4fd227443ca5a2a46fd5b009eaf) Thanks [@drav0011](https://github.com/drav0011)! - Resolve entity/block components and captured inventory handles as receiving-addon native objects. Copy complete BlockPermutation state and stacking-equivalent ItemStack snapshots, rejecting items whose native data cannot be verified faithfully.
+
+- [`8d1bed2`](https://github.com/bedrock-core/server/commit/8d1bed2f27e9c4fd227443ca5a2a46fd5b009eaf) Thanks [@drav0011](https://github.com/drav0011)! - Publish exported API objects through registerModule declarations with Runtime-owned installation and cleanup.
+
+- [`8d1bed2`](https://github.com/bedrock-core/server/commit/8d1bed2f27e9c4fd227443ca5a2a46fd5b009eaf) Thanks [@drav0011](https://github.com/drav0011)! - Retain complete addon manifests in discovery and registry entries, validate peer identity against their native fields, and expose runtime registration fields alongside the manifest.
+
+- [`0ffc2b9`](https://github.com/bedrock-core/server/commit/0ffc2b919d795fd0d164758f0a5abbffa7283be5) Thanks [@drav0011](https://github.com/drav0011)! - Use per-installation library accessors and cleanup, with owned withdrawal and rollback. Publish API objects through registerModule and create remote views through createModule. Standardize registry lookup and snapshots, broadcast publications with selective local retention, and request current data for late consumers. The server package exposes the runtime; reactive primitives, translations and storage use their owning packages.
+
+- [`0ffc2b9`](https://github.com/bedrock-core/server/commit/0ffc2b919d795fd0d164758f0a5abbffa7283be5) Thanks [@drav0011](https://github.com/drav0011)! - Keep database ownership in consuming libraries and addons. Expose AddonRegistry for addon discovery, use Sync replication for registry datasets, own translation integration under registries, and encapsulate API binding lifetimes in the API subsystem.
+  
+  Return the owning Runtime from registration with inferred read-only declaration accessors. Keep the local manifest in AddonRegistry and coordinate publications and optional readers through the registry subsystem.
+
+- [`0ffc2b9`](https://github.com/bedrock-core/server/commit/0ffc2b919d795fd0d164758f0a5abbffa7283be5) Thanks [@drav0011](https://github.com/drav0011)! - Expose typed local services through RuntimeServices, service and provideService, with per-Runtime installation ownership, isolation, rollback and cleanup.
+
+- [`0ffc2b9`](https://github.com/bedrock-core/server/commit/0ffc2b919d795fd0d164758f0a5abbffa7283be5) Thanks [@drav0011](https://github.com/drav0011)! - Broadcast registry publications and updates while retaining foreign datasets only for installed registries. Late registrations request current snapshots. Preserve provider compatibility policies, typed references, revision fencing and owned teardown. Core publishes available local translation bundles; registerTranslations installs the optional reader and resolvers.
+
+- [`0ffc2b9`](https://github.com/bedrock-core/server/commit/0ffc2b919d795fd0d164758f0a5abbffa7283be5) Thanks [@drav0011](https://github.com/drav0011)! - Preserve structured application values across API calls, replicated state and signals: collections, sparse arrays, exact numeric values, big integers, dates, regular expressions and binary views. Retain cycles and aliases within each message, including object keys in maps. Guard collection snapshots against mutation and retain native-reference and custom-codec handling inside collections. Structured payloads use protocol 3; plain JSON traffic remains compatible with earlier protocols.
+  
+  Expose named snapshot replication through SyncNode.replication. Publishers broadcast immutable replacements and withdrawals; explicit watches retain remote values and request one current snapshot when opened. Sync owns replication startup, shutdown and peer-instance invalidation. Server Runtime uses this transport for registry datasets while owning their schemas and provider selection.
+
+### Patch Changes
+
+- [`8d1bed2`](https://github.com/bedrock-core/server/commit/8d1bed2f27e9c4fd227443ca5a2a46fd5b009eaf) Thanks [@drav0011](https://github.com/drav0011)! - Read the discovery and host-election runtime version directly from the package metadata.
+- Updated dependencies [[`3dec9bf`](https://github.com/bedrock-core/server/commit/3dec9bf611ef201e73318d8e0a190a6b6cf78276), [`cfa5387`](https://github.com/bedrock-core/server/commit/cfa53879bb9be50fcdcf55c7883d2c51f6fd0b73), [`06eb9bd`](https://github.com/bedrock-core/server/commit/06eb9bd14fe0ad36d2247db1b442e8c980d80961), [`cfa5387`](https://github.com/bedrock-core/server/commit/cfa53879bb9be50fcdcf55c7883d2c51f6fd0b73), [`0ffc2b9`](https://github.com/bedrock-core/server/commit/0ffc2b919d795fd0d164758f0a5abbffa7283be5), [`5195432`](https://github.com/bedrock-core/server/commit/51954329ccc4569248fdd50e95359317189f10a5)]:
+  - @bedrock-core/i18n@0.3.0
+  - @bedrock-core/sync@2.0.0
+  - @bedrock-core/observable@1.1.0
+
 ## 0.2.1
 
 ### Patch Changes

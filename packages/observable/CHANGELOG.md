@@ -1,5 +1,13 @@
 # @bedrock-core/observable
 
+## 1.1.0
+
+### Minor Changes
+
+- [`06eb9bd`](https://github.com/bedrock-core/server/commit/06eb9bd14fe0ad36d2247db1b442e8c980d80961) Thanks [@drav0011](https://github.com/drav0011)! - Add `signal<T>()` for transient events with independent, idempotent cleanup and isolated listener failures. `Signal<T>` subscriptions return an unsubscribe function and expose no retained value or native filter options.
+  
+  Describe callback-removal event sources with `NativeSignal<T, Options>` and adapt them through `toSignal()`, preserving native options and returned callback tokens. Export the adapter from the root and `/minecraft` entries. `last()` accepts both standard signals and native event sources.
+
 ## 1.0.0
 
 ### Major Changes

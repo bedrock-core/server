@@ -1,5 +1,16 @@
 # @bedrock-core/db
 
+## 0.2.0
+
+### Minor Changes
+
+- [`f782f31`](https://github.com/bedrock-core/server/commit/f782f319377cab4a0c9bfb4afa7ce60fc1dd805e) Thanks [@drav0011](https://github.com/drav0011)! - Own scheduled writes, engine hooks and subscriptions through database shutdown, with idempotent cleanup and rejection of operations after stop.
+
+### Patch Changes
+
+- Updated dependencies [[`06eb9bd`](https://github.com/bedrock-core/server/commit/06eb9bd14fe0ad36d2247db1b442e8c980d80961)]:
+  - @bedrock-core/observable@1.1.0
+
 ## 0.1.1
 
 ### Patch Changes
