@@ -424,12 +424,14 @@ gametest('cross_pack_peer_present', (test) => {
         return;
       }
 
+      const serverApiVersion = core.manifest.dependencies?.find(dependency => dependency.module_name === '@minecraft/server')?.version;
+
       test.assert(peer.manifest.namespace === peer.id, 'The remote manifest keeps its owning namespace');
       test.assert(peer.manifest.header.uuid === '6b83adc1-ffae-4081-bc77-d0c7663cad33', 'The remote manifest retains its native pack UUID');
       test.assert(peer.manifest.header.name === 'Bedrock Core fixture peer' && peer.manifest.header.version === '1.0.0', 'Native header fields survive discovery');
       test.assert(peer.manifest.metadata?.authors?.includes('DrAv0011') === true, 'Native author metadata survives discovery');
-      test.assert(peer.manifest.modules.some(module => module.type === 'script' && module.entry === 'scripts/main.js'), 'Native script modules survive discovery');
-      test.assert(peer.manifest.dependencies?.some(dependency => dependency.module_name === '@minecraft/server' && dependency.version === '2.10.0') === true, 'Native dependency objects survive discovery');
+      test.assert(peer.manifest.modules.some(module => module.type === 'script' && module.entry === 'scripts/main.ts'), 'Registered script modules survive discovery');
+      test.assert(typeof serverApiVersion === 'string' && peer.manifest.dependencies?.some(dependency => dependency.module_name === '@minecraft/server' && dependency.version === serverApiVersion) === true, 'Native dependency objects survive discovery');
     })
     .thenSucceed();
 });
