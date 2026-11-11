@@ -10,7 +10,7 @@
 			"type": "script",
 			"language": "javascript",
 			"uuid": "70ce27d2-f39d-4c02-8bf0-b3529002f32b",
-			"entry": "scripts/gametest.js",
+			"entry": "scripts/gametest.ts",
 			"version": "1.0.0"
 		}
 	],
